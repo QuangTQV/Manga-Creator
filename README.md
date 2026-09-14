@@ -128,6 +128,9 @@ No registration, no account, no cloud setup. To use AI, add your own key in
 | `npm test` | Full test suite (domain, geometry, security, agent) |
 | `npm run typecheck` / `npm run lint` | Static gates |
 
+Bilingual (English/Vietnamese) step-by-step guide, env vars, and
+troubleshooting: [docs/HOW_TO_RUN.md](docs/HOW_TO_RUN.md).
+
 ## FAQ
 
 ### Is Kumanga free?
