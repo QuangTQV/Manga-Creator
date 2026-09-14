@@ -65,15 +65,25 @@ decides meaning, code decides structure"), applied one level up:
   those signals to decide page/panel boundaries: a `mergeable` or
   `!mustVisualize` beat folds into the previous panel instead of spending a
   new one; a page never spans two scenes; a `pageTurnHook` beat always ends
-  the page right there, even under the panel budget. That budget
-  ("Panels per page") is a user setting in the dialog, 1-4 —
+  the page right there, even under the panel budget.
+- **Panel budget** (`PanelBudget = number | "auto"`, a "Panels per page"
+  setting in the dialog): a fixed number (1-4) packs every page up to that
+  many panels, uniformly, for the whole book. **"auto" (default)** instead
+  spends a per-page *importance* budget — the beat's own `importance` score
+  from the parse step — rather than a panel count: a couple of
+  high-importance beats can fill a page on their own (worth lingering on),
+  a run of low-importance ones happily packs closer to the hard cap. This
+  is the "content decides pacing" option, kept inside the module's own
+  rule: the model already scores importance during parsing, `pageIsFull`'s
+  "auto" branch just spends a signal that already exists — it does not ask
+  the model for a panel count directly (see the module docstring for why).
   `MAX_SUPPORTED_PANELS_PER_PAGE` (4) is a real ceiling of Kumanga's own
   page layouts (`domain/layouts.ts`), not an arbitrary pacing default, so
-  the picker never offers more than that. Since `planPages` is pure and
-  free, changing it after parsing re-plans instantly with no AI call —
-  disabled once any page in the current outline has been generated, since
-  re-planning renumbers page ids and would desync already-generated pages
-  from their planned counterpart.
+  neither mode ever proposes more than that. Since `planPages` is pure and
+  free, changing the budget after parsing re-plans instantly with no AI
+  call — disabled once any page in the current outline has been generated,
+  since re-planning renumbers page ids and would desync already-generated
+  pages from their planned counterpart.
 - Each planned page carries `panelCount` (how many panels it actually
   needs, which can be fewer than the budget above — several beats may fold
   into one panel). `NovelImportDialog.tsx` picks the matching Kumanga page

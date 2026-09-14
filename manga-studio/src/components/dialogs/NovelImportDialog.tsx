@@ -26,7 +26,7 @@ import { executeCreativeRun, runCreativeDirection } from "@/agent-v3/run";
 import type { RunV3Outcome } from "@/agent-v3/run";
 import { groupSegmentsIntoChunks, splitIntoChapters, splitIntoSegments } from "@/agent/novelParser/segmentation";
 import type { NovelFidelity } from "@/agent/novelParser/prompt";
-import { MAX_SUPPORTED_PANELS_PER_PAGE, planPages, type PlannedPage } from "@/agent/novelParser/pagination";
+import { MAX_SUPPORTED_PANELS_PER_PAGE, planPages, type PanelBudget, type PlannedPage } from "@/agent/novelParser/pagination";
 import type { NovelCharacter, NovelScene } from "@/agent/novelParser/schema";
 import type { LayoutPresetId } from "@/domain/types";
 import { useEditorStore } from "@/editor/store";
@@ -49,6 +49,10 @@ function layoutForPanelCount(panelCount: number): LayoutPresetId {
   return LAYOUT_BY_PANEL_COUNT[panelCount] ?? "four-grid";
 }
 
+function parsePanelBudget(value: string): PanelBudget {
+  return value === "auto" ? "auto" : Number(value);
+}
+
 type Stage = "input" | "parsing" | "review";
 type PageState = "planned" | "generating" | "done" | "error";
 
@@ -66,7 +70,7 @@ export function NovelImportDialog() {
   const [text, setText] = useState("");
   const [titleHint, setTitleHint] = useState("");
   const [fidelity, setFidelity] = useState<NovelFidelity>("guided");
-  const [panelsPerPage, setPanelsPerPage] = useState(MAX_SUPPORTED_PANELS_PER_PAGE);
+  const [panelsPerPage, setPanelsPerPage] = useState<PanelBudget>("auto");
   const [stage, setStage] = useState<Stage>("input");
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [chapters, setChapters] = useState<ChapterOutline[]>([]);
@@ -153,7 +157,7 @@ export function NovelImportDialog() {
    * pages is only safe before you've generated anything you want to keep —
    * the button is disabled once any page is done, to avoid that confusion.
    */
-  const replan = (nextPanelsPerPage: number) => {
+  const replan = (nextPanelsPerPage: PanelBudget) => {
     setPanelsPerPage(nextPanelsPerPage);
     const outlines = chapters.map((chapter) => ({
       ...chapter,
@@ -264,23 +268,23 @@ export function NovelImportDialog() {
               </select>
             </label>
             <label className="mb-3 block">
-              <span className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">
-                Panels per page (maximum)
-              </span>
+              <span className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">Panels per page</span>
               <select
                 className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1.5"
                 value={panelsPerPage}
-                onChange={(e) => setPanelsPerPage(Number(e.target.value))}
+                onChange={(e) => setPanelsPerPage(parsePanelBudget(e.target.value))}
               >
+                <option value="auto">Auto — let a dramatic beat take a whole page, pack quiet beats together (recommended)</option>
                 {Array.from({ length: MAX_SUPPORTED_PANELS_PER_PAGE }, (_, i) => i + 1).map((n) => (
                   <option key={n} value={n}>
-                    {n} panel{n > 1 ? "s" : ""}
+                    Fixed: {n} panel{n > 1 ? "s" : ""} per page
                   </option>
                 ))}
               </select>
               <p className="mt-1 text-[10px] leading-4 text-zinc-600">
-                A page-turn cliffhanger beat still ends its page early even under this budget. You can change this
-                and re-plan for free after parsing, before generating any pages.
+                Auto paces pages by each beat&apos;s importance (from the AI parse), not just a panel count. A
+                page-turn cliffhanger beat always ends its page early either way. You can change this and re-plan
+                for free after parsing, before generating any pages.
               </p>
             </label>
             {parseError && <p className="mb-2 text-xs text-red-400">{parseError}</p>}
@@ -325,7 +329,7 @@ export function NovelImportDialog() {
                   <select
                     className="rounded border border-[var(--border-subtle)] bg-[var(--bg-app)] px-1.5 py-1 text-xs"
                     value={panelsPerPage}
-                    onChange={(e) => replan(Number(e.target.value))}
+                    onChange={(e) => replan(parsePanelBudget(e.target.value))}
                     disabled={donePages > 0}
                     title={
                       donePages > 0
@@ -333,6 +337,7 @@ export function NovelImportDialog() {
                         : "Re-plans every page for free — no AI call needed"
                     }
                   >
+                    <option value="auto">Auto</option>
                     {Array.from({ length: MAX_SUPPORTED_PANELS_PER_PAGE }, (_, i) => i + 1).map((n) => (
                       <option key={n} value={n}>
                         {n}

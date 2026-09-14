@@ -146,3 +146,55 @@ describe("planPages", () => {
     expect(pages).toHaveLength(2);
   });
 });
+
+describe("planPages with \"auto\" pacing", () => {
+  it("gives two high-importance beats a page of their own, ahead of the hard cap", () => {
+    const beats = [
+      beat({ ordinal: 1, action: "the blade falls", importance: 0.95 }),
+      beat({ ordinal: 2, action: "she screams", importance: 0.9 }),
+      beat({ ordinal: 3, action: "he catches her hand", importance: 0.9 }),
+    ];
+    const pages = planPages("Chapter 1", [scene({ beats })], "auto");
+    // Importance 0.95 + 0.9 already exceeds the auto budget, so the third
+    // high-importance beat must start a new page rather than pack to 3/4.
+    expect(pages.length).toBeGreaterThan(1);
+    expect(pages[0].panelCount).toBeLessThan(MAX_SUPPORTED_PANELS_PER_PAGE);
+  });
+
+  it("packs several low-importance beats onto one page, closer to the hard cap", () => {
+    const beats = Array.from({ length: 4 }, (_, i) =>
+      beat({ ordinal: i + 1, action: `quiet beat ${i + 1}`, importance: 0.2 }),
+    );
+    const pages = planPages("Chapter 1", [scene({ beats })], "auto");
+    expect(pages).toHaveLength(1);
+    expect(pages[0].panelCount).toBe(4);
+  });
+
+  it("never exceeds the hard layout cap even under auto pacing", () => {
+    const beats = Array.from({ length: 8 }, (_, i) => beat({ ordinal: i + 1, importance: 0.1 }));
+    const pages = planPages("Chapter 1", [scene({ beats })], "auto");
+    expect(pages.every((p) => p.panelCount <= MAX_SUPPORTED_PANELS_PER_PAGE)).toBe(true);
+  });
+
+  it("still ends a page immediately on a page-turn-hook beat under auto pacing", () => {
+    const beats = [
+      beat({ ordinal: 1, action: "calm moment", importance: 0.2 }),
+      beat({ ordinal: 2, action: "the door creaks open", importance: 0.2, pageTurnHook: true }),
+      beat({ ordinal: 3, action: "a figure steps out", importance: 0.2 }),
+    ];
+    const pages = planPages("Chapter 1", [scene({ beats })], "auto");
+    expect(pages).toHaveLength(2);
+    expect(pages[0].beats.map((b) => b.action)).toEqual(["calm moment", "the door creaks open"]);
+  });
+
+  it("is the default when no budget is given", () => {
+    const beats = [
+      beat({ ordinal: 1, importance: 0.95 }),
+      beat({ ordinal: 2, importance: 0.9 }),
+      beat({ ordinal: 3, importance: 0.9 }),
+    ];
+    const withDefault = planPages("Chapter 1", [scene({ beats })]);
+    const withExplicitAuto = planPages("Chapter 1", [scene({ beats })], "auto");
+    expect(withDefault.map((p) => p.panelCount)).toEqual(withExplicitAuto.map((p) => p.panelCount));
+  });
+});
