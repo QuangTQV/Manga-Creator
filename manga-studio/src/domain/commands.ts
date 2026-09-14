@@ -8,7 +8,7 @@ import { deleteAsset, deleteCharacter, renameAsset, renameCharacter, replaceAsse
 import { addBubble, addEffect, duplicateItem, moveItemToIndex, placeAsset, removeItem, reorderItem, setCropMode, swapInstanceAsset, updateBubble, updateItemProps, updateItemTransform, type ReorderDirection } from "./itemOps";
 import { addTone, updateTone, type TonePatch } from "./toneOps";
 import type { ProceduralToneParams, ToneMask } from "./tones";
-import { addPage, removePage, setPageLayout } from "./pageOps";
+import { addPage, removePage, resetPageLayout, setPageLayout } from "./pageOps";
 import { renameProject } from "./projectOps";
 import { addRelationship, removeRelationship } from "./relationships";
 import {
@@ -154,6 +154,7 @@ export type DomainCommand =
   | { type: "apply-attachments"; panelId: ID }
   | { type: "reshape-panel"; panelId: ID; points: Point[] }
   | { type: "set-page-layout"; pageId: ID; layout: LayoutPresetId }
+  | { type: "reset-page-layout"; pageId: ID; layout: LayoutPresetId }
   | { type: "add-page"; layout?: LayoutPresetId }
   | { type: "remove-page"; pageId: ID }
   | { type: "add-workspace-instance"; assetId: ID; at: Point }
@@ -368,6 +369,8 @@ function applyCommandCore(doc: ProjectDocument, command: DomainCommand): Command
       return { doc: reshapePanel(doc, command.panelId, command.points) };
     case "set-page-layout":
       return { doc: setPageLayout(doc, command.pageId, command.layout) };
+    case "reset-page-layout":
+      return { doc: resetPageLayout(doc, command.pageId, command.layout) };
     case "add-page": {
       const result = addPage(doc, command.layout);
       return { doc: result.doc, createdId: result.pageId };

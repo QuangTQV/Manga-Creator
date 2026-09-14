@@ -33,6 +33,13 @@ export interface StoredNovelOutline {
   panelsPerPage: PanelBudget;
   chapters: StoredChapterOutline[];
   pageStates: Record<string, NovelOutlinePageState>;
+  /**
+   * Planned-page id → the real project `Page.id` it was generated onto, so
+   * "regenerate" can find and overwrite that same page instead of creating
+   * a new one. Absent in outlines saved before this field existed — callers
+   * treat a missing map the same as an empty one.
+   */
+  generatedPageIds?: Record<string, string>;
   savedAt: string;
 }
 

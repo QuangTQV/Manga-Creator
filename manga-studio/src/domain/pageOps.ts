@@ -62,6 +62,30 @@ export function setPageLayout(doc: ProjectDocument, pageId: ID, layout: LayoutPr
   return next;
 }
 
+/**
+ * Wipe a page back to an empty layout, in place: same id, name, index and
+ * workspace position, but every existing panel/scene/item on it is gone —
+ * unlike `setPageLayout`, which deliberately re-homes old content into the
+ * new panels. This is for "start this page over" (e.g. Novel Import
+ * regenerating a page), where carrying the old composition forward would
+ * just leave stale content mixed in with the new run's output.
+ */
+export function resetPageLayout(doc: ProjectDocument, pageId: ID, layout: LayoutPresetId): ProjectDocument {
+  const next = cloneDoc(doc);
+  const page = next.pages[pageId];
+  if (!page) throw new Error(`Unknown page: ${pageId}`);
+
+  for (const panelId of page.panelIds) {
+    for (const itemId of next.panels[panelId]?.itemIds ?? []) delete next.items[itemId];
+    delete next.panels[panelId];
+    delete next.scenes[panelId];
+  }
+
+  applyLayout(next, page, layout);
+  touch(next);
+  return next;
+}
+
 export function removePage(doc: ProjectDocument, pageId: ID): ProjectDocument {
   const next = cloneDoc(doc);
   const page = next.pages[pageId];

@@ -9,7 +9,7 @@
  * and per-step status stay visible, and one Undo reverts the whole run.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { countGenerations, describeStep, type ExecutionSummary, type StepProgress } from "@/agent-v2";
 import type { AgentPlan } from "@/agent/tools/schemas";
 import {
@@ -50,6 +50,17 @@ type Prepared = Extract<RunV3Outcome, { kind: "confirm" | "ready" }>;
 
 export function AgentPanel() {
   const selection = useEditorStore((s) => s.selection);
+  const doc = useEditorStore((s) => s.doc);
+  const currentPageId = useEditorStore((s) => s.currentPageId);
+  const pages = useMemo(
+    () => Object.values(doc?.pages ?? {}).sort((a, b) => a.index - b.index),
+    [doc],
+  );
+  // null = "follow whatever page is open"; set only when the creator picks a
+  // page other than the one currently on screen, so the picker doesn't fight
+  // normal page navigation via the Pages bar.
+  const [targetPageId, setTargetPageId] = useState<string | null>(null);
+  const [runPageName, setRunPageName] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [statusLine, setStatusLine] = useState<string | null>(null);
@@ -73,8 +84,19 @@ export function AgentPanel() {
   }, [settingsOpen]);
 
   const run = async (requestPrompt: string) => {
+    const initial = useEditorStore.getState();
+    if (!initial.doc) return;
+    // Switching pages BEFORE the run means the agent's own notion of "the
+    // current page" (agent-v3/run.ts reads currentPageId at call time) is
+    // the page the creator picked, with no separate cross-page plumbing.
+    if (targetPageId && targetPageId !== initial.currentPageId && initial.doc.pages[targetPageId]) {
+      initial.setCurrentPage(targetPageId);
+    }
+    setTargetPageId(null); // the picked page is now the open page; back to "follow"
+
     const state = useEditorStore.getState();
-    if (!state.doc) return;
+    const activePage = state.currentPageId ? state.doc?.pages[state.currentPageId] : undefined;
+    setRunPageName(activePage?.name ?? null);
     setPhase("planning");
     setError(null);
     setPlan(null);
@@ -165,7 +187,28 @@ export function AgentPanel() {
   return (
     <div className="flex h-full flex-col gap-3 p-3 text-xs">
       <div>
-        <p className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">What do you want to create?</p>
+        <div className="mb-1 flex items-center justify-between">
+          <p className="text-[10px] uppercase tracking-wider text-zinc-500">What do you want to create?</p>
+          {pages.length > 1 && (
+            <label className="flex items-center gap-1 text-[10px] text-zinc-500">
+              Page:
+              <select
+                aria-label="Target page"
+                className="rounded border border-[var(--border-subtle)] bg-[var(--bg-app)] px-1 py-0.5 text-[11px] text-zinc-300 disabled:opacity-40"
+                value={targetPageId ?? currentPageId ?? ""}
+                disabled={busy}
+                onChange={(e) => setTargetPageId(e.target.value === currentPageId ? null : e.target.value)}
+              >
+                {pages.map((page) => (
+                  <option key={page.id} value={page.id}>
+                    {page.name}
+                    {page.id === currentPageId ? " (open)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
         <textarea
           className="h-24 w-full resize-none rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] p-2 text-sm"
           placeholder={'e.g. "Create a 4-panel manga where Akari gets her exam result, celebrates, then realizes she misread the score."'}
@@ -231,7 +274,9 @@ export function AgentPanel() {
 
       {plan && steps.length > 0 && (
         <div className="min-h-0 flex-1 overflow-y-auto rounded-md bg-[var(--bg-elevated)] p-2">
-          <p className="mb-1 text-[10px] font-medium text-[var(--accent-text)]">Target: {plan.targetScope?.label ?? "Current Page"}</p>
+          <p className="mb-1 text-[10px] font-medium text-[var(--accent-text)]">
+            Target: {plan.targetScope?.label ?? (runPageName ? `Page · ${runPageName}` : "Current Page")}
+          </p>
           <p className="mb-1 text-zinc-400">{plan.summary}</p>
           <p className="mb-2 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Execution</p>
           <ul className="space-y-1">

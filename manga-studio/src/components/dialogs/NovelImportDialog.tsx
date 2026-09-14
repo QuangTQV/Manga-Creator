@@ -82,6 +82,9 @@ export function NovelImportDialog() {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [chapters, setChapters] = useState<ChapterOutline[]>([]);
   const [pageStates, setPageStates] = useState<Record<string, PageState>>({});
+  // Planned-page id -> the real project page it was generated onto, so
+  // regenerating overwrites that same page instead of leaving it behind.
+  const [generatedPageIds, setGeneratedPageIds] = useState<Record<string, string>>({});
   const [pageErrors, setPageErrors] = useState<Record<string, string>>({});
   const [parseError, setParseError] = useState<string | null>(null);
   const [restored, setRestored] = useState(false);
@@ -100,6 +103,7 @@ export function NovelImportDialog() {
       setPanelsPerPage(stored.panelsPerPage);
       setChapters(stored.chapters);
       setPageStates(stored.pageStates);
+      setGeneratedPageIds(stored.generatedPageIds ?? {});
       setStage(stored.chapters.some((ch) => ch.pages.length > 0) ? "review" : "characters");
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -107,7 +111,11 @@ export function NovelImportDialog() {
 
   if (!open) return null;
 
-  const persist = (nextChapters: ChapterOutline[], nextPageStates: Record<string, PageState>) => {
+  const persist = (
+    nextChapters: ChapterOutline[],
+    nextPageStates: Record<string, PageState>,
+    nextGeneratedPageIds: Record<string, string> = generatedPageIds,
+  ) => {
     const projectId = currentProjectId();
     if (!projectId) return;
     void saveNovelOutline({
@@ -116,6 +124,7 @@ export function NovelImportDialog() {
       panelsPerPage,
       chapters: nextChapters,
       pageStates: nextPageStates,
+      generatedPageIds: nextGeneratedPageIds,
       savedAt: new Date().toISOString(),
     });
   };
@@ -127,6 +136,7 @@ export function NovelImportDialog() {
     setStage("input");
     setChapters([]);
     setPageStates({});
+    setGeneratedPageIds({});
     setPageErrors({});
     setParseError(null);
     setProgress(null);
@@ -243,7 +253,22 @@ export function NovelImportDialog() {
     );
     setPageStates(nextPageStates);
     setPageErrors({});
-    persist(nextChapters, nextPageStates);
+    // Re-planned pages get fresh positional ids, so any earlier mapping to
+    // real project pages no longer corresponds to anything (replan is
+    // disabled once a page is generated, so this is normally already empty).
+    setGeneratedPageIds({});
+    persist(nextChapters, nextPageStates, {});
+  };
+
+  /** Edits a planned page's prompt text before (or between) generations — a
+   * pure local edit, no re-parsing, no AI call. */
+  const updatePagePrompt = (pageId: string, prompt: string) => {
+    const nextChapters = chapters.map((chapter) => ({
+      ...chapter,
+      pages: chapter.pages.map((page) => (page.id === pageId ? { ...page, prompt } : page)),
+    }));
+    setChapters(nextChapters);
+    persist(nextChapters, pageStates);
   };
 
   const generatePage = async (page: PlannedPage) => {
@@ -260,9 +285,22 @@ export function NovelImportDialog() {
     try {
       const store = useEditorStore.getState();
       if (!store.doc) throw new Error("No open project");
-      const created = store.dispatch({ type: "add-page", layout: layoutForPanelCount(page.panelCount) });
-      if (!created.createdId) throw new Error("Could not create a page for this panel");
-      store.setCurrentPage(created.createdId);
+      const layout = layoutForPanelCount(page.panelCount);
+      // Regenerating an already-generated page overwrites that same project
+      // page in place (same id/position) instead of leaving the old one
+      // behind — see resetPageLayout's docstring for why that's a real wipe,
+      // not the content-preserving reshape `set-page-layout` does elsewhere.
+      const existingPageId = generatedPageIds[page.id];
+      let targetPageId: string;
+      if (existingPageId && store.doc.pages[existingPageId]) {
+        store.dispatch({ type: "reset-page-layout", pageId: existingPageId, layout });
+        targetPageId = existingPageId;
+      } else {
+        const created = store.dispatch({ type: "add-page", layout });
+        if (!created.createdId) throw new Error("Could not create a page for this panel");
+        targetPageId = created.createdId;
+      }
+      store.setCurrentPage(targetPageId);
 
       const outcome: RunV3Outcome = await runCreativeDirection(page.prompt);
       if (outcome.kind === "blocked") throw new Error(outcome.reason);
@@ -274,10 +312,14 @@ export function NovelImportDialog() {
       if (result.execution.rolledBack || result.status === "failed") {
         throw new Error(result.execution.abortReason ?? "Generation failed — the page was left unchanged.");
       }
-      setPageStates((prev) => {
-        const next = { ...prev, [page.id]: "done" as PageState };
-        persist(chapters, next);
-        return next;
+      setGeneratedPageIds((prevIds) => {
+        const nextIds = { ...prevIds, [page.id]: targetPageId };
+        setPageStates((prev) => {
+          const next = { ...prev, [page.id]: "done" as PageState };
+          persist(chapters, next, nextIds);
+          return next;
+        });
+        return nextIds;
       });
     } catch (error) {
       setPageStates((prev) => {
@@ -523,6 +565,7 @@ export function NovelImportDialog() {
                         state={pageStates[page.id] ?? "planned"}
                         error={pageErrors[page.id]}
                         onGenerate={() => generatePage(page)}
+                        onPromptChange={(prompt) => updatePagePrompt(page.id, prompt)}
                       />
                     ))}
                   </div>
@@ -542,12 +585,14 @@ function PlannedPageRow({
   state,
   error,
   onGenerate,
+  onPromptChange,
 }: {
   index: number;
   page: PlannedPage;
   state: PageState;
   error?: string;
   onGenerate: () => void;
+  onPromptChange: (prompt: string) => void;
 }) {
   const badge: Record<PageState, { label: string; color: string }> = {
     planned: { label: "Planned", color: "var(--text-muted)" },
@@ -555,6 +600,7 @@ function PlannedPageRow({
     done: { label: "Generated", color: "var(--success)" },
     error: { label: "Failed", color: "#f87171" },
   };
+  const busy = state === "generating";
   return (
     <div className="rounded-md border border-zinc-800 p-2.5">
       <div className="mb-1 flex items-center justify-between">
@@ -565,16 +611,26 @@ function PlannedPageRow({
           {badge[state].label}
         </span>
       </div>
-      <pre className="mb-2 max-h-28 overflow-auto whitespace-pre-wrap rounded bg-[var(--bg-app)] p-2 font-mono text-[11px] leading-4 text-zinc-400">
-        {page.prompt}
-      </pre>
+      <textarea
+        className="mb-2 max-h-40 min-h-28 w-full resize-y overflow-auto whitespace-pre-wrap rounded border border-transparent bg-[var(--bg-app)] p-2 font-mono text-[11px] leading-4 text-zinc-400 hover:border-zinc-700 focus:border-[var(--accent)] focus:outline-none disabled:opacity-60"
+        value={page.prompt}
+        onChange={(e) => onPromptChange(e.target.value)}
+        disabled={busy}
+        aria-label={`Prompt for page ${index}`}
+        title={
+          state === "done"
+            ? "Editing this and regenerating replaces what's on the page now"
+            : "Edit the prompt the agent will receive before generating"
+        }
+      />
       {error && <p className="mb-2 text-[11px] text-red-400">{error}</p>}
       <button
         className="rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-[11px] hover:bg-zinc-700 disabled:opacity-40"
         onClick={onGenerate}
-        disabled={state === "generating"}
+        disabled={busy}
+        title={state === "done" ? "Replaces the current content of this page" : undefined}
       >
-        {state === "done" ? "Regenerate as a new page" : state === "generating" ? "Generating…" : "Generate this page"}
+        {state === "done" ? "Regenerate this page" : busy ? "Generating…" : "Generate this page"}
       </button>
     </div>
   );

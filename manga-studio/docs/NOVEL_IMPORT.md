@@ -45,7 +45,8 @@ pasted text
       (agent/novelParser/{prompt,schema}.ts)
   → planPages                      (pagination.ts, pure, no model call)
   → PlannedPage[] { prompt: string, beats, sceneLocation, ... }
-  → per page: add-page, setCurrentPage, runCreativeDirection, executeCreativeRun
+  → per page: add-page (first time) or reset-page-layout (regenerating),
+      setCurrentPage, runCreativeDirection, executeCreativeRun
       (the SAME functions AgentPanel.tsx uses for a manually-typed prompt)
 ```
 
@@ -95,7 +96,24 @@ decides meaning, code decides structure"), applied one level up:
   type it, because it IS handed to the Creative Director exactly like a
   manually-typed prompt. Its own literal-lock extraction is what turns
   quoted dialogue and named characters into the Creative Task Map; this
-  module never talks to that contract directly.
+  module never talks to that contract directly. The prompt shown per page
+  in the review stage is a plain, editable text field — the module's
+  scope stops at proposing a good default; the creator can rewrite it
+  before generating (or before regenerating) the same way they'd edit a
+  prompt typed straight into the Manga Agent.
+
+## Regenerating a page in place
+
+Generating an already-`done` planned page again does not leave the old
+page behind: `NovelImportDialog` remembers which real project `Page.id`
+each planned page produced (`generatedPageIds`, persisted alongside the
+rest of the outline) and, on regenerate, calls the `reset-page-layout`
+domain command against that same page id/position before re-running the
+Creative Director — a genuine wipe (old panels, scenes and items deleted,
+a fresh layout applied), not the content-preserving reshape `set-page-layout`
+does when a creator just changes a page's panel count by hand. If that
+project page was since deleted by hand, regenerate falls back to creating
+a new one, same as the first generation.
 
 ## Fidelity dial (`NovelFidelity`)
 
@@ -139,8 +157,9 @@ a rename never has to reconcile against already-computed page prompts.
 
 ## Persistence (`storage/novelOutlineStore.ts`)
 
-The parsed outline (chapters, characters, scenes, planned pages, and each
-page's generation status) is saved per project in its own IndexedDB object
+The parsed outline (chapters, characters, scenes, planned pages, each
+page's generation status, and the planned-page → real-page id map used by
+regenerate) is saved per project in its own IndexedDB object
 store — separate from `projectStore.ts`'s `ProjectDocument` (no
 `SCHEMA_VERSION` bump: an outline is scratch planning state, not part of
 the project's own domain model). Saved after every state-changing action
