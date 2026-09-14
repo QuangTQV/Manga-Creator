@@ -6,6 +6,8 @@ import { resolveProvider } from "@/server/providerSession";
 import { createImageProvider } from "@/ai/providerRegistry";
 import { createBackgroundRemovalProvider } from "@/assets/providers/registry";
 import { createAssetProcessingPipeline } from "@/assets/processingPipeline";
+import { recordLiveCall } from "@/server/callLog";
+import { readSessionTag } from "@/server/sessionTag";
 
 export const runtime = "nodejs";
 
@@ -36,6 +38,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Unsupported image format. Use PNG, JPG, or WEBP." }, { status: 415 });
   }
 
+  const sessionTag = readSessionTag(request);
+  const startedAt = Date.now();
   try {
     const category = parseCategory(form.get("category"));
     const imageConfig = resolveProvider(request, "image")?.config;
@@ -51,6 +55,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         backgroundProvider: backgroundConfig ? createBackgroundRemovalProvider(backgroundConfig) : undefined,
       }),
     });
+    // Only worth a Live AI entry when a provider actually did something — a
+    // plain upload with no processing (or the local heuristic alone) never
+    // called an AI provider at all.
+    if (stored.backgroundRemovalProvider) {
+      recordLiveCall(sessionTag, {
+        kind: "image",
+        route: "assets-upload",
+        provider: stored.backgroundRemovalProvider,
+        startedAt,
+        durationMs: Date.now() - startedAt,
+        ok: stored.processingStatus !== "failed",
+        request: { category },
+        response: { method: stored.backgroundRemovalMethod, backgroundRemoved: stored.backgroundRemoved },
+      });
+    }
     return NextResponse.json({
       url: stored.processedImageUrl ?? stored.sourceUrl,
       sourceUrl: stored.sourceUrl,

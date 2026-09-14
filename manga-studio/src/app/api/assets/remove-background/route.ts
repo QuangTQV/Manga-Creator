@@ -7,6 +7,8 @@ import { resolveProvider } from "@/server/providerSession";
 import { createImageProvider } from "@/ai/providerRegistry";
 import { createBackgroundRemovalProvider } from "@/assets/providers/registry";
 import { createAssetProcessingPipeline } from "@/assets/processingPipeline";
+import { recordLiveCall } from "@/server/callLog";
+import { readSessionTag } from "@/server/sessionTag";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -21,6 +23,8 @@ const requestSchema = z.object({
 /** Create a non-destructive transparent derivative for an existing source asset. */
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = crypto.randomUUID();
+  const sessionTag = readSessionTag(request);
+  const startedAtEpoch = Date.now();
   const startedAt = performance.now();
   const trace = (stage: string, details: Record<string, string | number | boolean | undefined> = {}) => {
     console.info("[bg-remove]", JSON.stringify({ requestId, stage, atMs: Math.round(performance.now() - startedAt), ...details }));
@@ -29,6 +33,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const body = await request.json().catch(() => null);
   const parsed = requestSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Invalid background-removal request", requestId }, { status: 400 });
+  const liveRequest = { category: parsed.data.category, strategy: parsed.data.strategy };
   try {
     const source = await loadStoredAsset(parsed.data.sourceUrl);
     trace("asset_loaded", { bytes: source.data.length, mimeType: source.mimeType, category: parsed.data.category });
@@ -47,6 +52,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     trace("processor_completed", { status: result.processingStatus, method: result.processingMethod });
     if (result.processingStatus === "failed") {
       trace("response_returned", { status: 422, failureStage: "foreground_extraction" });
+      recordLiveCall(sessionTag, {
+        kind: "image",
+        route: "assets-remove-background",
+        startedAt: startedAtEpoch,
+        durationMs: Date.now() - startedAtEpoch,
+        ok: false,
+        request: liveRequest,
+        error: { message: result.reason ?? "Background removal failed", status: 422 },
+      });
       return NextResponse.json({
         hasAlpha: false,
         backgroundRemoved: false,
@@ -62,6 +76,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       : parsed.data.sourceUrl;
     trace("asset_saved", { derivativeCreated: Boolean(result.processedData) });
     trace("response_returned", { status: 200 });
+    recordLiveCall(sessionTag, {
+      kind: "image",
+      route: "assets-remove-background",
+      provider: result.processingProvider,
+      startedAt: startedAtEpoch,
+      durationMs: Date.now() - startedAtEpoch,
+      ok: true,
+      request: liveRequest,
+      response: { method: result.processingMethod, backgroundRemoved: result.backgroundRemoved, url: processedImageUrl },
+    });
     return NextResponse.json({
       processedImageUrl,
       hasAlpha: true,
@@ -75,6 +99,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const status = error instanceof ProviderError ? error.status : 500;
     const message = error instanceof ProviderError ? error.safeMessage : "Background removal failed";
     trace("response_returned", { status, failureStage: "route" });
+    recordLiveCall(sessionTag, {
+      kind: "image",
+      route: "assets-remove-background",
+      startedAt: startedAtEpoch,
+      durationMs: Date.now() - startedAtEpoch,
+      ok: false,
+      request: liveRequest,
+      error: { message, status },
+    });
     return NextResponse.json({ error: message, processingStatus: "failed", requestId }, { status });
   }
 }

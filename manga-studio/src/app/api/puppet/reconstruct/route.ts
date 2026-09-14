@@ -5,6 +5,8 @@ import { ProviderError } from "@/ai/types";
 import { putObject } from "@/storage/objectStore";
 import { resolveProvider } from "@/server/providerSession";
 import { createImageProvider } from "@/ai/providerRegistry";
+import { recordLiveCall, truncateForLog } from "@/server/callLog";
+import { readSessionTag } from "@/server/sessionTag";
 import { hiddenRegionInstruction } from "@/puppet/compiler";
 import type { PuppetPartType } from "@/puppet/model";
 
@@ -33,6 +35,8 @@ const requestSchema = z.object({
  */
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = crypto.randomUUID();
+  const sessionTag = readSessionTag(request);
+  const startedAt = Date.now();
   const trace = (stage: string, details: Record<string, string | number | boolean | undefined> = {}) => {
     console.info("[puppet-reconstruct]", JSON.stringify({ requestId, stage, ...details }));
   };
@@ -41,6 +45,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid reconstruction request", requestId }, { status: 400 });
   }
+  const liveRequest = { partType: parsed.data.partType };
 
   try {
     const imageConfig = resolveProvider(request, "image", trace)?.config;
@@ -60,8 +65,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const source = await loadStoredAsset(parsed.data.sourceUrl);
     trace("source_loaded", { bytes: source.data.length });
+    const instruction = hiddenRegionInstruction(parsed.data.partType as PuppetPartType);
     const edited = await provider.editImage({
-      instruction: hiddenRegionInstruction(parsed.data.partType as PuppetPartType),
+      instruction,
       image: { mimeType: source.mimeType, data: source.data, url: parsed.data.sourceUrl },
       trace,
     });
@@ -71,12 +77,30 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       edited.mimeType,
     );
     trace("reconstruction_stored", { url: stored.url });
+    recordLiveCall(sessionTag, {
+      kind: "image",
+      route: "puppet-reconstruct",
+      provider: provider.id,
+      model: provider.model,
+      startedAt,
+      durationMs: Date.now() - startedAt,
+      ok: true,
+      request: { ...liveRequest, instruction: truncateForLog(instruction) },
+      response: { url: stored.url, mimeType: edited.mimeType },
+    });
     return NextResponse.json({ url: stored.url, mimeType: edited.mimeType, requestId });
   } catch (error) {
     const status = error instanceof ProviderError ? error.status : 500;
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Reconstruction failed", requestId },
-      { status },
-    );
+    const message = error instanceof Error ? error.message : "Reconstruction failed";
+    recordLiveCall(sessionTag, {
+      kind: "image",
+      route: "puppet-reconstruct",
+      startedAt,
+      durationMs: Date.now() - startedAt,
+      ok: false,
+      request: liveRequest,
+      error: { message, status },
+    });
+    return NextResponse.json({ error: message, requestId }, { status });
   }
 }

@@ -6,6 +6,8 @@ import { ProviderError } from "@/ai/types";
 import { putObject } from "@/storage/objectStore";
 import { resolveProvider } from "@/server/providerSession";
 import { createImageProvider } from "@/ai/providerRegistry";
+import { recordLiveCall, truncateForLog } from "@/server/callLog";
+import { readSessionTag } from "@/server/sessionTag";
 import {
   DEFAULT_FEATHER,
   compositeLocalEdit,
@@ -43,6 +45,8 @@ const requestSchema = z.object({
  */
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = crypto.randomUUID();
+  const sessionTag = readSessionTag(request);
+  const startedAt = Date.now();
   const trace = (stage: string, details: Record<string, string | number | boolean | undefined> = {}) => {
     console.info("[asset-edit]", JSON.stringify({ requestId, stage, ...details }));
   };
@@ -52,6 +56,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid edit request", requestId }, { status: 400 });
   }
+  const liveRequest = { instruction: truncateForLog(parsed.data.instruction), preserveAlpha: parsed.data.preserveAlpha };
 
   try {
     const imageConfig = resolveProvider(request, "image", trace)?.config;
@@ -120,6 +125,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const png = await sharp(finalRgba, { raw: { width, height, channels: 4 } }).png().toBuffer();
     const stored = await putObject(`edits/local-${crypto.randomUUID()}.png`, png, "image/png");
     trace("edit_stored", { editedPixels: composited.editedPixels, preserved: composited.preservedPixels });
+    recordLiveCall(sessionTag, {
+      kind: "image",
+      route: "assets-edit",
+      provider: provider.id,
+      model: provider.model,
+      startedAt,
+      durationMs: Date.now() - startedAt,
+      ok: true,
+      request: liveRequest,
+      response: { url: stored.url, editedPixels: composited.editedPixels, preservedPixels: composited.preservedPixels },
+    });
 
     return NextResponse.json({
       url: stored.url,
@@ -133,10 +149,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   } catch (error) {
     // The original is never modified, so a failure leaves the asset intact.
     const status = error instanceof ProviderError ? error.status : 500;
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Local edit failed", requestId },
-      { status },
-    );
+    const message = error instanceof Error ? error.message : "Local edit failed";
+    recordLiveCall(sessionTag, {
+      kind: "image",
+      route: "assets-edit",
+      startedAt,
+      durationMs: Date.now() - startedAt,
+      ok: false,
+      request: liveRequest,
+      error: { message, status },
+    });
+    return NextResponse.json({ error: message, requestId }, { status });
   }
 }
 

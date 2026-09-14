@@ -60,6 +60,18 @@ const BACKGROUND_PROTOCOLS = [
   { id: "custom", label: "Custom JSON", placeholder: "https://example.com/cutout" },
 ];
 
+/**
+ * Ollama and LM Studio are not separate API standards — both simply serve
+ * an OpenAI-compatible endpoint on a well-known local port, so they are
+ * quick-fill shortcuts for the "openai-compatible" protocol's Base URL
+ * field, not entries in the protocol picker (which stays protocol-first,
+ * not a vendor list, per the file's own docstring above).
+ */
+const LOCAL_SERVER_PRESETS = [
+  { label: "Ollama", baseUrl: "http://localhost:11434/v1" },
+  { label: "LM Studio", baseUrl: "http://localhost:1234/v1" },
+];
+
 /** One row in the fallback-provider editor. Simple protocols only (no
  * "custom" JSON mapping) — keeps a per-row mini-form manageable; a fully
  * custom fallback can still be reached by hand-editing the stored cookie
@@ -267,33 +279,28 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
     setBusy("save");
     setMessage(null);
     try {
-      // Same "empty = keep what's stored" convention as the primary API key:
-      // rotation is not offered for background removal (see withRotation.ts),
-      // so these are simply omitted there.
-      const rotation =
-        kind === "background"
-          ? {}
-          : {
-              backupApiKeys: backupApiKeysText.trim()
-                ? backupApiKeysText.split("\n").map((k) => k.trim()).filter(Boolean)
+      // Same "empty = keep what's stored" convention as the primary API key.
+      const rotation = {
+        backupApiKeys: backupApiKeysText.trim()
+          ? backupApiKeysText.split("\n").map((k) => k.trim()).filter(Boolean)
+          : undefined,
+        rotationStrategy,
+        // Only sent once the user has actually opened the fallback
+        // editor — otherwise omitted, which keeps whatever chain (if
+        // any) is already stored.
+        fallbackProviders: fallbackTouched
+          ? fallbackRows.map((row) => ({
+              providerType: row.providerType,
+              name: row.name || undefined,
+              baseUrl: row.baseUrl || undefined,
+              apiKey: row.apiKey || undefined,
+              model: kind === "background" ? "background-removal" : row.model,
+              backupApiKeys: row.backupApiKeysText.trim()
+                ? row.backupApiKeysText.split("\n").map((k) => k.trim()).filter(Boolean)
                 : undefined,
-              rotationStrategy,
-              // Only sent once the user has actually opened the fallback
-              // editor — otherwise omitted, which keeps whatever chain (if
-              // any) is already stored.
-              fallbackProviders: fallbackTouched
-                ? fallbackRows.map((row) => ({
-                    providerType: row.providerType,
-                    name: row.name || undefined,
-                    baseUrl: row.baseUrl || undefined,
-                    apiKey: row.apiKey || undefined,
-                    model: row.model,
-                    backupApiKeys: row.backupApiKeysText.trim()
-                      ? row.backupApiKeysText.split("\n").map((k) => k.trim()).filter(Boolean)
-                      : undefined,
-                  }))
-                : undefined,
-            };
+            }))
+          : undefined,
+      };
       const payload = isCustom
         ? {
             kind,
@@ -436,6 +443,26 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
               onChange={(e) => setBaseUrl(e.target.value)}
               placeholder={typeInfo.placeholder}
             />
+            {providerType === "openai-compatible" && kind !== "background" && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <span className="text-[10px] text-zinc-600">Local server:</span>
+                {LOCAL_SERVER_PRESETS.map((preset) => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[10px] hover:bg-zinc-700"
+                    onClick={() => setBaseUrl(preset.baseUrl)}
+                    title={`Fill in the default ${preset.label} address (${preset.baseUrl})`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+                <span className="text-[10px] text-zinc-600">
+                  — requires <code className="font-mono">ALLOW_PRIVATE_NETWORKS=1</code> in dev; never enable in
+                  production
+                </span>
+              </div>
+            )}
           </Field>
 
           <Field label="API key">
@@ -524,11 +551,10 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
         </div>
       </details>
 
-      {kind !== "background" && (
-        <details className="mt-2" open={Boolean(summary?.backupKeyCount || summary?.fallbackProviders?.length)}>
-          <summary className="cursor-pointer select-none text-[10px] uppercase tracking-wider text-zinc-500">
-            Advanced — rotation &amp; fallback
-          </summary>
+      <details className="mt-2" open={Boolean(summary?.backupKeyCount || summary?.fallbackProviders?.length)}>
+        <summary className="cursor-pointer select-none text-[10px] uppercase tracking-wider text-zinc-500">
+          Advanced — rotation &amp; fallback
+        </summary>
           <div className="mt-2">
             <Field label="Backup API keys (one per line, optional)">
               <textarea
@@ -588,8 +614,7 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
               />
             </div>
           </div>
-        </details>
-      )}
+      </details>
 
       <div className="mt-2 flex items-center gap-2">
         <button
