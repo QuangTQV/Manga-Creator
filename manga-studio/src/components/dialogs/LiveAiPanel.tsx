@@ -31,10 +31,32 @@ interface LiveCallLogEntry {
   error?: { message: string; status?: number };
 }
 
+interface ProviderUsageStats {
+  kind: "image" | "agent";
+  route: string;
+  provider?: string;
+  model?: string;
+  calls: number;
+  ok: number;
+  failed: number;
+  totalDurationMs: number;
+}
+
+interface UsageStats {
+  since: number;
+  totalCalls: number;
+  totalOk: number;
+  totalFailed: number;
+  totalDurationMs: number;
+  byKey: Record<string, ProviderUsageStats>;
+}
+
 export function LiveAiPanel() {
   const open = useUiStore((s) => s.liveAiOpen);
   const close = useUiStore((s) => s.closeLiveAi);
   const [entries, setEntries] = useState<LiveCallLogEntry[]>([]);
+  const [usage, setUsage] = useState<UsageStats | null>(null);
+  const [showUsage, setShowUsage] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const seenCount = useRef(0);
 
@@ -43,10 +65,19 @@ export function LiveAiPanel() {
     let cancelled = false;
     const poll = async () => {
       try {
-        const response = await fetch("/api/live/log");
-        if (!response.ok || cancelled) return;
-        const body = (await response.json()) as { entries: LiveCallLogEntry[] };
-        if (!cancelled) setEntries(body.entries);
+        const [logResponse, usageResponse] = await Promise.all([
+          fetch("/api/live/log"),
+          fetch("/api/live/usage"),
+        ]);
+        if (cancelled) return;
+        if (logResponse.ok) {
+          const body = (await logResponse.json()) as { entries: LiveCallLogEntry[] };
+          if (!cancelled) setEntries(body.entries);
+        }
+        if (usageResponse.ok) {
+          const body = (await usageResponse.json()) as UsageStats;
+          if (!cancelled) setUsage(body);
+        }
       } catch {
         // Transient — the next poll tries again; nothing to show the user for one miss.
       }
@@ -120,6 +151,41 @@ export function LiveAiPanel() {
           Every request sent to your connected AI provider(s) and their response, for this browser only. Updates
           about every {Math.round(POLL_INTERVAL_MS / 1000)}s while a generation is running.
         </p>
+
+        {usage && usage.totalCalls > 0 && (
+          <div className="border-b border-[var(--border-subtle)] px-4 py-2">
+            <button
+              className="flex w-full items-center justify-between text-left text-[11px] text-zinc-400"
+              onClick={() => setShowUsage((v) => !v)}
+            >
+              <span>
+                {usage.totalCalls} call(s) since server start — {usage.totalOk} ok, {usage.totalFailed} failed
+              </span>
+              <span className="text-zinc-600">{showUsage ? "Hide breakdown" : "Show breakdown"}</span>
+            </button>
+            {showUsage && (
+              <div className="mt-2 flex flex-col gap-1">
+                {Object.entries(usage.byKey).map(([key, stat]) => (
+                  <div key={key} className="flex items-center justify-between text-[10px] text-zinc-500">
+                    <span className="truncate">
+                      {stat.route}
+                      {stat.provider ? ` · ${stat.provider}` : ""}
+                      {stat.model ? ` · ${stat.model}` : ""}
+                    </span>
+                    <span className="shrink-0 pl-2">
+                      {stat.calls} call(s) · {stat.failed > 0 ? `${stat.failed} failed · ` : ""}
+                      avg {Math.round(stat.totalDurationMs / stat.calls)}ms
+                    </span>
+                  </div>
+                ))}
+                <p className="mt-1 text-[10px] text-zinc-600">
+                  Call counts and durations only — BYOK means this app never sees a bill, so there is no dollar
+                  figure to show. Resets when the server restarts.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex-1 overflow-y-auto p-3">
           {entries.length === 0 ? (

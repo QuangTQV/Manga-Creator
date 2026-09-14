@@ -71,7 +71,9 @@ machine**:
 - **Live AI.** A panel (top bar → "Live AI") showing the actual prompt sent
   to your connected provider and its raw response, live, for every image
   generation and Manga Agent call — scoped to your own browser, never
-  visible to anyone else even on a shared deployment.
+  visible to anyone else even on a shared deployment. Includes a usage
+  summary (call counts and durations by provider/model, since the server
+  started) — no dollar cost, since BYOK means this app never sees a bill.
 - **Novel Import.** Paste a chapter (or a whole novel) and get a walkthrough
   of planned pages — the AI structures the prose into scenes and beats
   first, a deterministic pass decides page/panel boundaries from that, and

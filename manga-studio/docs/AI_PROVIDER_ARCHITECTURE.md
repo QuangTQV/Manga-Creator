@@ -141,13 +141,14 @@ Recognized hybrid Qwen models use non-thinking mode for latency-sensitive routin
 ## Live AI (call log)
 
 A "Live AI" panel (top bar → `LiveAiPanel.tsx`) shows the actual request sent
-to whichever provider handled a call and the actual response, for image
-generation (`/api/generate`) and both agent planning paths (`/api/agent`,
-`/api/agent/direct`) — the exact prompt/system-prompt text, not just the
-stage-timing metadata `trace`/`AgentTrace` already logged to the server
-console for diagnostics.
+to whichever provider handled a call and the actual response — for image
+generation (`/api/generate`, `assets/edit`, `assets/upload`,
+`assets/remove-background`, `puppet/reconstruct`) and both agent planning
+paths (`/api/agent`, `/api/agent/direct`, `/api/agent/parse-novel`) — the
+exact prompt/system-prompt text, not just the stage-timing metadata
+`trace`/`AgentTrace` already logged to the server console for diagnostics.
 
-- **Capture point**: each of those three routes calls `recordLiveCall`
+- **Capture point**: each of those routes calls `recordLiveCall`
   (`src/server/callLog.ts`) with a redacted/truncated summary of what it
   sent and what came back — deliberately at the ROUTE, not inside the
   provider adapters or the rotation wrapper, so it reflects the logical
@@ -175,11 +176,15 @@ console for diagnostics.
 - **What is NOT logged**: raw image bytes (only `mimeType`/whether a
   reference was used/the URL — memory-bounded, and the asset library
   already shows the image itself), and never any API key/credential.
-- **Out of scope for now**: `assets/edit`, `assets/upload`,
-  `assets/remove-background`, and `puppet/reconstruct` do not yet record
-  to the Live AI log (they call `createImageProvider` directly for image
-  editing/background-removal, a supporting operation rather than a primary
-  "ask AI something" call) — natural follow-up if that turns out to matter.
+- **Usage stats, not cost**: every `recordLiveCall` also updates a
+  `UsageStats` counter per session — total calls/successes/failures and a
+  breakdown by (kind, route, provider, model), unbounded (unlike the
+  40-entry `entries` ring buffer) but still reset by a server restart, no
+  more durable than the rest of this module. `GET /api/live/usage` returns
+  it; the Live AI panel shows it as a collapsible summary. Deliberately
+  never a dollar figure — BYOK means this process only ever sees the call
+  itself, never a bill, so there is nothing honest to convert a call count
+  into.
 
 ## Generation rules
 

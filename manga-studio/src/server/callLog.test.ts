@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { clearLiveCalls, getLiveCalls, recordLiveCall, resetCallLogForTests, truncateForLog } from "./callLog";
+import { clearLiveCalls, getLiveCalls, getUsageStats, recordLiveCall, resetCallLogForTests, truncateForLog } from "./callLog";
 
 beforeEach(() => {
   resetCallLogForTests();
@@ -73,6 +73,56 @@ describe("clearLiveCalls", () => {
 
   it("is a no-op for a session that was never recorded to", () => {
     expect(() => clearLiveCalls("never-seen")).not.toThrow();
+  });
+});
+
+describe("getUsageStats", () => {
+  it("starts at zero for a session with no recorded calls", () => {
+    const usage = getUsageStats("never-seen");
+    expect(usage).toMatchObject({ totalCalls: 0, totalOk: 0, totalFailed: 0, totalDurationMs: 0, byKey: {} });
+  });
+
+  it("accumulates totals across calls, split by ok/failed", () => {
+    recordLiveCall("session-a", entry({ ok: true, durationMs: 100 }));
+    recordLiveCall("session-a", entry({ ok: false, durationMs: 50 }));
+    const usage = getUsageStats("session-a");
+    expect(usage.totalCalls).toBe(2);
+    expect(usage.totalOk).toBe(1);
+    expect(usage.totalFailed).toBe(1);
+    expect(usage.totalDurationMs).toBe(150);
+  });
+
+  it("breaks totals down by kind/route/provider/model", () => {
+    recordLiveCall("session-a", entry({ provider: "gemini", model: "gemini-2.5-flash-image", durationMs: 10 }));
+    recordLiveCall("session-a", entry({ provider: "gemini", model: "gemini-2.5-flash-image", durationMs: 20 }));
+    recordLiveCall("session-a", entry({ provider: "openai-compatible", model: "gpt-image-1", durationMs: 30 }));
+    const usage = getUsageStats("session-a");
+    const keys = Object.keys(usage.byKey);
+    expect(keys).toHaveLength(2);
+    const gemini = usage.byKey[keys.find((k) => k.includes("gemini"))!];
+    expect(gemini).toMatchObject({ calls: 2, ok: 2, failed: 0, totalDurationMs: 30, provider: "gemini" });
+  });
+
+  it("keeps usage separate per session", () => {
+    recordLiveCall("session-a", entry());
+    recordLiveCall("session-b", entry());
+    recordLiveCall("session-b", entry());
+    expect(getUsageStats("session-a").totalCalls).toBe(1);
+    expect(getUsageStats("session-b").totalCalls).toBe(2);
+  });
+
+  it("is not reset by clearLiveCalls — usage is a separate, longer-lived counter", () => {
+    recordLiveCall("session-a", entry());
+    clearLiveCalls("session-a");
+    expect(getUsageStats("session-a").totalCalls).toBe(1);
+    expect(getLiveCalls("session-a")).toEqual([]);
+  });
+
+  it("returns a copy — mutating the result cannot corrupt the counters", () => {
+    recordLiveCall("session-a", entry());
+    const usage = getUsageStats("session-a");
+    usage.totalCalls = 999;
+    expect(getUsageStats("session-a").totalCalls).toBe(1);
   });
 });
 

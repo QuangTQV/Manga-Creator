@@ -7,6 +7,14 @@
  * short poll while the panel is open is the choice that actually works the
  * same in `npm run dev` and on Vercel.
  *
+ * Also maintains `UsageStats` — call counts/durations by provider+model,
+ * since the server process started. Deliberately never a dollar figure:
+ * BYOK means this process only ever sees the call itself, never a bill, so
+ * a "cost" number here would just be a made-up estimate wearing a real
+ * one's clothes. Unlike the 40-entry `entries` ring buffer, usage counters
+ * are never trimmed — only reset by a server restart or (for tests)
+ * `resetCallLogForTests`.
+ *
  * Scoped by `sessionTag` (see `sessionTag.ts`) so one visitor's prompts are
  * never visible to another's Live AI panel on a shared deployment.
  *
@@ -45,9 +53,38 @@ const MAX_IDLE_MS = 2 * 60 * 60 * 1000;
  * sent, not to keep an unbounded transcript archive in server memory. */
 const DEFAULT_TRUNCATE_LENGTH = 4000;
 
+export interface ProviderUsageStats {
+  calls: number;
+  ok: number;
+  failed: number;
+  totalDurationMs: number;
+}
+
+export interface UsageStats {
+  /** Since the server process started (or the session bucket was last
+   * evicted) — NOT a durable historical ledger. A real cost figure isn't
+   * knowable from here at all: BYOK means this process never sees a bill,
+   * only call counts and durations, so this deliberately never claims a
+   * dollar amount. */
+  since: number; // epoch ms
+  totalCalls: number;
+  totalOk: number;
+  totalFailed: number;
+  totalDurationMs: number;
+  /** Keyed by "kind/route/provider/model" — fine-grained enough to see
+   * which specific provider or model is actually absorbing the traffic
+   * when rotation is spreading calls across several. */
+  byKey: Record<string, ProviderUsageStats & { kind: LiveCallKind; route: string; provider?: string; model?: string }>;
+}
+
 interface SessionBucket {
   entries: LiveCallLogEntry[];
+  usage: UsageStats;
   lastTouchedAt: number;
+}
+
+function emptyUsage(): UsageStats {
+  return { since: Date.now(), totalCalls: 0, totalOk: 0, totalFailed: 0, totalDurationMs: 0, byKey: {} };
 }
 
 const buckets = new Map<string, SessionBucket>();
@@ -63,7 +100,7 @@ function bucketFor(sessionTag: string): SessionBucket {
   evictStaleBuckets(now);
   let bucket = buckets.get(sessionTag);
   if (!bucket) {
-    bucket = { entries: [], lastTouchedAt: now };
+    bucket = { entries: [], usage: emptyUsage(), lastTouchedAt: now };
     buckets.set(sessionTag, bucket);
   }
   bucket.lastTouchedAt = now;
@@ -75,7 +112,36 @@ export function recordLiveCall(sessionTag: string, entry: Omit<LiveCallLogEntry,
   const bucket = bucketFor(sessionTag);
   bucket.entries.push(full);
   if (bucket.entries.length > MAX_ENTRIES_PER_SESSION) bucket.entries.shift();
+
+  const usage = bucket.usage;
+  usage.totalCalls += 1;
+  usage.totalDurationMs += entry.durationMs;
+  if (entry.ok) usage.totalOk += 1;
+  else usage.totalFailed += 1;
+  const key = `${entry.kind}/${entry.route}/${entry.provider ?? "—"}/${entry.model ?? "—"}`;
+  const perKey = usage.byKey[key] ?? {
+    kind: entry.kind,
+    route: entry.route,
+    provider: entry.provider,
+    model: entry.model,
+    calls: 0,
+    ok: 0,
+    failed: 0,
+    totalDurationMs: 0,
+  };
+  perKey.calls += 1;
+  perKey.totalDurationMs += entry.durationMs;
+  if (entry.ok) perKey.ok += 1;
+  else perKey.failed += 1;
+  usage.byKey[key] = perKey;
+
   return full;
+}
+
+/** Since-server-start usage counts for this session, broken down by
+ * provider/model — see UsageStats for why this is never a dollar cost. */
+export function getUsageStats(sessionTag: string): UsageStats {
+  return structuredClone(buckets.get(sessionTag)?.usage ?? emptyUsage());
 }
 
 /** Oldest first — the order a log/timeline reads naturally. */
