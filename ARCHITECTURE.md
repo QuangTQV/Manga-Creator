@@ -50,13 +50,18 @@ User prompt
   + summary), `process/*` (per-domain step execution), `validation/`.
 - `src/agent/` — shared planning-side vocabulary (literal evidence, resolver,
   tool schemas, step policy) plus provider plumbing.
+- `src/agent/novelParser/` — novel text → structured scenes/beats → planned
+  pages, upstream of agent-v3: each planned page is a plain-language prompt
+  handed to the ordinary `runCreativeDirection`/`executeCreativeRun` path,
+  not a second execution engine. See `docs/NOVEL_IMPORT.md`.
 
 ## Providers & storage
 
 - `src/ai/` + `src/server/` — provider registry and credential/session
   handling, server-side only. BYOK: keys never leave the user's own setup.
 - `src/app/api/` — HTTP routes: generate, assets/edit, remove-background,
-  agent, agent/direct, provider status.
+  agent, agent/direct, agent/parse-novel, provider status, live/log,
+  live/clear.
 - `src/storage/` — projects in IndexedDB; generated/edited images via
   objectStore (Vercel Blob when a token exists, local `.data/` otherwise).
   Nothing requires Vercel.

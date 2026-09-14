@@ -72,6 +72,12 @@ machine**:
   to your connected provider and its raw response, live, for every image
   generation and Manga Agent call — scoped to your own browser, never
   visible to anyone else even on a shared deployment.
+- **Novel Import.** Paste a chapter (or a whole novel) and get a walkthrough
+  of planned pages — the AI structures the prose into scenes and beats
+  first, a deterministic pass decides page/panel boundaries from that, and
+  you generate each page through the same Manga Agent as any other page,
+  one at a time. See
+  [docs/NOVEL_IMPORT.md](manga-studio/docs/NOVEL_IMPORT.md).
 - **Persistence & export.** Projects survive refresh (IndexedDB + remote object
   storage for images); pages export to PNG at 1× / 2×.
 

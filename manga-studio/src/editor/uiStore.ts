@@ -95,6 +95,8 @@ interface UiState {
   /** Live AI panel: what was actually sent to the connected AI provider(s)
    * and how they responded, for the current browser session. */
   liveAiOpen: boolean;
+  /** Novel Import: paste prose, get a planned-page walkthrough. */
+  novelImportOpen: boolean;
   /**
    * Advanced / Developer surface.
    *
@@ -132,6 +134,8 @@ interface UiState {
   setAdvancedMode(enabled: boolean): void;
   openLiveAi(): void;
   closeLiveAi(): void;
+  openNovelImport(): void;
+  closeNovelImport(): void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -152,6 +156,7 @@ export const useUiStore = create<UiState>((set) => ({
   settingsOpen: false,
   artStyleOpen: false,
   liveAiOpen: false,
+  novelImportOpen: false,
   advancedMode: false,
   openGenerator: (request) => set({ generator: request }),
   closeGenerator: () => set({ generator: null }),
@@ -182,4 +187,6 @@ export const useUiStore = create<UiState>((set) => ({
   closeArtStyle: () => set({ artStyleOpen: false }),
   openLiveAi: () => set({ liveAiOpen: true }),
   closeLiveAi: () => set({ liveAiOpen: false }),
+  openNovelImport: () => set({ novelImportOpen: true }),
+  closeNovelImport: () => set({ novelImportOpen: false }),
 }));

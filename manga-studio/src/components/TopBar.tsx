@@ -20,6 +20,7 @@ import {
   ICON_SIZE,
   ICON_STROKE,
   LiveIcon,
+  NovelIcon,
   RedoIcon,
   SettingsIcon,
   StyleIcon,
@@ -75,6 +76,7 @@ export function TopBar() {
   const openArtStyle = useUiStore((s) => s.openArtStyle);
   const openGenerator = useUiStore((s) => s.openGenerator);
   const openLiveAi = useUiStore((s) => s.openLiveAi);
+  const openNovelImport = useUiStore((s) => s.openNovelImport);
   const [exporting, setExporting] = useState(false);
 
   if (!doc) return null;
@@ -165,6 +167,14 @@ export function TopBar() {
         items={GENERATE_TARGETS.map((target) => ({ key: target.key, label: target.label }))}
         onPick={(key) => openGenerator({ assetType: key as GeneratorRequest["assetType"] })}
       />
+      <Button
+        variant="ghost"
+        icon={<NovelIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+        onClick={openNovelImport}
+        title="Turn pasted novel/story text into a planned page-by-page script"
+      >
+        Novel Import
+      </Button>
       <Dropdown
         label="Bubble"
         items={BUBBLE_TYPES.map((b) => ({ key: b.type, label: b.label }))}
