@@ -96,6 +96,13 @@ Credentials are AES-GCM-encrypted into HttpOnly session cookies — never
 client-readable, never stored in project data. Replace or forget them any time,
 no redeploys.
 
+**Multi-key rotation (optional).** Add backup API keys for the same
+provider/model in "Advanced — multi-key rotation" on the Agent/Image cards.
+Generation automatically rotates across them on rate limit, no credit, or an
+invalid key — round-robin by default, so several free-tier keys multiply
+your effective throughput instead of sitting idle until the primary fails.
+See [docs/AI_PROVIDER_ARCHITECTURE.md](manga-studio/docs/AI_PROVIDER_ARCHITECTURE.md#multi-key-rotation).
+
 ## Is my data private?
 
 Yes — Kumanga is local-first. Projects, assets and generated images live in

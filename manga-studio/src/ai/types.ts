@@ -103,15 +103,20 @@ export class ProviderError extends Error {
   readonly safeMessage: string;
   readonly status: number;
   readonly details?: Record<string, string | number | boolean>;
+  /** Provider-reported `Retry-After`, when it sent one on a 429 — lets
+   * rotation cool down for the real duration instead of a blind guess. */
+  readonly retryAfterSeconds?: number;
 
   constructor(
     safeMessage: string,
     status = 502,
     details?: Record<string, string | number | boolean>,
+    retryAfterSeconds?: number,
   ) {
     super(safeMessage);
     this.safeMessage = safeMessage;
     this.status = status;
     this.details = details;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }

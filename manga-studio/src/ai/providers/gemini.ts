@@ -6,6 +6,7 @@
 
 import { redactSecrets } from "../security";
 import { outboundFetch, readBodyText, UnsafeOutboundUrlError } from "@/server/outboundFetch";
+import { parseRetryAfterSeconds } from "@/server/retryAfter";
 import {
   ProviderError,
   type ImageGenerationProvider,
@@ -97,12 +98,17 @@ async function runGeminiImageRequest(
   request.trace?.("outbound_response_received", { provider: "gemini", httpStatus: response.status });
 
   if (!response.ok) {
-    throw new ProviderError(await safeErrorMessage(response, config.model, config.apiKey), mapStatus(response.status), {
-      provider: "Google Gemini",
-      model: config.model,
-      endpoint: "/v1beta/models/:model:generateContent",
-      httpStatus: response.status,
-    });
+    throw new ProviderError(
+      await safeErrorMessage(response, config.model, config.apiKey),
+      mapStatus(response.status),
+      {
+        provider: "Google Gemini",
+        model: config.model,
+        endpoint: "/v1beta/models/:model:generateContent",
+        httpStatus: response.status,
+      },
+      response.status === 429 ? parseRetryAfterSeconds(response) : undefined,
+    );
   }
 
   const body = (await readBounded(response)) as {
@@ -153,6 +159,10 @@ function mapStatus(status: number): number {
   if (status === 401 || status === 403) return 401;
   if (status === 400 || status === 404) return status;
   if (status === 429) return 429;
+  // 402 = provider-reported "out of credit/quota" (some OpenAI-compatible
+  // gateways proxying Gemini use it) — preserved as-is so rotation can tell
+  // it apart from a transient rate limit and bench it longer.
+  if (status === 402) return 402;
   return 502;
 }
 

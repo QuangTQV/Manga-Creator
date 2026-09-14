@@ -2,6 +2,7 @@
 
 import { redactSecrets } from "@/ai/security";
 import { outboundFetch, readBodyText, UnsafeOutboundUrlError } from "@/server/outboundFetch";
+import { parseRetryAfterSeconds } from "@/server/retryAfter";
 import { AGENT_REQUEST_TIMEOUT_MS, AgentModelError, type AgentCompletionOptions } from "./types";
 
 const MAX_ERROR_BODY_BYTES = 64 * 1024;
@@ -33,10 +34,17 @@ export async function agentErrorFrom(response: Response): Promise<AgentModelErro
   if (response.status === 404) {
     return new AgentModelError("Model or endpoint not found — check the base URL and model name", 404, { providerStatus: response.status });
   }
+  // 402 = provider-reported "out of credit/quota" (common on OpenAI-
+  // compatible gateways) — preserved as-is so rotation can bench it longer
+  // than a transient rate limit instead of retrying it right away.
+  const status = response.status === 429 ? 429 : response.status === 402 ? 402 : 502;
   const text = await readBodyText(response, MAX_ERROR_BODY_BYTES).catch(() => "");
   return new AgentModelError(
     `Provider error (HTTP ${response.status})${text ? `: ${redactSecrets(text).slice(0, 200)}` : ""}`,
-    response.status === 429 ? 429 : 502,
-    { providerStatus: response.status },
+    status,
+    {
+      providerStatus: response.status,
+      retryAfterSeconds: response.status === 429 ? parseRetryAfterSeconds(response) : undefined,
+    },
   );
 }

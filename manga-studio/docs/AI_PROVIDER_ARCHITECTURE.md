@@ -59,6 +59,50 @@ Background removal is a third independent provider kind with its own encrypted H
 
 `src/ai/promptTemplates.ts` converts semantic requests (character/pose/expression/background/prop + descriptions) into provider-neutral prompts — creator vocabulary in, provider strings out, in exactly one place. It is isomorphic: the dialog shows a prompt preview with the same code the executor uses.
 
+## Multi-key rotation
+
+A `ProviderConfig` (agent or image) may carry `backupApiKeys: string[]` —
+extra keys for the *same* provider/model. When present, `providerRegistry.ts`
+and `agent/providers/registry.ts` transparently wrap the adapter they build
+with `withRotation.ts` (image) / `withRotation.ts` (agent); with none
+configured this is a no-op that returns the plain adapter. Every caller of
+`createImageProvider`/`createAgentProvider` benefits automatically — no call
+site needs to know rotation exists.
+
+Shared core in `src/server/providerRotation.ts` (framework/HTTP-agnostic —
+it only ever handles `ProviderConfig` variants and a status code):
+
+- **Candidate pool**: the primary key, then each backup, deduped.
+- **Failure classification** from the HTTP status every adapter already
+  normalizes to (`gemini.ts`/`genericRest.ts`/`agent/providers/http.ts`):
+  `429` → rate limit (cool down, rotate), `402` → out of credit (cool down
+  much longer, rotate), `401` → this key is bad (rotate, no point retrying
+  it), anything else → fatal (would fail identically on every candidate —
+  stop immediately instead of burning through the whole chain).
+- **Cooldown**: in-process, keyed by (kind, provider, model, key) — scoped
+  to the model too, since several providers meter quota per model. Prefers
+  a provider-sent `Retry-After` (`src/server/retryAfter.ts`) over the
+  configured blind guess, clamped to 15 minutes.
+- **Starting order** (`ProviderConfig.rotationStrategy`): `round_robin`
+  (default) advances a per-pool cursor so consecutive requests fan out
+  across every key instead of only reaching backups reactively once the
+  primary fails — two keys on the same free-tier cap roughly double
+  effective throughput this way. `sequential` always tries the primary
+  first. `random` shuffles the ready candidates.
+
+`testConnection()` is deliberately NOT rotated — it always checks the exact
+key the user just typed, never a backup standing in for it.
+
+In-process only: state resets on restart. That is a real optimization for
+`npm run dev` (one long-lived process) and a documented, accepted trade-off
+on serverless — not durable state, matching the equivalent design in the
+sibling Manga-Translator-Extension project this was ported from.
+
+Configured in AI Settings under "Advanced — multi-key rotation" (per
+provider card, agent and image only — background removal is out of scope
+for now). Backup keys are secrets like the primary key: never returned to
+the browser, never in a `ProviderSummary` — only a safe `backupKeyCount`.
+
 ## Async providers
 
 The current adapters are synchronous. The abstraction leaves room for job-based providers (`asyncGeneration` capability flag); a polling loop would live inside that adapter's `generateImage`, behind the same interface — no editor changes. A full job queue is deliberately not built (YAGNI until a provider requires it).

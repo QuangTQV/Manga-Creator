@@ -12,6 +12,7 @@
 
 import { assertSafeProviderUrl, redactSecrets } from "../security";
 import { outboundFetch, readBodyText, UnsafeOutboundUrlError } from "@/server/outboundFetch";
+import { parseRetryAfterSeconds } from "@/server/retryAfter";
 import { capabilitiesForModel, snapSize, type ImageModelCapabilities } from "../imageModels";
 import {
   ProviderError,
@@ -184,12 +185,17 @@ export function createGenericRestProvider(config: OpenAICompatibleConfig): Image
         durationMs: Date.now() - started,
       });
       if (!response.ok) {
-        throw new ProviderError(await safeErrorMessage(response, config.apiKey), mapStatus(response.status), {
-          provider: "OpenAI-compatible",
-          model: config.model || "default",
-          endpoint: "/images/generations",
-          httpStatus: response.status,
-        });
+        throw new ProviderError(
+          await safeErrorMessage(response, config.apiKey),
+          mapStatus(response.status),
+          {
+            provider: "OpenAI-compatible",
+            model: config.model || "default",
+            endpoint: "/images/generations",
+            httpStatus: response.status,
+          },
+          response.status === 429 ? parseRetryAfterSeconds(response) : undefined,
+        );
       }
       const result = await parseImageResponse(response, downloadImage);
       request.trace?.("provider_response_parsed", { provider: "generic-rest", imageFound: true });
@@ -210,6 +216,10 @@ function mapStatus(status: number): number {
   if (status === 401 || status === 403) return 401;
   if (status === 400 || status === 404) return status;
   if (status === 429) return 429;
+  // 402 = provider-reported "out of credit/quota" (common on OpenAI-
+  // compatible gateways) — preserved as-is so rotation can bench it longer
+  // than a transient rate limit instead of retrying it right away.
+  if (status === 402) return 402;
   return 502;
 }
 

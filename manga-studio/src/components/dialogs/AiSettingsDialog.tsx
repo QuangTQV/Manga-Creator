@@ -13,7 +13,7 @@ import {
   fetchProviderStatus,
   type ProviderStatusSnapshot,
 } from "@/services/generation";
-import type { ProviderSummary } from "@/server/providerSession";
+import type { ProviderSummary, RotationStrategy } from "@/server/providerSession";
 import {
   CloseIcon,
   DoneIcon,
@@ -194,6 +194,12 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
   const [showKey, setShowKey] = useState(false);
   const [model, setModel] = useState(kind === "background" ? "background-removal" : "");
   const [models, setModels] = useState<string[]>([]);
+  // Backup keys are never sent back by the server (they're secrets) — the
+  // textarea starts empty and stays "keep existing" (omitted from the save
+  // payload) unless the user actually types something, mirroring how the
+  // primary API key field already works.
+  const [backupApiKeysText, setBackupApiKeysText] = useState("");
+  const [rotationStrategy, setRotationStrategy] = useState<RotationStrategy>("round_robin");
   const [busy, setBusy] = useState<"save" | "test" | "forget" | "models" | null>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [preview, setPreview] = useState<Record<string, unknown> | null>(null);
@@ -215,6 +221,7 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
         setBaseUrl(summary.baseUrl ?? "");
         setModel(summary.model ?? "");
       }
+      setRotationStrategy(summary.rotationStrategy ?? "round_robin");
     }
     setHydrated(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -230,6 +237,18 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
     setBusy("save");
     setMessage(null);
     try {
+      // Same "empty = keep what's stored" convention as the primary API key:
+      // rotation is not offered for background removal (see withRotation.ts),
+      // so these are simply omitted there.
+      const rotation =
+        kind === "background"
+          ? {}
+          : {
+              backupApiKeys: backupApiKeysText.trim()
+                ? backupApiKeysText.split("\n").map((k) => k.trim()).filter(Boolean)
+                : undefined,
+              rotationStrategy,
+            };
       const payload = isCustom
         ? {
             kind,
@@ -239,6 +258,7 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
             apiKey: customForm.apiKey || undefined,
             model: customForm.model,
             custom: customPayloadFromForm(kind, customForm),
+            ...rotation,
           }
         : {
             kind,
@@ -248,6 +268,7 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
             // Empty field + already configured = keep the stored key.
             apiKey: apiKey || undefined,
             model: model || (kind === "background" ? "background-removal" : ""),
+            ...rotation,
           };
       const response = await fetch("/api/provider/config", {
         method: "POST",
@@ -257,6 +278,7 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Save failed");
       setApiKey("");
+      setBackupApiKeysText("");
       setCustomForm((f) => ({ ...f, apiKey: "" }));
       setMessage({ ok: true, text: "Saved. Credentials are stored securely for this browser session." });
       onChanged();
@@ -299,6 +321,8 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
     setModel("");
     setName("");
     setBaseUrl("");
+    setBackupApiKeysText("");
+    setRotationStrategy("round_robin");
     setMessage({ ok: true, text: "Credentials forgotten." });
     setBusy(null);
     onChanged();
@@ -451,6 +475,45 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
           </p>
         </div>
       </details>
+
+      {kind !== "background" && (
+        <details className="mt-2" open={Boolean(summary?.backupKeyCount)}>
+          <summary className="cursor-pointer select-none text-[10px] uppercase tracking-wider text-zinc-500">
+            Advanced — multi-key rotation
+          </summary>
+          <div className="mt-2">
+            <Field label="Backup API keys (one per line, optional)">
+              <textarea
+                className="h-16 w-full resize-y rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1.5 font-mono text-xs"
+                value={backupApiKeysText}
+                onChange={(e) => setBackupApiKeysText(e.target.value)}
+                placeholder={
+                  summary?.backupKeyCount
+                    ? `${summary.backupKeyCount} backup key(s) stored — leave blank to keep them, or type new ones to replace`
+                    : "Extra keys for the same provider/model — tried automatically on rate limit"
+                }
+                autoComplete="off"
+              />
+            </Field>
+            <Field label="Which key to try first">
+              <select
+                className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1.5"
+                value={rotationStrategy}
+                onChange={(e) => setRotationStrategy(e.target.value as RotationStrategy)}
+              >
+                <option value="round_robin">Round robin — spread requests evenly (recommended)</option>
+                <option value="sequential">Sequential — always try the primary key first</option>
+                <option value="random">Random</option>
+              </select>
+            </Field>
+            <p className="mt-1 text-[10px] leading-4 text-zinc-600">
+              On rate limit, no credit, or an invalid key, generation automatically retries with the next key —
+              multiple free-tier keys effectively multiply your throughput. A key that just failed is benched
+              briefly before it is tried again.
+            </p>
+          </div>
+        </details>
+      )}
 
       <div className="mt-2 flex items-center gap-2">
         <button

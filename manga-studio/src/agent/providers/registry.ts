@@ -6,8 +6,9 @@ import { createCustomAgentProvider } from "./customAgent";
 import { createGeminiAgent } from "./gemini";
 import { createOpenAiCompatibleAgent } from "./openaiCompatible";
 import type { AgentModelProvider } from "./types";
+import { wrapAgentProviderWithRotation } from "./withRotation";
 
-export function createAgentProvider(config: ProviderConfig): AgentModelProvider {
+function buildAdapter(config: ProviderConfig): AgentModelProvider {
   switch (config.providerType) {
     case "custom":
       // The universal type: a declarative API description, not a vendor.
@@ -21,4 +22,11 @@ export function createAgentProvider(config: ProviderConfig): AgentModelProvider 
     default:
       throw new Error(`Unsupported agent provider type: ${config.providerType}`);
   }
+}
+
+/** Config in, model-agnostic provider out — transparently multi-key-
+ * rotation-aware when the config carries `backupApiKeys` (see
+ * withRotation.ts). Every caller goes through here. */
+export function createAgentProvider(config: ProviderConfig): AgentModelProvider {
+  return wrapAgentProviderWithRotation(config, buildAdapter);
 }

@@ -49,11 +49,19 @@ export class AgentModelError extends Error {
   readonly stage: "planning" | "parsing" | "validation";
   readonly providerStatus?: number;
   readonly finishReason?: string;
+  /** Provider-reported `Retry-After`, when it sent one on a 429 — lets
+   * rotation cool down for the real duration instead of a blind guess. */
+  readonly retryAfterSeconds?: number;
 
   constructor(
     safeMessage: string,
     status = 502,
-    details: { stage?: "planning" | "parsing" | "validation"; providerStatus?: number; finishReason?: string } = {},
+    details: {
+      stage?: "planning" | "parsing" | "validation";
+      providerStatus?: number;
+      finishReason?: string;
+      retryAfterSeconds?: number;
+    } = {},
   ) {
     super(safeMessage);
     this.safeMessage = safeMessage;
@@ -61,6 +69,7 @@ export class AgentModelError extends Error {
     this.stage = details.stage ?? "planning";
     this.providerStatus = details.providerStatus;
     this.finishReason = details.finishReason;
+    this.retryAfterSeconds = details.retryAfterSeconds;
   }
 }
 

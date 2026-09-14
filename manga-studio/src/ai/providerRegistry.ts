@@ -8,9 +8,10 @@ import type { ProviderConfig } from "@/server/providerSession";
 import { createCustomImageProvider } from "./providers/customImage";
 import { createGeminiProvider } from "./providers/gemini";
 import { createGenericRestProvider } from "./providers/genericRest";
+import { wrapImageProviderWithRotation } from "./providers/withRotation";
 import type { ImageGenerationProvider } from "./types";
 
-export function createImageProvider(config: ProviderConfig): ImageGenerationProvider {
+function buildAdapter(config: ProviderConfig): ImageGenerationProvider {
   switch (config.providerType) {
     case "custom":
       // The universal type: a declarative API description, not a vendor.
@@ -23,4 +24,11 @@ export function createImageProvider(config: ProviderConfig): ImageGenerationProv
     default:
       throw new Error(`Unsupported image provider type: ${config.providerType}`);
   }
+}
+
+/** Config in, adapter out — transparently multi-key-rotation-aware when the
+ * config carries `backupApiKeys` (see withRotation.ts). Every caller goes
+ * through here, so every one benefits without knowing rotation exists. */
+export function createImageProvider(config: ProviderConfig): ImageGenerationProvider {
+  return wrapImageProviderWithRotation(config, buildAdapter);
 }

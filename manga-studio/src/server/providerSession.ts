@@ -34,6 +34,14 @@ const backgroundTypes = ["custom", "remove-bg"] as const;
 export type AgentProviderType = (typeof agentTypes)[number];
 export type ImageProviderType = (typeof imageTypes)[number];
 
+/** Which ready candidate (primary key + backups) a request tries first —
+ * rotation-on-failure below always walks the rest in this order afterward. */
+export const rotationStrategies = ["round_robin", "random", "sequential"] as const;
+export type RotationStrategy = (typeof rotationStrategies)[number];
+export const DEFAULT_ROTATION_STRATEGY: RotationStrategy = "round_robin";
+export const DEFAULT_COOLDOWN_SECONDS = 15;
+export const MAX_BACKUP_API_KEYS = 8;
+
 export interface ProviderConfig {
   kind: ProviderKind;
   providerType: string;
@@ -44,6 +52,23 @@ export interface ProviderConfig {
   model: string;
   /** Declarative API description — present when providerType === "custom". */
   custom?: CustomApiConfig;
+  /**
+   * Extra keys for the SAME provider/model, tried on rate limit / no
+   * credit / auth failure instead of failing the request outright. Multiple
+   * free-tier keys on the same provider multiply effective throughput this
+   * way, since rotation spreads requests across all of them proactively
+   * (see "round_robin" below) rather than only reacting once the primary
+   * key starts failing.
+   */
+  backupApiKeys?: string[];
+  /** Which candidate a request tries first; "round_robin" (default) spreads
+   * load evenly across primary + backups instead of hammering the first
+   * one until it fails. See providerRotation.ts. */
+  rotationStrategy?: RotationStrategy;
+  /** Blind cooldown applied when a rate-limited provider sends no
+   * `Retry-After` header. A provider-supplied header is preferred when
+   * present (see retryAfter.ts), clamped by providerRotation.ts. */
+  cooldownSeconds?: number;
 }
 
 export interface ResolvedProvider {
@@ -74,6 +99,10 @@ export const configPayloadSchema = z.object({
   apiKey: z.string().min(4).max(4096).optional(),
   model: z.string().max(200).default(""),
   custom: customApiSchema.optional(),
+  /** Omitted on save = keep the previously stored backups; `[]` clears them. */
+  backupApiKeys: z.array(z.string().min(4).max(4096)).max(MAX_BACKUP_API_KEYS).optional(),
+  rotationStrategy: z.enum(rotationStrategies).optional(),
+  cooldownSeconds: z.number().min(1).max(900).optional(),
 });
 
 export type ConfigPayload = z.infer<typeof configPayloadSchema>;
@@ -103,6 +132,12 @@ export function buildProviderConfig(payload: ConfigPayload, existing: ProviderCo
     throw new Error("API key is required");
   }
 
+  // Drop blanks and anything identical to the primary key — a backup that
+  // duplicates the primary would just retry the same rate-limited account.
+  const backupApiKeys = (payload.backupApiKeys ?? existing?.backupApiKeys ?? [])
+    .map((key) => key.trim())
+    .filter((key, index, all) => key && key !== apiKey && all.indexOf(key) === index);
+
   const config: ProviderConfig = {
     kind: payload.kind,
     providerType: payload.providerType === "generic-rest" ? "openai-compatible" : payload.providerType,
@@ -111,6 +146,9 @@ export function buildProviderConfig(payload: ConfigPayload, existing: ProviderCo
     apiKey,
     model: payload.model.trim() || (payload.kind === "background" ? "background-removal" : ""),
     custom: isCustom ? payload.custom : undefined,
+    backupApiKeys: backupApiKeys.length > 0 ? backupApiKeys : undefined,
+    rotationStrategy: payload.rotationStrategy ?? existing?.rotationStrategy,
+    cooldownSeconds: payload.cooldownSeconds ?? existing?.cooldownSeconds,
   };
 
   // Cookies cap at ~4KB; fail loudly instead of silently truncating a config.
@@ -255,9 +293,13 @@ export interface ProviderSummary {
   model?: string;
   /** Non-secret API description (custom providers) so users can re-edit it. */
   custom?: CustomApiConfig;
+  /** How many backup keys are stored — never the keys themselves. */
+  backupKeyCount?: number;
+  rotationStrategy?: RotationStrategy;
+  cooldownSeconds?: number;
 }
 
-/** Never include apiKey here — not even masked. */
+/** Never include apiKey or backupApiKeys here — not even masked/counted-as-keys. */
 export function summarize(resolved: ResolvedProvider | null): ProviderSummary {
   if (!resolved) return { configured: false };
   const { config, source } = resolved;
@@ -271,5 +313,8 @@ export function summarize(resolved: ResolvedProvider | null): ProviderSummary {
     // The custom block is declarative non-secret configuration; the key
     // lives only in ProviderConfig.apiKey, which never enters a summary.
     custom: config.custom,
+    backupKeyCount: config.backupApiKeys?.length ?? 0,
+    rotationStrategy: config.rotationStrategy ?? DEFAULT_ROTATION_STRATEGY,
+    cooldownSeconds: config.cooldownSeconds ?? DEFAULT_COOLDOWN_SECONDS,
   };
 }
