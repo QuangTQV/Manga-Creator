@@ -65,8 +65,21 @@ decides meaning, code decides structure"), applied one level up:
   those signals to decide page/panel boundaries: a `mergeable` or
   `!mustVisualize` beat folds into the previous panel instead of spending a
   new one; a page never spans two scenes; a `pageTurnHook` beat always ends
-  the page right there, even under the panel budget
-  (`MAX_PANELS_PER_PAGE`, default 4).
+  the page right there, even under the panel budget. That budget
+  ("Panels per page") is a user setting in the dialog, 1-4 —
+  `MAX_SUPPORTED_PANELS_PER_PAGE` (4) is a real ceiling of Kumanga's own
+  page layouts (`domain/layouts.ts`), not an arbitrary pacing default, so
+  the picker never offers more than that. Since `planPages` is pure and
+  free, changing it after parsing re-plans instantly with no AI call —
+  disabled once any page in the current outline has been generated, since
+  re-planning renumbers page ids and would desync already-generated pages
+  from their planned counterpart.
+- Each planned page carries `panelCount` (how many panels it actually
+  needs, which can be fewer than the budget above — several beats may fold
+  into one panel). `NovelImportDialog.tsx` picks the matching Kumanga page
+  layout (`single`/`two-vertical`/`three-vertical`/`four-grid`) from it when
+  creating the page, instead of always creating a fixed 4-panel page and
+  leaving some panels empty.
 - Each planned page's `prompt` is composed prose, not JSON — "Panel 1: ...
   Aki says "Wait!" (urgent)." — written to read the way a creator would
   type it, because it IS handed to the Creative Director exactly like a

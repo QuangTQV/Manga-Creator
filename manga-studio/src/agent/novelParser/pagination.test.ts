@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planPages } from "./pagination";
+import { MAX_SUPPORTED_PANELS_PER_PAGE, planPages } from "./pagination";
 import type { NovelBeat, NovelScene } from "./schema";
 
 function beat(overrides: Partial<NovelBeat> = {}): NovelBeat {
@@ -120,5 +120,29 @@ describe("planPages", () => {
     const beats = [1, 2, 3, 4, 5].map((n) => beat({ ordinal: n }));
     const pages = planPages("Chapter 1", [scene({ beats })], 2);
     expect(new Set(pages.map((p) => p.id)).size).toBe(pages.length);
+  });
+
+  it("reports panelCount as the number of panels, not the number of beats", () => {
+    const beats = [
+      beat({ ordinal: 1, action: "draws the sword" }),
+      beat({ ordinal: 2, action: "sheathes it again", mergeable: true }),
+      beat({ ordinal: 3, action: "walks away" }),
+    ];
+    const pages = planPages("Chapter 1", [scene({ beats })], 4);
+    expect(pages[0].beats).toHaveLength(3);
+    expect(pages[0].panelCount).toBe(2); // beats 1+2 share a panel, beat 3 is its own
+  });
+
+  it("clamps a panel budget above what Kumanga's page layouts support", () => {
+    const beats = Array.from({ length: 6 }, (_, i) => beat({ ordinal: i + 1, action: `action ${i + 1}` }));
+    const pages = planPages("Chapter 1", [scene({ beats })], 99);
+    expect(pages[0].panelCount).toBeLessThanOrEqual(MAX_SUPPORTED_PANELS_PER_PAGE);
+  });
+
+  it("clamps a panel budget below 1 up to 1", () => {
+    const beats = [beat({ ordinal: 1 }), beat({ ordinal: 2 })];
+    const pages = planPages("Chapter 1", [scene({ beats })], 0);
+    expect(pages.every((p) => p.panelCount === 1)).toBe(true);
+    expect(pages).toHaveLength(2);
   });
 });

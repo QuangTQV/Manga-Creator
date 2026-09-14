@@ -25,10 +25,19 @@ export interface PlannedPage {
   /** Beats this page covers, in reading order — for the review UI, not sent
    * to the Creative Director directly (the prompt below is). */
   beats: NovelBeat[];
+  /** How many panels this page actually needs (beats sharing a panel via
+   * `mergeable`/`!mustVisualize` count once) — the caller uses this to pick
+   * a matching page layout instead of always creating a fixed-size page. */
+  panelCount: number;
   prompt: string;
 }
 
-const DEFAULT_MAX_PANELS_PER_PAGE = 4;
+/** Kumanga's page layouts (`domain/layouts.ts`) top out at 4 panels — this
+ * is a real ceiling of the editor, not an arbitrary pacing choice, so a
+ * caller offering "panels per page" as a setting should not offer more. */
+export const MAX_SUPPORTED_PANELS_PER_PAGE = 4;
+
+const DEFAULT_MAX_PANELS_PER_PAGE = MAX_SUPPORTED_PANELS_PER_PAGE;
 
 /** Whether `beat` should share a panel with whatever came before it on the
  * current page, instead of starting a new one — a beat marked `mergeable`
@@ -84,6 +93,10 @@ export function planPages(
   scenes: NovelScene[],
   maxPanelsPerPage = DEFAULT_MAX_PANELS_PER_PAGE,
 ): PlannedPage[] {
+  // Clamp rather than trust the caller — a page this module plans for more
+  // panels than Kumanga's own layouts support would just get silently
+  // capped at page-creation time anyway (see NovelImportDialog.tsx).
+  const panelBudget = Math.max(1, Math.min(maxPanelsPerPage, MAX_SUPPORTED_PANELS_PER_PAGE));
   const pages: PlannedPage[] = [];
   let pageCounter = 0;
 
@@ -99,6 +112,7 @@ export function planPages(
         sceneOrdinal: scene.ordinal,
         sceneLocation: scene.location,
         beats: panels.flat(),
+        panelCount: panels.length,
         prompt: buildPagePrompt(chapterTitle, scene, panels),
       });
       panels = [];
@@ -110,7 +124,7 @@ export function planPages(
       if (foldsIntoPreviousPanel(beat, hasOpenPanel)) {
         panels[panels.length - 1].push(beat);
       } else {
-        if (panels.length >= maxPanelsPerPage) flush();
+        if (panels.length >= panelBudget) flush();
         panels.push([beat]);
       }
       // A page-turn cliffhanger always ends the page right after it, even

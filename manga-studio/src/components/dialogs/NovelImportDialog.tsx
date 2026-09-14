@@ -26,14 +26,28 @@ import { executeCreativeRun, runCreativeDirection } from "@/agent-v3/run";
 import type { RunV3Outcome } from "@/agent-v3/run";
 import { groupSegmentsIntoChunks, splitIntoChapters, splitIntoSegments } from "@/agent/novelParser/segmentation";
 import type { NovelFidelity } from "@/agent/novelParser/prompt";
-import { planPages, type PlannedPage } from "@/agent/novelParser/pagination";
+import { MAX_SUPPORTED_PANELS_PER_PAGE, planPages, type PlannedPage } from "@/agent/novelParser/pagination";
 import type { NovelCharacter, NovelScene } from "@/agent/novelParser/schema";
+import type { LayoutPresetId } from "@/domain/types";
 import { useEditorStore } from "@/editor/store";
 import { useUiStore } from "@/editor/uiStore";
 import { CloseIcon, ICON_SIZE, ICON_STROKE } from "../ui/icons";
 
-const MAX_PANELS_PER_PAGE = 4;
 const SEGMENTS_PER_CHUNK = 3;
+/** Kumanga's page layouts, indexed by how many panels they hold (1-based).
+ * Picking the layout that actually matches a planned page's panel count
+ * instead of always creating a fixed-size page — see pagination.ts's
+ * `panelCount` on `PlannedPage`. */
+const LAYOUT_BY_PANEL_COUNT: Record<number, LayoutPresetId> = {
+  1: "single",
+  2: "two-vertical",
+  3: "three-vertical",
+  4: "four-grid",
+};
+
+function layoutForPanelCount(panelCount: number): LayoutPresetId {
+  return LAYOUT_BY_PANEL_COUNT[panelCount] ?? "four-grid";
+}
 
 type Stage = "input" | "parsing" | "review";
 type PageState = "planned" | "generating" | "done" | "error";
@@ -52,6 +66,7 @@ export function NovelImportDialog() {
   const [text, setText] = useState("");
   const [titleHint, setTitleHint] = useState("");
   const [fidelity, setFidelity] = useState<NovelFidelity>("guided");
+  const [panelsPerPage, setPanelsPerPage] = useState(MAX_SUPPORTED_PANELS_PER_PAGE);
   const [stage, setStage] = useState<Stage>("input");
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [chapters, setChapters] = useState<ChapterOutline[]>([]);
@@ -115,7 +130,7 @@ export function NovelImportDialog() {
           doneChunks += 1;
           setProgress({ done: doneChunks, total: totalChunks });
         }
-        const pages = planPages(draft.title, scenes, MAX_PANELS_PER_PAGE);
+        const pages = planPages(draft.title, scenes, panelsPerPage);
         outlines.push({ title: draft.title, characters, scenes, pages });
       }
       setChapters(outlines);
@@ -129,6 +144,26 @@ export function NovelImportDialog() {
     }
   };
 
+  /**
+   * Re-groups already-parsed scenes into pages with a new panel budget —
+   * `planPages` is a pure function with no model call, so this is instant
+   * and free, unlike re-running the parse. Any page already generated keeps
+   * its "done" status by id only if an id happens to still exist after
+   * re-planning (ids are positional), so re-planning after generating some
+   * pages is only safe before you've generated anything you want to keep —
+   * the button is disabled once any page is done, to avoid that confusion.
+   */
+  const replan = (nextPanelsPerPage: number) => {
+    setPanelsPerPage(nextPanelsPerPage);
+    const outlines = chapters.map((chapter) => ({
+      ...chapter,
+      pages: planPages(chapter.title, chapter.scenes, nextPanelsPerPage),
+    }));
+    setChapters(outlines);
+    setPageStates(Object.fromEntries(outlines.flatMap((ch) => ch.pages.map((p) => [p.id, "planned" as PageState]))));
+    setPageErrors({});
+  };
+
   const generatePage = async (page: PlannedPage) => {
     setPageStates((prev) => ({ ...prev, [page.id]: "generating" }));
     setPageErrors((prev) => {
@@ -139,7 +174,7 @@ export function NovelImportDialog() {
     try {
       const store = useEditorStore.getState();
       if (!store.doc) throw new Error("No open project");
-      const created = store.dispatch({ type: "add-page" });
+      const created = store.dispatch({ type: "add-page", layout: layoutForPanelCount(page.panelCount) });
       if (!created.createdId) throw new Error("Could not create a page for this panel");
       store.setCurrentPage(created.createdId);
 
@@ -228,6 +263,26 @@ export function NovelImportDialog() {
                 <option value="creative">Creative — actively supply action/transitions where the prose is sparse</option>
               </select>
             </label>
+            <label className="mb-3 block">
+              <span className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">
+                Panels per page (maximum)
+              </span>
+              <select
+                className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1.5"
+                value={panelsPerPage}
+                onChange={(e) => setPanelsPerPage(Number(e.target.value))}
+              >
+                {Array.from({ length: MAX_SUPPORTED_PANELS_PER_PAGE }, (_, i) => i + 1).map((n) => (
+                  <option key={n} value={n}>
+                    {n} panel{n > 1 ? "s" : ""}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-[10px] leading-4 text-zinc-600">
+                A page-turn cliffhanger beat still ends its page early even under this budget. You can change this
+                and re-plan for free after parsing, before generating any pages.
+              </p>
+            </label>
             {parseError && <p className="mb-2 text-xs text-red-400">{parseError}</p>}
             <button
               className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-xs text-white hover:bg-[var(--accent-hover)] disabled:opacity-40"
@@ -264,7 +319,27 @@ export function NovelImportDialog() {
               <p className="text-xs text-zinc-500">
                 {chapters.length} chapter(s), {totalPages} planned page(s) — {donePages} generated
               </p>
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1.5 text-xs text-zinc-500">
+                  Panels/page
+                  <select
+                    className="rounded border border-[var(--border-subtle)] bg-[var(--bg-app)] px-1.5 py-1 text-xs"
+                    value={panelsPerPage}
+                    onChange={(e) => replan(Number(e.target.value))}
+                    disabled={donePages > 0}
+                    title={
+                      donePages > 0
+                        ? "Re-planning is disabled once a page has been generated"
+                        : "Re-plans every page for free — no AI call needed"
+                    }
+                  >
+                    {Array.from({ length: MAX_SUPPORTED_PANELS_PER_PAGE }, (_, i) => i + 1).map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <button className="text-xs text-zinc-500 hover:text-zinc-300" onClick={reset}>
                   Start over
                 </button>
