@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { redactSecrets } from "@/ai/security";
 import { planAgentRun, agentRequestSchema } from "@/agent/planner";
 import { createAgentProvider } from "@/agent/providers/registry";
-import { AgentModelError } from "@/agent/providers/types";
+import { AgentModelError, type AgentExchange } from "@/agent/providers/types";
+import { recordLiveCall, truncateForLog } from "@/server/callLog";
 import { resolveProvider } from "@/server/providerSession";
+import { readSessionTag } from "@/server/sessionTag";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -24,8 +26,11 @@ interface TraceEvent {
  */
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = crypto.randomUUID();
+  const sessionTag = readSessionTag(request);
   const startedAt = performance.now();
+  const startedAtEpoch = Date.now();
   const events: TraceEvent[] = [];
+  const exchange: AgentExchange = {};
   let provider: ReturnType<typeof createAgentProvider> | undefined;
   const trace = (stage: RouteStage, details?: TraceEvent["details"]) => {
     const event = { stage, atMs: Math.round(performance.now() - startedAt), details };
@@ -53,12 +58,49 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     provider = createAgentProvider(resolved.config);
     trace("provider_config_loaded", { provider: provider.label, model: provider.model, source: resolved.source });
-    const result = await planAgentRun(provider, parsed.data, { signal: request.signal, trace });
+    const result = await planAgentRun(provider, parsed.data, {
+      signal: request.signal,
+      trace,
+      onExchange: (partial) => Object.assign(exchange, partial),
+    });
     trace("response_returned", { status: 200 });
+    recordLiveCall(sessionTag, {
+      kind: "agent",
+      route: "agent",
+      provider: provider.label,
+      model: provider.model,
+      startedAt: startedAtEpoch,
+      durationMs: Date.now() - startedAtEpoch,
+      ok: true,
+      request: {
+        systemPrompt: truncateForLog(exchange.systemPrompt ?? ""),
+        userPrompt: truncateForLog(exchange.userPrompt ?? ""),
+      },
+      response: {
+        text: truncateForLog(exchange.completionText ?? ""),
+        finishReason: exchange.finishReason,
+        acceptedTools: result.plan.steps.length,
+        rejectedTools: result.rejected.length,
+      },
+    });
     return NextResponse.json({ ...result, diagnostics: diagnostics(requestId, events, provider) });
   } catch (error) {
     if (error instanceof AgentModelError) {
       trace("response_returned", { status: error.status, failureStage: error.stage });
+      recordLiveCall(sessionTag, {
+        kind: "agent",
+        route: "agent",
+        provider: provider?.label,
+        model: provider?.model,
+        startedAt: startedAtEpoch,
+        durationMs: Date.now() - startedAtEpoch,
+        ok: false,
+        request: {
+          systemPrompt: truncateForLog(exchange.systemPrompt ?? ""),
+          userPrompt: truncateForLog(exchange.userPrompt ?? ""),
+        },
+        error: { message: error.safeMessage, status: error.status },
+      });
       console.error("[agent]", JSON.stringify({
         requestId,
         stage: error.stage,
@@ -79,6 +121,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
     const message = error instanceof Error ? error.message : "Agent planning failed";
     trace("response_returned", { status: 500 });
+    recordLiveCall(sessionTag, {
+      kind: "agent",
+      route: "agent",
+      provider: provider?.label,
+      model: provider?.model,
+      startedAt: startedAtEpoch,
+      durationMs: Date.now() - startedAtEpoch,
+      ok: false,
+      request: {
+        systemPrompt: truncateForLog(exchange.systemPrompt ?? ""),
+        userPrompt: truncateForLog(exchange.userPrompt ?? ""),
+      },
+      error: { message: "Agent planning failed" },
+    });
     console.error("[agent]", JSON.stringify({ requestId, stage: "planning", error: redactSecrets(message) }));
     return NextResponse.json({
       error: "Agent planning failed",

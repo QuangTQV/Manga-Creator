@@ -138,6 +138,49 @@ Agent adapters share a concise-plan contract rather than exposing vendor respons
 
 Recognized hybrid Qwen models use non-thinking mode for latency-sensitive routine planning. Model names explicitly identifying a thinking model or QwQ are left unchanged. These flags and response quirks stay in the OpenAI-compatible/Custom agent adapters; the planner and command runtime remain vendor-neutral.
 
+## Live AI (call log)
+
+A "Live AI" panel (top bar → `LiveAiPanel.tsx`) shows the actual request sent
+to whichever provider handled a call and the actual response, for image
+generation (`/api/generate`) and both agent planning paths (`/api/agent`,
+`/api/agent/direct`) — the exact prompt/system-prompt text, not just the
+stage-timing metadata `trace`/`AgentTrace` already logged to the server
+console for diagnostics.
+
+- **Capture point**: each of those three routes calls `recordLiveCall`
+  (`src/server/callLog.ts`) with a redacted/truncated summary of what it
+  sent and what came back — deliberately at the ROUTE, not inside the
+  provider adapters or the rotation wrapper, so it reflects the logical
+  request the studio made rather than every internal rotation retry.
+  `truncateForLog` bounds any single field (default 4000 chars) so an
+  in-memory log entry can never balloon on a huge prompt.
+- **Getting prompt/completion text out of the agent planners**: `trace`
+  fires many times per call and is logged wholesale to the server console
+  on every stage, so it's the wrong channel for multi-KB prompt text.
+  `planAgentRun`/`planCreativeDirection` instead accept an optional
+  `onExchange` callback (`AgentExchange` in `agent/providers/types.ts`)
+  that fires at most twice per call — prompt built, completion received —
+  purely for a caller that wants the content.
+- **Session-scoped, not global**: entries are kept in a per-`sessionTag`
+  in-memory bucket (`src/server/sessionTag.ts` — a random, non-secret,
+  HttpOnly cookie `middleware.ts` ensures exists before any route runs) so
+  one visitor's prompts are never visible to another's Live AI panel on a
+  shared deployment. Idle buckets are evicted after 2 hours.
+- **Polled, not pushed**: `GET /api/live/log` returns the current session's
+  entries; the panel polls it every ~1.5s while open. A long-lived SSE/
+  WebSocket connection would get cut off mid-generation by a serverless
+  platform's function-duration limit — polling behaves identically in
+  `npm run dev` and on Vercel. `POST /api/live/clear` empties the session's
+  log.
+- **What is NOT logged**: raw image bytes (only `mimeType`/whether a
+  reference was used/the URL — memory-bounded, and the asset library
+  already shows the image itself), and never any API key/credential.
+- **Out of scope for now**: `assets/edit`, `assets/upload`,
+  `assets/remove-background`, and `puppet/reconstruct` do not yet record
+  to the Live AI log (they call `createImageProvider` directly for image
+  editing/background-removal, a supporting operation rather than a primary
+  "ask AI something" call) — natural follow-up if that turns out to matter.
+
 ## Generation rules
 
 1. Results land in the **library** first (with provenance metadata + a Generation History record) — never directly on the canvas.

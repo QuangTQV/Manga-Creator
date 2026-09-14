@@ -92,6 +92,9 @@ interface UiState {
   /** AI Settings can be opened from anywhere ("Connect model" prompts). */
   settingsOpen: boolean;
   artStyleOpen: boolean;
+  /** Live AI panel: what was actually sent to the connected AI provider(s)
+   * and how they responded, for the current browser session. */
+  liveAiOpen: boolean;
   /**
    * Advanced / Developer surface.
    *
@@ -127,6 +130,8 @@ interface UiState {
   openArtStyle(): void;
   closeArtStyle(): void;
   setAdvancedMode(enabled: boolean): void;
+  openLiveAi(): void;
+  closeLiveAi(): void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -146,6 +151,7 @@ export const useUiStore = create<UiState>((set) => ({
   assetEditor: null,
   settingsOpen: false,
   artStyleOpen: false,
+  liveAiOpen: false,
   advancedMode: false,
   openGenerator: (request) => set({ generator: request }),
   closeGenerator: () => set({ generator: null }),
@@ -174,4 +180,6 @@ export const useUiStore = create<UiState>((set) => ({
   setAdvancedMode: (enabled) => set({ advancedMode: enabled }),
   openArtStyle: () => set({ artStyleOpen: true }),
   closeArtStyle: () => set({ artStyleOpen: false }),
+  openLiveAi: () => set({ liveAiOpen: true }),
+  closeLiveAi: () => set({ liveAiOpen: false }),
 }));

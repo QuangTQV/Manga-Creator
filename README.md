@@ -68,6 +68,10 @@ machine**:
   generic OpenAI-compatible REST adapter.
 - **Manga Agent.** Prompt → skill-guided plan → validated tool calls →
   execution through the same editor commands the manual UI uses.
+- **Live AI.** A panel (top bar → "Live AI") showing the actual prompt sent
+  to your connected provider and its raw response, live, for every image
+  generation and Manga Agent call — scoped to your own browser, never
+  visible to anyone else even on a shared deployment.
 - **Persistence & export.** Projects survive refresh (IndexedDB + remote object
   storage for images); pages export to PNG at 1× / 2×.
 

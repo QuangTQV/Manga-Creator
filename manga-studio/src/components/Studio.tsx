@@ -14,6 +14,7 @@ import { useUiStore } from "@/editor/uiStore";
 import { indexedDbPersistence } from "@/storage/projectStore";
 import { AiSettingsDialog } from "./dialogs/AiSettingsDialog";
 import { ArtStyleDialog } from "./dialogs/ArtStyleDialog";
+import { LiveAiPanel } from "./dialogs/LiveAiPanel";
 import { GeneratorDialog } from "./dialogs/GeneratorDialog";
 import { PuppetCapabilityDialog } from "./dialogs/PuppetCapabilityDialog";
 import { PuppetCompilerDialog } from "./dialogs/PuppetCompilerDialog";
@@ -172,6 +173,7 @@ export function Studio() {
       <PagesBar />
       <GeneratorDialog />
       <AiSettingsDialog />
+      <LiveAiPanel />
       <ArtStyleDialog />
       <PuppetCapabilityDialog />
       <PuppetCompilerDialog />

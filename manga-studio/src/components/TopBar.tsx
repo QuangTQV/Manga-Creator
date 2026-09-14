@@ -19,6 +19,7 @@ import {
   GenerateIcon,
   ICON_SIZE,
   ICON_STROKE,
+  LiveIcon,
   RedoIcon,
   SettingsIcon,
   StyleIcon,
@@ -73,6 +74,7 @@ export function TopBar() {
   const openSettings = useUiStore((s) => s.openSettings);
   const openArtStyle = useUiStore((s) => s.openArtStyle);
   const openGenerator = useUiStore((s) => s.openGenerator);
+  const openLiveAi = useUiStore((s) => s.openLiveAi);
   const [exporting, setExporting] = useState(false);
 
   if (!doc) return null;
@@ -202,6 +204,15 @@ export function TopBar() {
         className="max-w-[200px]"
       >
         <span className="truncate">{activeStyle.name}</span>
+      </Button>
+
+      <Button
+        variant="ghost"
+        icon={<LiveIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+        onClick={openLiveAi}
+        title="See what was sent to the connected AI and how it responded"
+      >
+        Live AI
       </Button>
 
       <Button

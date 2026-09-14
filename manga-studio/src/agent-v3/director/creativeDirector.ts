@@ -7,7 +7,7 @@
 
 import { z } from "zod";
 import { AgentModelError } from "@/agent/providers/types";
-import type { AgentModelProvider } from "@/agent/providers/types";
+import type { AgentExchangeListener, AgentModelProvider } from "@/agent/providers/types";
 import { parseModelJson } from "@/agent/planner";
 import { parseCreativeTaskMap, type CreativeTaskMap } from "../contract/creativeTaskMap";
 import { CREATIVE_DIRECTOR_SYSTEM_PROMPT } from "./systemPrompt";
@@ -34,7 +34,7 @@ export interface DirectorResult {
 export async function planCreativeDirection(
   provider: AgentModelProvider,
   input: DirectorRequestInput,
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; onExchange?: AgentExchangeListener } = {},
 ): Promise<DirectorResult> {
   const userPrompt = [
     "LITERAL LOCK (immutable evidence from the creator's prompt):",
@@ -51,6 +51,7 @@ export async function planCreativeDirection(
     "",
     "Respond with the Creative Task Map JSON now.",
   ].join("\n");
+  options.onExchange?.({ systemPrompt: CREATIVE_DIRECTOR_SYSTEM_PROMPT, userPrompt });
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DIRECTOR_TIMEOUT_MS);
@@ -61,6 +62,7 @@ export async function planCreativeDirection(
       signal,
       timeoutMs: DIRECTOR_TIMEOUT_MS,
     });
+    options.onExchange?.({ completionText: completion.text, finishReason: completion.finishReason });
   } finally {
     clearTimeout(timer);
   }

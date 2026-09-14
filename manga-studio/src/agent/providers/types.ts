@@ -75,3 +75,21 @@ export class AgentModelError extends Error {
 
 /** Planner calls must return before the platform timeout and before the UI feels frozen. */
 export const AGENT_REQUEST_TIMEOUT_MS = 25_000;
+
+/**
+ * The actual prompt/completion text of one planning call — for the Live AI
+ * panel, not for the trace/timing stream (`AgentTrace` in planner.ts):
+ * timing events fire many times per call and are logged to the server
+ * console on every stage, so a multi-KB prompt/completion has no business
+ * riding along on that channel. `onExchange` fires at most twice per call
+ * (prompt built, completion received) purely so a caller that wants the
+ * content — currently only the route handlers, to build a Live AI log entry
+ * — can capture it without every caller paying for it.
+ */
+export interface AgentExchange {
+  systemPrompt?: string;
+  userPrompt?: string;
+  completionText?: string;
+  finishReason?: string;
+}
+export type AgentExchangeListener = (partial: AgentExchange) => void;

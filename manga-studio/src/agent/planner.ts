@@ -6,7 +6,13 @@
 
 import { z } from "zod";
 import type { AgentRunScope } from "./scope";
-import { AGENT_REQUEST_TIMEOUT_MS, AgentModelError, type AgentModelProvider, type AgentProviderEvent } from "./providers/types";
+import {
+  AGENT_REQUEST_TIMEOUT_MS,
+  AgentModelError,
+  type AgentExchangeListener,
+  type AgentModelProvider,
+  type AgentProviderEvent,
+} from "./providers/types";
 import { selectSkills } from "./skills/selector";
 import { SEMANTIC_PARSER_CONTRACT } from "./prompts/semanticParser";
 import { TOOL_DOCS, validatePlan, type PlanValidation } from "./tools/schemas";
@@ -47,7 +53,7 @@ export type AgentTrace = (stage: AgentTraceStage, details?: Record<string, strin
 export async function planAgentRun(
   provider: AgentModelProvider,
   input: AgentRequestInput,
-  options: { signal?: AbortSignal; trace?: AgentTrace } = {},
+  options: { signal?: AbortSignal; trace?: AgentTrace; onExchange?: AgentExchangeListener } = {},
 ): Promise<AgentPlanResponse> {
   const skills = selectSkills(input.prompt);
   const systemPrompt = buildSystemPrompt(skills.map((s) => s.instructions));
@@ -60,6 +66,7 @@ export async function planAgentRun(
     "",
     "Respond with the JSON plan now.",
   ].join("\n");
+  options.onExchange?.({ systemPrompt, userPrompt });
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), AGENT_REQUEST_TIMEOUT_MS);
   const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
@@ -74,6 +81,7 @@ export async function planAgentRun(
         finishReason: event.finishReason,
       }),
     });
+    options.onExchange?.({ completionText: completion.text, finishReason: completion.finishReason });
   } catch (error) {
     if (options.signal?.aborted) throw new AgentModelError("Agent planning was cancelled", 499);
     if (controller.signal.aborted) throw new AgentModelError("Agent model timed out while planning.", 504);
