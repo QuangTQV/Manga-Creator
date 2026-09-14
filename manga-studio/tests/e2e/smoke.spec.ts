@@ -64,3 +64,25 @@ test("AI Settings disables Test Connection until a provider is actually saved", 
   await expect(testButton).toHaveAttribute("title", "Save first, then test");
   expect(errors).toEqual([]);
 });
+
+test("renaming a project uses a real dialog, not the browser's native prompt", async ({ page }) => {
+  const dialogs: string[] = [];
+  page.on("dialog", (dialog) => dialogs.push(dialog.type()));
+
+  // The "⋯" button is `display:none` until its parent list item is
+  // hovered (group-hover:block) — a display:none element has no
+  // accessible role at all, so it must not be queried until AFTER
+  // hovering the item that reveals it.
+  await page.getByRole("button", { name: /Smoke Test Project/ }).hover();
+  await page.getByRole("button", { name: /Project options for/ }).click();
+  await page.getByRole("button", { name: "Rename" }).click();
+  await expect(page.getByRole("heading", { name: "Rename project" })).toBeVisible();
+
+  await page.getByRole("textbox").fill("Renamed Project");
+  await page.getByRole("button", { name: "Save" }).click();
+
+  await expect(page.getByText("Renamed Project").first()).toBeVisible();
+  // A native window.prompt()/confirm() would show up here as a "dialog"
+  // event Playwright must auto-dismiss or the test hangs — none fired.
+  expect(dialogs).toEqual([]);
+});

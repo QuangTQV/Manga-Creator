@@ -20,6 +20,7 @@ export function ProjectsPanel() {
   const openProject = useProjectsStore((s) => s.openProject);
   const [creating, setCreating] = useState(false);
   const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,9 +92,8 @@ export function ProjectsPanel() {
                 <div className="absolute right-1 top-7 z-10 w-36 rounded-md bg-[var(--bg-elevated)] py-0.5 text-[11px] shadow-xl shadow-black/50">
                   <MenuItem
                     onClick={() => {
-                      const name = window.prompt("Rename project", project.name);
-                      if (name?.trim()) void run(() => useProjectsStore.getState().renameProject(project.id, name));
-                      else setMenuFor(null);
+                      setMenuFor(null);
+                      setRenaming({ id: project.id, name: project.name });
                     }}
                   >
                     Rename
@@ -118,6 +118,17 @@ export function ProjectsPanel() {
       </ul>
 
       {creating && <NewProjectDialog onClose={() => setCreating(false)} />}
+      {renaming && (
+        <RenameProjectDialog
+          project={renaming}
+          onClose={() => setRenaming(null)}
+          onConfirm={(name) => {
+            const id = renaming.id;
+            setRenaming(null);
+            void run(() => useProjectsStore.getState().renameProject(id, name));
+          }}
+        />
+      )}
       {confirmDelete && (
         <DeleteProjectDialog
           project={confirmDelete}
@@ -238,6 +249,56 @@ export function NewProjectDialog({ onClose }: { onClose: () => void }) {
             onClick={() => void submit()}
           >
             {busy ? "Creating…" : "Create"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RenameProjectDialog({
+  project,
+  onClose,
+  onConfirm,
+}: {
+  project: { id: string; name: string };
+  onClose: () => void;
+  onConfirm: (name: string) => void;
+}) {
+  const [name, setName] = useState(project.name);
+  const submit = () => {
+    const trimmed = name.trim();
+    if (trimmed && trimmed !== project.name) onConfirm(trimmed);
+    else onClose();
+  };
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60" onMouseDown={onClose}>
+      <div
+        className="w-[360px] rounded-lg bg-[var(--bg-elevated)] p-4 text-sm shadow-2xl shadow-black/50"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <h2 className="mb-3 font-semibold text-zinc-100">Rename project</h2>
+        <input
+          autoFocus
+          className="mb-4 w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1.5"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onFocus={(e) => e.target.select()}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+        />
+        <div className="flex justify-end gap-2">
+          <button
+            className="rounded-md px-3 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button
+            className="rounded-md bg-[var(--accent)] px-4 py-1.5 text-xs text-white hover:bg-[var(--accent-hover)] disabled:opacity-40"
+            disabled={!name.trim()}
+            onClick={submit}
+          >
+            Save
           </button>
         </div>
       </div>
