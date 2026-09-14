@@ -8,7 +8,10 @@
   ],
   "overrides": {
     "sharp": "^0.35.3",
-    "postcss": "^8.5.26"
+    "postcss": "^8.5.26",
+    "next": {
+      "postcss": "^8.5.26"
+    }
   },
   "scripts": {
     "dev": "npm --prefix manga-studio run dev",

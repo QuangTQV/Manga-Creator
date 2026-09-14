@@ -4,7 +4,10 @@
   "private": true,
   "overrides": {
     "sharp": "^0.35.3",
-    "postcss": "^8.5.26"
+    "postcss": "^8.5.26",
+    "next": {
+      "postcss": "^8.5.26"
+    }
   },
   "scripts": {
     "dev": "next dev --turbopack",
@@ -16,9 +19,10 @@
   },
   "dependencies": {
     "@vercel/blob": "^2.8.0",
+    "jszip": "^3.10.2",
     "konva": "^10.3.1",
     "lucide-react": "^1.33.0",
-    "next": "15.5.23",
+    "next": "15.5.25",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-konva": "^19.2.5",
@@ -37,7 +41,7 @@
     "@vitejs/plugin-react": "^6.1.1",
     "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^9",
-    "eslint-config-next": "15.5.23",
+    "eslint-config-next": "15.5.25",
     "jsdom": "^30.0.1",
     "playwright": "^1.62.1",
     "tailwindcss": "^4",
