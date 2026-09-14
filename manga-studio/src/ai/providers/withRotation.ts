@@ -1,8 +1,9 @@
 /**
- * Wraps an image-generation adapter with multi-key rotation when the
- * resolved `ProviderConfig` carries `backupApiKeys`. A no-op (returns the
- * plain adapter untouched) when there are none, so configuring rotation is
- * strictly opt-in and costs nothing otherwise.
+ * Wraps an image-generation adapter with multi-key AND multi-provider
+ * rotation when the resolved `ProviderConfig` carries `backupApiKeys` and/or
+ * `fallbackProviders`. A no-op (returns the plain adapter untouched) when
+ * there are neither, so configuring rotation is strictly opt-in and costs
+ * nothing otherwise.
  *
  * This is the ONLY place rotation is applied — `providerRegistry.ts` wraps
  * every adapter it builds, so every call site (generation, editing, asset
@@ -16,6 +17,7 @@ import {
   buildCandidates,
   classifyStatus,
   markCooldown,
+  nextCandidateIndex,
   orderCandidates,
 } from "@/server/providerRotation";
 import {
@@ -30,7 +32,7 @@ export function wrapImageProviderWithRotation(
   config: ProviderConfig,
   buildAdapter: (candidate: ProviderConfig) => ImageGenerationProvider,
 ): ImageGenerationProvider {
-  if (!config.backupApiKeys?.length) return buildAdapter(config);
+  if (!config.backupApiKeys?.length && !config.fallbackProviders?.length) return buildAdapter(config);
 
   const primary = buildAdapter(config);
 
@@ -42,22 +44,22 @@ export function wrapImageProviderWithRotation(
         429,
       );
     }
-    let lastError: unknown;
-    for (let i = 0; i < ready.length; i++) {
-      const isLast = i === ready.length - 1;
+    // Every iteration either returns or throws — there is no normal loop
+    // exit, `nextCandidateIndex` returning -1 always throws immediately.
+    for (let i = 0; ; ) {
       try {
         return await run(buildAdapter(ready[i]));
       } catch (error) {
-        lastError = error;
         // A shape we don't recognize (programming error, not a provider
         // failure) must not be silently swallowed by rotating past it.
         if (!(error instanceof ProviderError)) throw error;
         const failure = classifyStatus(error.status);
         markCooldown(ready[i], failure, error.retryAfterSeconds);
-        if (isLast || failure === "fatal") throw error;
+        const next = nextCandidateIndex(ready, i, failure);
+        if (next === -1) throw error;
+        i = next;
       }
     }
-    throw lastError;
   }
 
   return {

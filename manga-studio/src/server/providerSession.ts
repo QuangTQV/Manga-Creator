@@ -41,6 +41,25 @@ export type RotationStrategy = (typeof rotationStrategies)[number];
 export const DEFAULT_ROTATION_STRATEGY: RotationStrategy = "round_robin";
 export const DEFAULT_COOLDOWN_SECONDS = 15;
 export const MAX_BACKUP_API_KEYS = 8;
+export const MAX_FALLBACK_PROVIDERS = 3;
+
+/**
+ * A completely different provider to fall back to after the primary
+ * provider (and all of ITS backup keys) are exhausted — not just another
+ * key on the same account, a different vendor/endpoint entirely. Can carry
+ * its own `backupApiKeys` too, but never its own `fallbackProviders`: the
+ * chain is flat (primary → primary's backups → fallback 1 → fallback 1's
+ * backups → fallback 2 → ...), never a tree.
+ */
+export interface FallbackProviderConfig {
+  providerType: string;
+  name?: string;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  custom?: CustomApiConfig;
+  backupApiKeys?: string[];
+}
 
 export interface ProviderConfig {
   kind: ProviderKind;
@@ -69,6 +88,10 @@ export interface ProviderConfig {
    * `Retry-After` header. A provider-supplied header is preferred when
    * present (see retryAfter.ts), clamped by providerRotation.ts. */
   cooldownSeconds?: number;
+  /** Entirely different providers to try, in order, once the primary
+   * provider and its own backup keys are all rate limited/out of credit —
+   * e.g. Gemini exhausted → fall through to an OpenAI-compatible key. */
+  fallbackProviders?: FallbackProviderConfig[];
 }
 
 export interface ResolvedProvider {
@@ -90,6 +113,21 @@ export const DEFAULT_BASE_URLS: Record<string, string> = {
 
 // ─── Save payload validation ────────────────────────────────────────────────
 
+/** A fallback entry is always sent whole on save (no per-field "keep the
+ * stored value" merge — the client holds the chain in memory for the
+ * editing session, same limitation the primary key already has). */
+const fallbackProviderPayloadSchema = z.object({
+  providerType: z.string().min(1).max(40),
+  name: z.string().max(60).optional(),
+  baseUrl: z.string().max(1024).optional(),
+  apiKey: z.string().min(4).max(4096).optional(),
+  model: z.string().max(200).default(""),
+  custom: customApiSchema.optional(),
+  backupApiKeys: z.array(z.string().min(4).max(4096)).max(MAX_BACKUP_API_KEYS).optional(),
+});
+
+export type FallbackProviderPayload = z.infer<typeof fallbackProviderPayloadSchema>;
+
 export const configPayloadSchema = z.object({
   kind: z.enum(["agent", "image", "background"]),
   providerType: z.string().min(1).max(40),
@@ -103,57 +141,119 @@ export const configPayloadSchema = z.object({
   backupApiKeys: z.array(z.string().min(4).max(4096)).max(MAX_BACKUP_API_KEYS).optional(),
   rotationStrategy: z.enum(rotationStrategies).optional(),
   cooldownSeconds: z.number().min(1).max(900).optional(),
+  /** Omitted on save = keep the previously stored fallback chain; `[]` clears it. */
+  fallbackProviders: z.array(fallbackProviderPayloadSchema).max(MAX_FALLBACK_PROVIDERS).optional(),
 });
 
 export type ConfigPayload = z.infer<typeof configPayloadSchema>;
 
-/**
- * Validate a payload into a full config. `existing` supplies the kept API key
- * when the user edits other fields without re-entering the secret.
- */
-export function buildProviderConfig(payload: ConfigPayload, existing: ProviderConfig | null): ProviderConfig {
-  const allowed: readonly string[] = payload.kind === "agent" ? agentTypes : payload.kind === "image" ? imageTypes : backgroundTypes;
-  if (!allowed.includes(payload.providerType)) {
-    throw new Error(`Unsupported ${payload.kind} provider type: ${payload.providerType}`);
+// ─── Shared field resolution — used for both the primary provider and each
+// fallback provider, so every candidate in the rotation chain is validated
+// identically (its own SSRF check, its own custom-API mapping, its own
+// required key). ────────────────────────────────────────────────────────────
+
+function resolveProviderType(kind: ProviderKind, providerType: string): string {
+  const allowed: readonly string[] = kind === "agent" ? agentTypes : kind === "image" ? imageTypes : backgroundTypes;
+  if (!allowed.includes(providerType)) {
+    throw new Error(`Unsupported ${kind} provider type: ${providerType}`);
   }
-  const baseUrl = (payload.baseUrl?.trim() || DEFAULT_BASE_URLS[payload.providerType]) ?? "";
+  // "generic-rest" is a legacy alias for openai-compatible image endpoints.
+  return providerType === "generic-rest" ? "openai-compatible" : providerType;
+}
+
+function resolveBaseUrl(providerType: string, rawBaseUrl: string | undefined): string {
+  const baseUrl = (rawBaseUrl?.trim() || DEFAULT_BASE_URLS[providerType]) ?? "";
   if (!baseUrl) throw new Error("Base URL is required for this provider type");
   assertSafeProviderUrl(baseUrl); // SSRF guard on every user-supplied endpoint
+  return baseUrl.replace(/\/$/, "");
+}
 
-  const isCustom = payload.providerType === "custom";
+function resolveApiKey(
+  rawApiKey: string | undefined,
+  existingApiKey: string | undefined,
+  isCustom: boolean,
+  custom: CustomApiConfig | undefined,
+): string {
+  const apiKey = rawApiKey ?? existingApiKey ?? "";
+  // Custom APIs with auth mode "none" legitimately have no key.
+  if (!apiKey && !(isCustom && custom?.auth.mode === "none")) {
+    throw new Error("API key is required");
+  }
+  return apiKey;
+}
+
+/** Drops blanks and anything identical to the primary key — a backup that
+ * duplicates the primary would just retry the same rate-limited account. */
+function dedupeBackupKeys(
+  rawBackups: string[] | undefined,
+  existingBackups: string[] | undefined,
+  primaryKey: string,
+): string[] | undefined {
+  const backups = (rawBackups ?? existingBackups ?? [])
+    .map((key) => key.trim())
+    .filter((key, index, all) => key && key !== primaryKey && all.indexOf(key) === index);
+  return backups.length > 0 ? backups : undefined;
+}
+
+function buildFallbackProviderConfig(kind: ProviderKind, payload: FallbackProviderPayload): FallbackProviderConfig {
+  const providerType = resolveProviderType(kind, payload.providerType);
+  const baseUrl = resolveBaseUrl(providerType, payload.baseUrl);
+  const isCustom = providerType === "custom";
+  if (isCustom) {
+    if (!payload.custom) throw new Error("Custom API configuration is required for a fallback provider");
+    validateCustomApi(payload.custom, kind === "background" ? "image" : kind);
+  }
+  const apiKey = resolveApiKey(payload.apiKey, undefined, isCustom, payload.custom);
+  return {
+    providerType,
+    name: payload.name?.trim() || undefined,
+    baseUrl,
+    apiKey,
+    model: payload.model.trim(),
+    custom: isCustom ? payload.custom : undefined,
+    backupApiKeys: dedupeBackupKeys(payload.backupApiKeys, undefined, apiKey),
+  };
+}
+
+/**
+ * Validate a payload into a full config. `existing` supplies the kept API key
+ * (and kept fallback chain) when the user edits other fields without
+ * re-entering the secret(s).
+ */
+export function buildProviderConfig(payload: ConfigPayload, existing: ProviderConfig | null): ProviderConfig {
+  const providerType = resolveProviderType(payload.kind, payload.providerType);
+  const baseUrl = resolveBaseUrl(providerType, payload.baseUrl);
+  const isCustom = providerType === "custom";
   if (isCustom) {
     if (!payload.custom) throw new Error("Custom API configuration is required");
     validateCustomApi(payload.custom, payload.kind === "background" ? "image" : payload.kind);
   }
 
-  const apiKey = payload.apiKey ?? existing?.apiKey ?? "";
-  // Custom APIs with auth mode "none" legitimately have no key.
-  if (!apiKey && !(isCustom && payload.custom?.auth.mode === "none")) {
-    throw new Error("API key is required");
-  }
-
-  // Drop blanks and anything identical to the primary key — a backup that
-  // duplicates the primary would just retry the same rate-limited account.
-  const backupApiKeys = (payload.backupApiKeys ?? existing?.backupApiKeys ?? [])
-    .map((key) => key.trim())
-    .filter((key, index, all) => key && key !== apiKey && all.indexOf(key) === index);
+  const apiKey = resolveApiKey(payload.apiKey, existing?.apiKey, isCustom, payload.custom);
+  const backupApiKeys = dedupeBackupKeys(payload.backupApiKeys, existing?.backupApiKeys, apiKey);
+  const fallbackProviders = (payload.fallbackProviders ?? existing?.fallbackProviders ?? []).map((fb) =>
+    buildFallbackProviderConfig(payload.kind, fb),
+  );
 
   const config: ProviderConfig = {
     kind: payload.kind,
-    providerType: payload.providerType === "generic-rest" ? "openai-compatible" : payload.providerType,
+    providerType,
     name: payload.name?.trim() || undefined,
-    baseUrl: baseUrl.replace(/\/$/, ""),
+    baseUrl,
     apiKey,
     model: payload.model.trim() || (payload.kind === "background" ? "background-removal" : ""),
     custom: isCustom ? payload.custom : undefined,
-    backupApiKeys: backupApiKeys.length > 0 ? backupApiKeys : undefined,
+    backupApiKeys,
     rotationStrategy: payload.rotationStrategy ?? existing?.rotationStrategy,
     cooldownSeconds: payload.cooldownSeconds ?? existing?.cooldownSeconds,
+    fallbackProviders: fallbackProviders.length > 0 ? fallbackProviders : undefined,
   };
 
   // Cookies cap at ~4KB; fail loudly instead of silently truncating a config.
   if (JSON.stringify(config).length > 3500) {
-    throw new Error("Configuration too large — shorten the request template or headers");
+    throw new Error(
+      "Configuration too large — shorten custom request templates/headers, or remove a backup key / fallback provider",
+    );
   }
   return config;
 }
@@ -284,6 +384,14 @@ export function envBackgroundConfig(): ProviderConfig | null {
 
 // ─── Safe status (what the browser is allowed to know) ──────────────────────
 
+/** Safe (non-secret) description of one fallback provider. */
+export interface FallbackProviderSummary {
+  providerType: string;
+  name?: string;
+  model: string;
+  backupKeyCount: number;
+}
+
 export interface ProviderSummary {
   configured: boolean;
   source?: "session" | "deployment";
@@ -297,9 +405,12 @@ export interface ProviderSummary {
   backupKeyCount?: number;
   rotationStrategy?: RotationStrategy;
   cooldownSeconds?: number;
+  /** Other providers configured to try once the primary is exhausted. */
+  fallbackProviders?: FallbackProviderSummary[];
 }
 
-/** Never include apiKey or backupApiKeys here — not even masked/counted-as-keys. */
+/** Never include apiKey, backupApiKeys, or a fallback's apiKey/backupApiKeys
+ * here — not even masked/counted-as-keys. */
 export function summarize(resolved: ResolvedProvider | null): ProviderSummary {
   if (!resolved) return { configured: false };
   const { config, source } = resolved;
@@ -316,5 +427,11 @@ export function summarize(resolved: ResolvedProvider | null): ProviderSummary {
     backupKeyCount: config.backupApiKeys?.length ?? 0,
     rotationStrategy: config.rotationStrategy ?? DEFAULT_ROTATION_STRATEGY,
     cooldownSeconds: config.cooldownSeconds ?? DEFAULT_COOLDOWN_SECONDS,
+    fallbackProviders: config.fallbackProviders?.map((fb) => ({
+      providerType: fb.providerType,
+      name: fb.name,
+      model: fb.model,
+      backupKeyCount: fb.backupApiKeys?.length ?? 0,
+    })),
   };
 }

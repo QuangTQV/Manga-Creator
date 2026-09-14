@@ -1,14 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ProviderConfig } from "./providerSession";
+import type { FallbackProviderConfig, ProviderConfig } from "./providerSession";
 import {
   allCoolingDownMessage,
   buildCandidates,
   classifyStatus,
   cooldownRemainingSeconds,
   markCooldown,
+  nextCandidateIndex,
   orderCandidates,
   resetRotationStateForTests,
 } from "./providerRotation";
+
+function fallback(overrides: Partial<FallbackProviderConfig> = {}): FallbackProviderConfig {
+  return {
+    providerType: "openai-compatible",
+    baseUrl: "https://api.example.com/v1",
+    apiKey: "fallback-key",
+    model: "fallback-model",
+    ...overrides,
+  };
+}
 
 function config(overrides: Partial<ProviderConfig> = {}): ProviderConfig {
   return {
@@ -56,6 +67,95 @@ describe("buildCandidates", () => {
       config({ backupApiKeys: ["primary-key", "backup-1", "backup-1", ""] }),
     );
     expect(candidates.map((c) => c.apiKey)).toEqual(["primary-key", "backup-1"]);
+  });
+
+  it("appends each fallback provider after the primary and its backups, each with its own backups", () => {
+    const candidates = buildCandidates(
+      config({
+        backupApiKeys: ["backup-1"],
+        fallbackProviders: [
+          fallback({ providerType: "openai-compatible", apiKey: "fb1-primary", backupApiKeys: ["fb1-backup"] }),
+          fallback({ providerType: "gemini", model: "gemini-2.0-flash", apiKey: "fb2-primary" }),
+        ],
+      }),
+    );
+    expect(candidates.map((c) => `${c.providerType}:${c.apiKey}`)).toEqual([
+      "gemini:primary-key",
+      "gemini:backup-1",
+      "openai-compatible:fb1-primary",
+      "openai-compatible:fb1-backup",
+      "gemini:fb2-primary",
+    ]);
+    // A fallback candidate is a self-contained attempt — no leftover pool
+    // fields that could make it look like it has its own sub-pool.
+    expect(candidates[2].backupApiKeys).toBeUndefined();
+    expect(candidates[2].fallbackProviders).toBeUndefined();
+  });
+
+  it("does not dedupe an identical key value across two different providers", () => {
+    const candidates = buildCandidates(
+      config({
+        apiKey: "shared-value",
+        fallbackProviders: [fallback({ apiKey: "shared-value" })],
+      }),
+    );
+    expect(candidates).toHaveLength(2);
+  });
+
+  it("dedupes a fallback that repeats the primary's exact (provider, model, key)", () => {
+    const candidates = buildCandidates(
+      config({
+        fallbackProviders: [fallback({ providerType: "gemini", model: "gemini-2.5-flash-image", apiKey: "primary-key" })],
+      }),
+    );
+    expect(candidates).toHaveLength(1);
+  });
+
+  it("never dedupes two key-less (auth-mode-none) candidates against each other", () => {
+    const candidates = buildCandidates(
+      config({
+        apiKey: "",
+        fallbackProviders: [fallback({ providerType: "custom", apiKey: "" })],
+      }),
+    );
+    expect(candidates).toHaveLength(2);
+  });
+});
+
+describe("nextCandidateIndex", () => {
+  const ready = [
+    config({ apiKey: "primary-key" }),
+    config({ apiKey: "backup-1" }),
+    fallbackAsReadyConfig(fallback({ providerType: "openai-compatible", apiKey: "fb-1" })),
+    fallbackAsReadyConfig(fallback({ providerType: "openai-compatible", apiKey: "fb-2" })),
+  ];
+
+  function fallbackAsReadyConfig(fb: FallbackProviderConfig): ProviderConfig {
+    return config({ providerType: fb.providerType, model: fb.model, apiKey: fb.apiKey });
+  }
+
+  it("advances to the very next candidate for a non-fatal failure, regardless of provider", () => {
+    expect(nextCandidateIndex(ready, 0, "rate_limit")).toBe(1);
+    expect(nextCandidateIndex(ready, 1, "auth")).toBe(2);
+    expect(nextCandidateIndex(ready, 1, "credit")).toBe(2);
+  });
+
+  it("returns -1 on the last candidate no matter the failure kind", () => {
+    expect(nextCandidateIndex(ready, ready.length - 1, "rate_limit")).toBe(-1);
+    expect(nextCandidateIndex(ready, ready.length - 1, "fatal")).toBe(-1);
+  });
+
+  it("on a fatal failure, skips past every remaining candidate of the SAME provider", () => {
+    // ready[0] and ready[1] are both "gemini" — a fatal on the primary must
+    // not waste its own backup key on the identical doomed request, but
+    // SHOULD still reach the (different-provider) fallback afterward.
+    expect(nextCandidateIndex(ready, 0, "fatal")).toBe(2);
+  });
+
+  it("on a fatal failure with no later different-provider candidate left, stops", () => {
+    // ready[2] and ready[3] are both "openai-compatible" fallbacks — a
+    // fatal on the second-to-last has nowhere different left to go.
+    expect(nextCandidateIndex(ready, 2, "fatal")).toBe(-1);
   });
 });
 
@@ -159,7 +259,7 @@ describe("orderCandidates", () => {
 describe("allCoolingDownMessage", () => {
   it("reports the total candidate count and a rounded-up wait time", () => {
     expect(allCoolingDownMessage(3, 12.2)).toBe(
-      "All 3 configured API key(s) for this provider are cooling down after a recent rate limit/credit failure. Try again in about 13s.",
+      "All 3 configured API key(s)/provider(s) are cooling down after a recent rate limit/credit failure. Try again in about 13s.",
     );
   });
 });

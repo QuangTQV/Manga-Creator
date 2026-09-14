@@ -102,6 +102,82 @@ describe("buildProviderConfig", () => {
     expect(() => buildProviderConfig({ ...payload, apiKey: undefined }, null)).toThrow(/API key/);
   });
 
+  it("validates and stores fallback providers, each independently of the primary", () => {
+    const config = buildProviderConfig(
+      {
+        ...payload,
+        fallbackProviders: [
+          {
+            providerType: "gemini",
+            apiKey: "fallback-key-1",
+            model: "gemini-2.5-flash-image",
+          },
+        ],
+      },
+      null,
+    );
+    expect(config.fallbackProviders).toHaveLength(1);
+    expect(config.fallbackProviders?.[0]).toMatchObject({
+      providerType: "gemini",
+      apiKey: "fallback-key-1",
+      baseUrl: "https://generativelanguage.googleapis.com",
+    });
+  });
+
+  it("SSRF-guards a fallback provider's endpoint just like the primary's", () => {
+    expect(() =>
+      buildProviderConfig(
+        {
+          ...payload,
+          fallbackProviders: [
+            { providerType: "openai-compatible", baseUrl: "https://169.254.169.254", apiKey: "x", model: "m" },
+          ],
+        },
+        null,
+      ),
+    ).toThrow(/private or local/);
+  });
+
+  it("rejects a fallback provider type that doesn't belong to the kind", () => {
+    expect(() =>
+      buildProviderConfig(
+        { ...payload, fallbackProviders: [{ providerType: "made-up", apiKey: "x", model: "m" }] },
+        null,
+      ),
+    ).toThrow(/Unsupported/);
+  });
+
+  it("requires a key on a fallback provider just like the primary", () => {
+    expect(() =>
+      buildProviderConfig(
+        {
+          ...payload,
+          fallbackProviders: [{ providerType: "openai-compatible", baseUrl: "https://api.example.com", model: "m" }],
+        },
+        null,
+      ),
+    ).toThrow(/API key/);
+  });
+
+  it("keeps the previously stored fallback chain when the payload omits it", () => {
+    const existing = buildProviderConfig(
+      { ...payload, fallbackProviders: [{ providerType: "gemini", apiKey: "fb-key", model: "gemini-2.5-flash-image" }] },
+      null,
+    );
+    const updated = buildProviderConfig({ ...payload, apiKey: undefined, model: "newer-model" }, existing);
+    expect(updated.fallbackProviders).toHaveLength(1);
+    expect(updated.fallbackProviders?.[0].apiKey).toBe("fb-key");
+  });
+
+  it("clears the fallback chain when the payload sends an explicit empty array", () => {
+    const existing = buildProviderConfig(
+      { ...payload, fallbackProviders: [{ providerType: "gemini", apiKey: "fb-key", model: "gemini-2.5-flash-image" }] },
+      null,
+    );
+    const updated = buildProviderConfig({ ...payload, fallbackProviders: [] }, existing);
+    expect(updated.fallbackProviders).toBeUndefined();
+  });
+
   it("builds an independent background-removal BYOK configuration", () => {
     const config = buildProviderConfig({
       kind: "background",
@@ -135,6 +211,34 @@ describe("summaries never leak secrets", () => {
     expect(JSON.stringify(summary)).not.toContain("apiKey");
     expect(summary.configured).toBe(true);
     expect(summary.source).toBe("session");
+  });
+
+  it("summarize omits every fallback provider's apiKey/backupApiKeys, keeping only safe fields", () => {
+    const config = buildProviderConfig(
+      {
+        kind: "image" as const,
+        providerType: "gemini",
+        apiKey: "primary-secret",
+        model: "gemini-2.5-flash-image",
+        fallbackProviders: [
+          {
+            providerType: "openai-compatible",
+            baseUrl: "https://api.example.com/v1",
+            apiKey: "fallback-secret",
+            model: "fb-model",
+            backupApiKeys: ["fallback-backup-secret"],
+          },
+        ],
+      },
+      null,
+    );
+    const summary = summarize({ config, source: "session" });
+    const serialized = JSON.stringify(summary);
+    expect(serialized).not.toContain("fallback-secret");
+    expect(serialized).not.toContain("fallback-backup-secret");
+    expect(summary.fallbackProviders).toEqual([
+      { providerType: "openai-compatible", name: undefined, model: "fb-model", backupKeyCount: 1 },
+    ]);
   });
 });
 

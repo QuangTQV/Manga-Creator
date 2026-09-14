@@ -93,7 +93,7 @@ describe("wrapImageProviderWithRotation", () => {
     expect(calls).toEqual(["primary-key", "backup-1"]);
   });
 
-  it("does not rotate past a fatal (400) error — it would fail identically on every candidate", async () => {
+  it("does not rotate to a same-provider backup on a fatal (400) error — it would fail identically", async () => {
     const { buildAdapter, calls } = fakeAdapterFactory({
       "primary-key": async () => {
         throw new ProviderError("bad prompt", 400);
@@ -106,6 +106,53 @@ describe("wrapImageProviderWithRotation", () => {
     );
     await expect(provider.generateImage({ prompt: "x", assetType: "character" })).rejects.toThrow("bad prompt");
     expect(calls).toEqual(["primary-key"]);
+  });
+
+  it("DOES rotate past a fatal error to a genuinely different fallback provider", async () => {
+    const calls: string[] = [];
+    const buildAdapter = (candidate: ProviderConfig): ImageGenerationProvider => ({
+      id: candidate.providerType,
+      label: candidate.providerType,
+      model: candidate.model,
+      capabilities: {
+        textToImage: true,
+        supportsReferenceImage: false,
+        supportsTransparentBackground: false,
+        supportsImageEditing: false,
+        reference: { supported: false, transport: "none" },
+        referenceImage: false,
+        imageVariation: false,
+        transparentOutput: false,
+        asyncGeneration: false,
+      },
+      testConnection: async () => ({ ok: true }),
+      generateImage: async () => {
+        calls.push(`${candidate.providerType}:${candidate.apiKey}`);
+        if (candidate.providerType === "gemini") throw new ProviderError("bad prompt for this model", 400);
+        return RESULT;
+      },
+    });
+    const provider = wrapImageProviderWithRotation(
+      config({
+        providerType: "gemini",
+        backupApiKeys: ["backup-1"],
+        rotationStrategy: "sequential",
+        fallbackProviders: [
+          {
+            providerType: "openai-compatible",
+            baseUrl: "https://api.example.com/v1",
+            apiKey: "fb-key",
+            model: "fb-model",
+          },
+        ],
+      }),
+      buildAdapter,
+    );
+    const result = await provider.generateImage({ prompt: "x", assetType: "character" });
+    expect(result).toBe(RESULT);
+    // Both gemini candidates (primary + its backup) are skipped as fatal —
+    // never retried — but the fallback provider is still reached.
+    expect(calls).toEqual(["gemini:primary-key", "openai-compatible:fb-key"]);
   });
 
   it("throws a clear error when every configured key is already cooling down", async () => {

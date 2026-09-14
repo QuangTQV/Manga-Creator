@@ -13,7 +13,13 @@ import {
   fetchProviderStatus,
   type ProviderStatusSnapshot,
 } from "@/services/generation";
-import type { ProviderSummary, RotationStrategy } from "@/server/providerSession";
+import type { FallbackProviderSummary, ProviderSummary, RotationStrategy } from "@/server/providerSession";
+
+// Client-side mirror of providerSession.ts's MAX_FALLBACK_PROVIDERS — kept
+// as a plain constant (not imported) because that module pulls in
+// node:crypto (secretBox.ts) at runtime and must never enter the client
+// bundle; only its types are safe to import here.
+const MAX_FALLBACK_PROVIDERS = 3;
 import {
   CloseIcon,
   DoneIcon,
@@ -53,6 +59,23 @@ const BACKGROUND_PROTOCOLS = [
   { id: "remove-bg", label: "remove.bg", placeholder: "https://api.remove.bg/v1.0/removebg" },
   { id: "custom", label: "Custom JSON", placeholder: "https://example.com/cutout" },
 ];
+
+/** One row in the fallback-provider editor. Simple protocols only (no
+ * "custom" JSON mapping) — keeps a per-row mini-form manageable; a fully
+ * custom fallback can still be reached by hand-editing the stored cookie
+ * via the API, just not through this form. */
+interface FallbackRow {
+  providerType: string;
+  name: string;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  backupApiKeysText: string;
+}
+
+function emptyFallbackRow(providerType: string): FallbackRow {
+  return { providerType, name: "", baseUrl: "", apiKey: "", model: "", backupApiKeysText: "" };
+}
 
 export function AiSettingsDialog() {
   const open = useUiStore((s) => s.settingsOpen);
@@ -200,6 +223,13 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
   // primary API key field already works.
   const [backupApiKeysText, setBackupApiKeysText] = useState("");
   const [rotationStrategy, setRotationStrategy] = useState<RotationStrategy>("round_robin");
+  // Fallback providers are always resubmitted whole (their keys can never be
+  // read back from the server either) — `fallbackTouched` distinguishes
+  // "never opened this section, keep whatever is stored" (omitted from the
+  // save payload) from "opened it and this IS the whole list now, even if
+  // that means clearing it" (sent as `[]`).
+  const [fallbackRows, setFallbackRows] = useState<FallbackRow[]>([]);
+  const [fallbackTouched, setFallbackTouched] = useState(false);
   const [busy, setBusy] = useState<"save" | "test" | "forget" | "models" | null>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [preview, setPreview] = useState<Record<string, unknown> | null>(null);
@@ -248,6 +278,21 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
                 ? backupApiKeysText.split("\n").map((k) => k.trim()).filter(Boolean)
                 : undefined,
               rotationStrategy,
+              // Only sent once the user has actually opened the fallback
+              // editor — otherwise omitted, which keeps whatever chain (if
+              // any) is already stored.
+              fallbackProviders: fallbackTouched
+                ? fallbackRows.map((row) => ({
+                    providerType: row.providerType,
+                    name: row.name || undefined,
+                    baseUrl: row.baseUrl || undefined,
+                    apiKey: row.apiKey || undefined,
+                    model: row.model,
+                    backupApiKeys: row.backupApiKeysText.trim()
+                      ? row.backupApiKeysText.split("\n").map((k) => k.trim()).filter(Boolean)
+                      : undefined,
+                  }))
+                : undefined,
             };
       const payload = isCustom
         ? {
@@ -279,6 +324,7 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
       if (!response.ok) throw new Error(body.error ?? "Save failed");
       setApiKey("");
       setBackupApiKeysText("");
+      setFallbackRows((rows) => rows.map((r) => ({ ...r, apiKey: "", backupApiKeysText: "" })));
       setCustomForm((f) => ({ ...f, apiKey: "" }));
       setMessage({ ok: true, text: "Saved. Credentials are stored securely for this browser session." });
       onChanged();
@@ -323,6 +369,8 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
     setBaseUrl("");
     setBackupApiKeysText("");
     setRotationStrategy("round_robin");
+    setFallbackRows([]);
+    setFallbackTouched(false);
     setMessage({ ok: true, text: "Credentials forgotten." });
     setBusy(null);
     onChanged();
@@ -477,9 +525,9 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
       </details>
 
       {kind !== "background" && (
-        <details className="mt-2" open={Boolean(summary?.backupKeyCount)}>
+        <details className="mt-2" open={Boolean(summary?.backupKeyCount || summary?.fallbackProviders?.length)}>
           <summary className="cursor-pointer select-none text-[10px] uppercase tracking-wider text-zinc-500">
-            Advanced — multi-key rotation
+            Advanced — rotation &amp; fallback
           </summary>
           <div className="mt-2">
             <Field label="Backup API keys (one per line, optional)">
@@ -495,7 +543,7 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
                 autoComplete="off"
               />
             </Field>
-            <Field label="Which key to try first">
+            <Field label="Which key/provider to try first">
               <select
                 className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1.5"
                 value={rotationStrategy}
@@ -511,6 +559,34 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
               multiple free-tier keys effectively multiply your throughput. A key that just failed is benched
               briefly before it is tried again.
             </p>
+
+            <div className="mt-3 border-t border-zinc-800 pt-3">
+              <FallbackProvidersEditor
+                kind={kind}
+                simpleProtocols={simpleProtocols}
+                stored={summary?.fallbackProviders ?? []}
+                touched={fallbackTouched}
+                rows={fallbackRows}
+                onBeginEditing={() => {
+                  setFallbackRows(
+                    (summary?.fallbackProviders ?? []).map((fb) => ({
+                      providerType: fb.providerType,
+                      name: fb.name ?? "",
+                      baseUrl: "",
+                      apiKey: "",
+                      model: fb.model,
+                      backupApiKeysText: "",
+                    })),
+                  );
+                  setFallbackTouched(true);
+                }}
+                onDiscard={() => {
+                  setFallbackRows([]);
+                  setFallbackTouched(false);
+                }}
+                onRowsChange={setFallbackRows}
+              />
+            </div>
           </div>
         </details>
       )}
@@ -564,6 +640,158 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
       )}
       {footnote && <p className="mt-2 text-[11px] leading-4 text-zinc-500">{footnote}</p>}
     </section>
+  );
+}
+
+/**
+ * Fallback providers — entirely different vendors/endpoints tried, in
+ * order, once the primary provider (and all its backup keys) are
+ * exhausted. Keys can never be read back from the server, so editing this
+ * list always starts from a clean slate: `onBeginEditing` seeds the rows
+ * from the safe (non-secret) summary with empty key fields the user must
+ * retype, and the whole list is resubmitted together on Save.
+ */
+function FallbackProvidersEditor({
+  kind,
+  simpleProtocols,
+  stored,
+  touched,
+  rows,
+  onBeginEditing,
+  onDiscard,
+  onRowsChange,
+}: {
+  kind: "agent" | "image" | "background";
+  simpleProtocols: { id: string; label: string; placeholder: string }[];
+  stored: FallbackProviderSummary[];
+  touched: boolean;
+  rows: FallbackRow[];
+  onBeginEditing: () => void;
+  onDiscard: () => void;
+  onRowsChange: (rows: FallbackRow[]) => void;
+}) {
+  const updateRow = (index: number, patch: Partial<FallbackRow>) =>
+    onRowsChange(rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
+  const removeRow = (index: number) => onRowsChange(rows.filter((_, i) => i !== index));
+  const addRow = () => onRowsChange([...rows, emptyFallbackRow(simpleProtocols[0].id)]);
+
+  if (!touched) {
+    return (
+      <div>
+        <span className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">Fallback providers</span>
+        {stored.length > 0 ? (
+          <p className="mb-2 text-[11px] leading-4 text-zinc-500">
+            {stored
+              .map((fb) => `${fb.name || fb.providerType} (${fb.model})${fb.backupKeyCount ? ` +${fb.backupKeyCount} key(s)` : ""}`)
+              .join(", ")}{" "}
+            — tried in order if {kind === "agent" ? "the agent provider" : "image generation"} above is exhausted.
+          </p>
+        ) : (
+          <p className="mb-2 text-[11px] leading-4 text-zinc-500">
+            None configured — on repeated failure, generation stops instead of trying a different provider.
+          </p>
+        )}
+        <button
+          type="button"
+          className="rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs hover:bg-zinc-700"
+          onClick={onBeginEditing}
+        >
+          {stored.length > 0 ? "Edit fallback providers" : "Add a fallback provider"}
+        </button>
+        {stored.length > 0 && (
+          <p className="mt-1 text-[10px] leading-4 text-zinc-600">
+            Editing requires re-entering every fallback&apos;s key — they are never sent back from the server.
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between">
+        <span className="text-[10px] uppercase tracking-wider text-zinc-500">Fallback providers</span>
+        <button type="button" className="text-[10px] text-zinc-500 hover:text-zinc-300" onClick={onDiscard}>
+          Discard changes
+        </button>
+      </div>
+      {rows.length === 0 && (
+        <p className="mb-2 text-[11px] leading-4 text-zinc-500">No fallback providers — add one below.</p>
+      )}
+      {rows.map((row, index) => (
+        <div key={index} className="mb-2 rounded-md border border-zinc-800 p-2">
+          <div className="mb-1.5 flex items-center justify-between">
+            <select
+              className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1 text-xs"
+              value={row.providerType}
+              onChange={(e) => updateRow(index, { providerType: e.target.value, baseUrl: "" })}
+            >
+              {simpleProtocols.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="text-xs text-zinc-500 hover:text-red-400"
+              onClick={() => removeRow(index)}
+              aria-label="Remove this fallback provider"
+              title="Remove"
+            >
+              ✕
+            </button>
+          </div>
+          <input
+            className="mb-1.5 w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1 text-xs"
+            value={row.name}
+            onChange={(e) => updateRow(index, { name: e.target.value })}
+            placeholder="Name (optional)"
+          />
+          <input
+            className="mb-1.5 w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1 font-mono text-xs"
+            value={row.baseUrl}
+            onChange={(e) => updateRow(index, { baseUrl: e.target.value })}
+            placeholder={simpleProtocols.find((p) => p.id === row.providerType)?.placeholder ?? "Base URL"}
+          />
+          <input
+            type="password"
+            className="mb-1.5 w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1 font-mono text-xs"
+            value={row.apiKey}
+            onChange={(e) => updateRow(index, { apiKey: e.target.value })}
+            placeholder="API key"
+            autoComplete="off"
+          />
+          {kind !== "background" && (
+            <input
+              className="mb-1.5 w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1 font-mono text-xs"
+              value={row.model}
+              onChange={(e) => updateRow(index, { model: e.target.value })}
+              placeholder="Model"
+            />
+          )}
+          <textarea
+            className="h-12 w-full resize-y rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1 font-mono text-[11px]"
+            value={row.backupApiKeysText}
+            onChange={(e) => updateRow(index, { backupApiKeysText: e.target.value })}
+            placeholder="Backup keys for this fallback (one per line, optional)"
+            autoComplete="off"
+          />
+        </div>
+      ))}
+      {rows.length < MAX_FALLBACK_PROVIDERS && (
+        <button
+          type="button"
+          className="rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs hover:bg-zinc-700"
+          onClick={addRow}
+        >
+          + Add fallback provider ({rows.length}/{MAX_FALLBACK_PROVIDERS})
+        </button>
+      )}
+      <p className="mt-1 text-[10px] leading-4 text-zinc-600">
+        Saved together with everything above — an incomplete row (missing key) will fail the save.
+      </p>
+    </div>
   );
 }
 

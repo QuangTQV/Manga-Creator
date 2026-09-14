@@ -59,12 +59,15 @@ Background removal is a third independent provider kind with its own encrypted H
 
 `src/ai/promptTemplates.ts` converts semantic requests (character/pose/expression/background/prop + descriptions) into provider-neutral prompts — creator vocabulary in, provider strings out, in exactly one place. It is isomorphic: the dialog shows a prompt preview with the same code the executor uses.
 
-## Multi-key rotation
+## Multi-key and multi-provider rotation
 
 A `ProviderConfig` (agent or image) may carry `backupApiKeys: string[]` —
-extra keys for the *same* provider/model. When present, `providerRegistry.ts`
-and `agent/providers/registry.ts` transparently wrap the adapter they build
-with `withRotation.ts` (image) / `withRotation.ts` (agent); with none
+extra keys for the *same* provider/model — and/or `fallbackProviders:
+FallbackProviderConfig[]` — entirely different vendors/endpoints (up to
+`MAX_FALLBACK_PROVIDERS`, each with its own model and optionally its own
+`backupApiKeys`). When either is present, `providerRegistry.ts` and
+`agent/providers/registry.ts` transparently wrap the adapter they build with
+`withRotation.ts` (image) / `withRotation.ts` (agent); with neither
 configured this is a no-op that returns the plain adapter. Every caller of
 `createImageProvider`/`createAgentProvider` benefits automatically — no call
 site needs to know rotation exists.
@@ -72,36 +75,58 @@ site needs to know rotation exists.
 Shared core in `src/server/providerRotation.ts` (framework/HTTP-agnostic —
 it only ever handles `ProviderConfig` variants and a status code):
 
-- **Candidate pool**: the primary key, then each backup, deduped.
+- **Candidate pool** (`buildCandidates`): the primary key, then each of its
+  backups, then each fallback provider with each of *its* backups in turn —
+  a flat chain, never a tree (a fallback cannot have its own fallbacks). A
+  `(providerType, model, key)` triple is only ever tried once; the same key
+  against a *different* model is not a duplicate (some providers meter rate
+  limits per model); a key-less candidate (custom API, auth mode "none") is
+  never deduped against another key-less one.
 - **Failure classification** from the HTTP status every adapter already
   normalizes to (`gemini.ts`/`genericRest.ts`/`agent/providers/http.ts`):
   `429` → rate limit (cool down, rotate), `402` → out of credit (cool down
   much longer, rotate), `401` → this key is bad (rotate, no point retrying
-  it), anything else → fatal (would fail identically on every candidate —
-  stop immediately instead of burning through the whole chain).
+  it), anything else → fatal.
+- **Fatal is provider-scoped, not chain-stopping** (`nextCandidateIndex`): a
+  fatal error (bad prompt, malformed request, a genuinely broken 5xx) would
+  repeat identically on every OTHER key for the *same* provider — those are
+  skipped without retrying — but must not block trying a later, genuinely
+  different fallback provider, which gets its own real attempt. If nothing
+  but same-provider candidates remain, rotation stops there instead of
+  wasting calls.
 - **Cooldown**: in-process, keyed by (kind, provider, model, key) — scoped
   to the model too, since several providers meter quota per model. Prefers
   a provider-sent `Retry-After` (`src/server/retryAfter.ts`) over the
   configured blind guess, clamped to 15 minutes.
 - **Starting order** (`ProviderConfig.rotationStrategy`): `round_robin`
-  (default) advances a per-pool cursor so consecutive requests fan out
-  across every key instead of only reaching backups reactively once the
-  primary fails — two keys on the same free-tier cap roughly double
-  effective throughput this way. `sequential` always tries the primary
-  first. `random` shuffles the ready candidates.
+  (default) advances a cursor shared per `kind` (agent/image — a session has
+  exactly one rotation pool per kind, however many providers it spans) so
+  consecutive requests fan out across every key/provider instead of only
+  reaching backups reactively once the primary fails. `sequential` always
+  tries the primary first. `random` shuffles the ready candidates.
 
 `testConnection()` is deliberately NOT rotated — it always checks the exact
-key the user just typed, never a backup standing in for it.
+key the user just typed, never a backup/fallback standing in for it.
 
 In-process only: state resets on restart. That is a real optimization for
 `npm run dev` (one long-lived process) and a documented, accepted trade-off
 on serverless — not durable state, matching the equivalent design in the
 sibling Manga-Translator-Extension project this was ported from.
 
-Configured in AI Settings under "Advanced — multi-key rotation" (per
+Configured in AI Settings under "Advanced — rotation & fallback" (per
 provider card, agent and image only — background removal is out of scope
-for now). Backup keys are secrets like the primary key: never returned to
-the browser, never in a `ProviderSummary` — only a safe `backupKeyCount`.
+for now). Backup keys and fallback providers are secrets like the primary
+key: never returned to the browser, never in a `ProviderSummary` — only
+safe counts/identity (`backupKeyCount`, and per fallback its `providerType`/
+`name`/`model`/`backupKeyCount`). Because they can never be read back, the
+AI Settings UI always resubmits the whole fallback list together on save
+(no partial per-entry key updates) — see the `FallbackProvidersEditor`
+component's doc comment in `AiSettingsDialog.tsx` for the exact UX. The
+whole `ProviderConfig` (primary + backups + fallbacks + their backups)
+still lives in one ~4KB session cookie; `buildProviderConfig` fails loudly
+with a clear message if a configuration grows too large instead of silently
+truncating it — trim a custom request template, a backup key, or a fallback
+provider.
 
 ## Async providers
 

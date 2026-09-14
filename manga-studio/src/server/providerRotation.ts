@@ -1,7 +1,9 @@
 /**
- * Multi-key rotation for BYOK providers: when a `ProviderConfig` carries
- * `backupApiKeys`, spread requests across the primary key and its backups
- * instead of hammering one key until it fails. Shared by the image
+ * Multi-key AND multi-provider rotation for BYOK providers: when a
+ * `ProviderConfig` carries `backupApiKeys` and/or `fallbackProviders`,
+ * spread requests across the primary key, its backups, and entirely
+ * different fallback providers (each with their own backups) instead of
+ * hammering one key/vendor until it fails. Shared by the image
  * (`src/ai/providers/withRotation.ts`) and agent (`src/agent/providers/
  * withRotation.ts`) adapter wrappers — this module knows nothing about
  * HTTP calls or provider SDKs, only about `ProviderConfig` variants, in
@@ -19,6 +21,7 @@
 import {
   DEFAULT_COOLDOWN_SECONDS,
   DEFAULT_ROTATION_STRATEGY,
+  type FallbackProviderConfig,
   type ProviderConfig,
 } from "./providerSession";
 
@@ -53,19 +56,84 @@ export function classifyStatus(status: number): RotationFailure {
   return "fatal";
 }
 
-/** The `ProviderConfig` variants to try, in configured order: the primary
- * exactly as given, then each backup key. Blank/duplicate backups (already
- * filtered at save time in providerSession.ts, but defended here too) are
- * skipped so a repeated key never wastes a rotation slot retrying itself. */
+function asCandidate(config: ProviderConfig, fields: Partial<ProviderConfig>): ProviderConfig {
+  // A candidate is one concrete attempt — never carries the pool fields
+  // that produced it, so nothing downstream mistakes it for a sub-pool.
+  return { ...config, backupApiKeys: undefined, fallbackProviders: undefined, ...fields };
+}
+
+function fallbackAsConfig(config: ProviderConfig, fallback: FallbackProviderConfig): ProviderConfig {
+  return asCandidate(config, {
+    providerType: fallback.providerType,
+    name: fallback.name,
+    baseUrl: fallback.baseUrl,
+    apiKey: fallback.apiKey,
+    model: fallback.model,
+    custom: fallback.custom,
+  });
+}
+
+/**
+ * The `ProviderConfig` variants to try, in configured order: the primary
+ * exactly as given, then each of its backup keys, then each fallback
+ * provider (a different vendor/endpoint entirely) with each of ITS backup
+ * keys in turn.
+ *
+ * A `(providerType, model, key)` triple is only ever yielded once —
+ * retrying the exact same account *and* model under a different label
+ * wastes a rotation slot instead of reaching fresh quota, so duplicates
+ * anywhere in the chain are skipped after the first. The same key against
+ * a *different* model is NOT a duplicate (some providers meter rate limits
+ * per model). A key-less candidate (custom API, auth mode "none") is never
+ * treated as a duplicate of another key-less one — an empty key doesn't
+ * identify an account.
+ */
 export function buildCandidates(config: ProviderConfig): ProviderConfig[] {
-  const seen = new Set<string>(config.apiKey ? [config.apiKey] : []);
-  const candidates: ProviderConfig[] = [config];
+  const seen = new Set<string>();
+  const candidates: ProviderConfig[] = [];
+
+  function add(candidate: ProviderConfig): void {
+    if (candidate.apiKey) {
+      const identity = `${candidate.providerType}:${candidate.model}:${candidate.apiKey}`;
+      if (seen.has(identity)) return;
+      seen.add(identity);
+    }
+    candidates.push(candidate);
+  }
+
+  add(asCandidate(config, {}));
   for (const key of config.backupApiKeys ?? []) {
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    candidates.push({ ...config, apiKey: key, backupApiKeys: undefined });
+    if (key) add(asCandidate(config, { apiKey: key }));
+  }
+  for (const fallback of config.fallbackProviders ?? []) {
+    const base = fallbackAsConfig(config, fallback);
+    add(base);
+    for (const key of fallback.backupApiKeys ?? []) {
+      if (key) add({ ...base, apiKey: key });
+    }
   }
   return candidates;
+}
+
+/**
+ * Given a failure on `ready[failedIndex]`, the next index to try — or -1 if
+ * rotation should stop. Non-fatal failures (rate limit / credit / bad key)
+ * always advance to the very next ready candidate, whatever provider it is.
+ * A `fatal` failure (would repeat identically on any OTHER key for the SAME
+ * provider — same request, same model) only continues if a LATER candidate
+ * is a genuinely different provider; a fatal fallback misconfiguration must
+ * not block trying an unrelated fallback that comes after it, but a fatal
+ * primary failure must not waste every one of the primary's own backup
+ * keys repeating the exact same doomed request.
+ */
+export function nextCandidateIndex(
+  ready: ProviderConfig[],
+  failedIndex: number,
+  failure: RotationFailure,
+): number {
+  if (failedIndex >= ready.length - 1) return -1;
+  if (failure !== "fatal") return failedIndex + 1;
+  return ready.findIndex((c, j) => j > failedIndex && c.providerType !== ready[failedIndex].providerType);
 }
 
 // ─── Cooldown tracker ───────────────────────────────────────────────────────
@@ -111,15 +179,17 @@ export function resetRotationStateForTests(): void {
 }
 
 // ─── Starting order ─────────────────────────────────────────────────────────
-// Round-robin cursor per (kind, providerType, model) pool — proactively
-// spreads load across every configured key instead of always trying the
-// primary first and only reaching backups reactively once it fails. Two
-// keys on the same free-tier rate cap effectively double combined
-// throughput this way.
+// Round-robin cursor per `kind` (agent/image) — proactively spreads load
+// across every configured key AND fallback provider instead of always
+// trying the primary first and only reaching backups/fallbacks reactively
+// once it fails. Two keys on the same free-tier rate cap effectively double
+// combined throughput this way. Keyed by `kind` alone (not provider/model,
+// now that the pool can span several providers): a session has exactly one
+// configured rotation pool per kind, so this is already a stable identity.
 const cursors = new Map<string, number>();
 
 function poolKey(config: ProviderConfig): string {
-  return `${config.kind}:${config.providerType}:${config.model}`;
+  return config.kind;
 }
 
 function nextRoundRobinOffset(pool: string, size: number): number {
@@ -185,8 +255,8 @@ export function orderCandidates(config: ProviderConfig): OrderedCandidates {
  * rotation wrapper cannot fall through to a real provider error for. */
 export function allCoolingDownMessage(total: number, soonestReadySeconds: number): string {
   return (
-    `All ${total} configured API key(s) for this provider are cooling down ` +
-    `after a recent rate limit/credit failure. Try again in about ` +
+    `All ${total} configured API key(s)/provider(s) are cooling down after ` +
+    `a recent rate limit/credit failure. Try again in about ` +
     `${Math.ceil(soonestReadySeconds)}s.`
   );
 }
