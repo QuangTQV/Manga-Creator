@@ -11,9 +11,17 @@ import { deserializeProject, serializeProject } from "@/domain/serialization";
 import type { ProjectDocument } from "@/domain/types";
 
 const DB_NAME = "manga-studio";
-const DB_VERSION = 1;
+// v2 adds novelOutlineStore.ts's own object store. Both modules open the
+// SAME physical database and must request the SAME version — IndexedDB
+// throws VersionError if a later open() requests a version LOWER than one
+// already reached, so this constant and novelOutlineStore.ts's copy of it
+// must be bumped together. Each module's onupgradeneeded defensively
+// creates every store either module needs (not just its own), so it does
+// not matter which module happens to open the database first.
+const DB_VERSION = 2;
 const PROJECTS = "projects";
 const META = "meta";
+const NOVEL_OUTLINES = "novelOutlines";
 
 /** Enough to render the project list without loading every document. */
 export interface ProjectSummary {
@@ -43,6 +51,7 @@ function openDb(): Promise<IDBDatabase> {
       const db = request.result;
       if (!db.objectStoreNames.contains(PROJECTS)) db.createObjectStore(PROJECTS);
       if (!db.objectStoreNames.contains(META)) db.createObjectStore(META);
+      if (!db.objectStoreNames.contains(NOVEL_OUTLINES)) db.createObjectStore(NOVEL_OUTLINES);
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);

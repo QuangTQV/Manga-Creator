@@ -2,8 +2,9 @@
 
 /**
  * Novel Import: paste (or paste-in) prose, parse it into a structured script
- * (characters/scenes/beats — see `agent/novelParser/schema.ts`), and walk
- * through the resulting planned pages one at a time.
+ * (characters/scenes/beats — see `agent/novelParser/schema.ts`), review and
+ * fix up the character list, then walk through the resulting planned pages
+ * one at a time.
  *
  * Deliberately reuses the existing single-page Manga Agent
  * (`runCreativeDirection`/`executeCreativeRun` in `agent-v3/run.ts`) as the
@@ -14,23 +15,32 @@
  * order — see pagination.ts for why that split of responsibility mirrors
  * the Creative Director's own "LLM decides meaning, code decides structure."
  *
- * Not persisted: the parsed outline lives only in this component's state
- * for the current browser tab. Reloading loses in-progress (not yet
- * generated) pages — acceptable for a v1 that intentionally avoids a
- * project-document schema migration; already-generated pages are ordinary
- * pages in the project exactly like any other, and persist normally.
+ * Persisted per project (`storage/novelOutlineStore.ts`, separate from the
+ * project document itself — see that module's docstring for why): closing
+ * the dialog or reloading the page restores wherever you left off. Only the
+ * scratch outline is stored there; once a page is generated it is an
+ * ordinary project page like any other and persists through the normal
+ * project-save path.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { executeCreativeRun, runCreativeDirection } from "@/agent-v3/run";
 import type { RunV3Outcome } from "@/agent-v3/run";
 import { groupSegmentsIntoChunks, splitIntoChapters, splitIntoSegments } from "@/agent/novelParser/segmentation";
 import type { NovelFidelity } from "@/agent/novelParser/prompt";
 import { MAX_SUPPORTED_PANELS_PER_PAGE, planPages, type PanelBudget, type PlannedPage } from "@/agent/novelParser/pagination";
 import type { NovelCharacter, NovelScene } from "@/agent/novelParser/schema";
+import { dedupeCharacters, mergeCharacterEntries, redirectCharacterName } from "@/agent/novelParser/characterEdits";
 import type { LayoutPresetId } from "@/domain/types";
 import { useEditorStore } from "@/editor/store";
 import { useUiStore } from "@/editor/uiStore";
+import {
+  clearNovelOutline,
+  loadNovelOutline,
+  saveNovelOutline,
+  type StoredChapterOutline,
+  type NovelOutlinePageState as PageState,
+} from "@/storage/novelOutlineStore";
 import { CloseIcon, ICON_SIZE, ICON_STROKE } from "../ui/icons";
 
 const SEGMENTS_PER_CHUNK = 3;
@@ -53,14 +63,11 @@ function parsePanelBudget(value: string): PanelBudget {
   return value === "auto" ? "auto" : Number(value);
 }
 
-type Stage = "input" | "parsing" | "review";
-type PageState = "planned" | "generating" | "done" | "error";
+type Stage = "input" | "parsing" | "characters" | "review";
+type ChapterOutline = StoredChapterOutline;
 
-interface ChapterOutline {
-  title: string;
-  characters: NovelCharacter[];
-  scenes: NovelScene[];
-  pages: PlannedPage[];
+function currentProjectId(): string | null {
+  return useEditorStore.getState().doc?.project.id ?? null;
 }
 
 export function NovelImportDialog() {
@@ -77,10 +84,45 @@ export function NovelImportDialog() {
   const [pageStates, setPageStates] = useState<Record<string, PageState>>({});
   const [pageErrors, setPageErrors] = useState<Record<string, string>>({});
   const [parseError, setParseError] = useState<string | null>(null);
+  const [restored, setRestored] = useState(false);
+
+  // Restore a previously in-progress outline for this project, once, the
+  // first time the dialog opens. A project with no saved outline yet just
+  // starts at "input" as before.
+  useEffect(() => {
+    if (!open || restored) return;
+    setRestored(true);
+    const projectId = currentProjectId();
+    if (!projectId) return;
+    loadNovelOutline(projectId).then((stored) => {
+      if (!stored || stored.chapters.length === 0) return;
+      setFidelity(stored.fidelity);
+      setPanelsPerPage(stored.panelsPerPage);
+      setChapters(stored.chapters);
+      setPageStates(stored.pageStates);
+      setStage(stored.chapters.some((ch) => ch.pages.length > 0) ? "review" : "characters");
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   if (!open) return null;
 
+  const persist = (nextChapters: ChapterOutline[], nextPageStates: Record<string, PageState>) => {
+    const projectId = currentProjectId();
+    if (!projectId) return;
+    void saveNovelOutline({
+      projectId,
+      fidelity,
+      panelsPerPage,
+      chapters: nextChapters,
+      pageStates: nextPageStates,
+      savedAt: new Date().toISOString(),
+    });
+  };
+
   const reset = () => {
+    const projectId = currentProjectId();
+    if (projectId) void clearNovelOutline(projectId);
     setText("");
     setStage("input");
     setChapters([]);
@@ -134,18 +176,50 @@ export function NovelImportDialog() {
           doneChunks += 1;
           setProgress({ done: doneChunks, total: totalChunks });
         }
-        const pages = planPages(draft.title, scenes, panelsPerPage);
-        outlines.push({ title: draft.title, characters, scenes, pages });
+        // Pages are planned once the creator has reviewed/fixed up
+        // characters below — an empty array here just means "not planned
+        // yet", not "this chapter has no content".
+        outlines.push({ title: draft.title, characters, scenes, pages: [] });
       }
       setChapters(outlines);
-      setPageStates(
-        Object.fromEntries(outlines.flatMap((ch) => ch.pages.map((p) => [p.id, "planned" as PageState]))),
-      );
-      setStage("review");
+      setPageStates({});
+      setStage("characters");
+      persist(outlines, {});
     } catch (error) {
       setParseError(error instanceof Error ? error.message : "Novel parsing failed");
       setStage("input");
     }
+  };
+
+  /**
+   * Redirects every reference to `from` onto `to`, across every chapter —
+   * rename (the model's name was wrong) and merge (two entries turned out
+   * to be the same person) are the same operation; see characterEdits.ts.
+   */
+  const applyCharacterRename = (from: string, to: string) => {
+    const trimmed = to.trim();
+    if (!trimmed || trimmed === from) return;
+    const nextChapters = chapters.map((chapter) => ({
+      ...chapter,
+      scenes: redirectCharacterName(chapter.scenes, from, trimmed),
+      characters: mergeCharacterEntries(chapter.characters, from, trimmed),
+    }));
+    setChapters(nextChapters);
+    persist(nextChapters, pageStates);
+  };
+
+  const proceedToPages = () => {
+    const nextChapters = chapters.map((chapter) => ({
+      ...chapter,
+      pages: planPages(chapter.title, chapter.scenes, panelsPerPage),
+    }));
+    setChapters(nextChapters);
+    const nextPageStates = Object.fromEntries(
+      nextChapters.flatMap((ch) => ch.pages.map((p) => [p.id, "planned" as PageState])),
+    );
+    setPageStates(nextPageStates);
+    setStage("review");
+    persist(nextChapters, nextPageStates);
   };
 
   /**
@@ -159,17 +233,25 @@ export function NovelImportDialog() {
    */
   const replan = (nextPanelsPerPage: PanelBudget) => {
     setPanelsPerPage(nextPanelsPerPage);
-    const outlines = chapters.map((chapter) => ({
+    const nextChapters = chapters.map((chapter) => ({
       ...chapter,
       pages: planPages(chapter.title, chapter.scenes, nextPanelsPerPage),
     }));
-    setChapters(outlines);
-    setPageStates(Object.fromEntries(outlines.flatMap((ch) => ch.pages.map((p) => [p.id, "planned" as PageState]))));
+    setChapters(nextChapters);
+    const nextPageStates = Object.fromEntries(
+      nextChapters.flatMap((ch) => ch.pages.map((p) => [p.id, "planned" as PageState])),
+    );
+    setPageStates(nextPageStates);
     setPageErrors({});
+    persist(nextChapters, nextPageStates);
   };
 
   const generatePage = async (page: PlannedPage) => {
-    setPageStates((prev) => ({ ...prev, [page.id]: "generating" }));
+    setPageStates((prev) => {
+      const next = { ...prev, [page.id]: "generating" as PageState };
+      persist(chapters, next);
+      return next;
+    });
     setPageErrors((prev) => {
       const next = { ...prev };
       delete next[page.id];
@@ -192,9 +274,17 @@ export function NovelImportDialog() {
       if (result.execution.rolledBack || result.status === "failed") {
         throw new Error(result.execution.abortReason ?? "Generation failed — the page was left unchanged.");
       }
-      setPageStates((prev) => ({ ...prev, [page.id]: "done" }));
+      setPageStates((prev) => {
+        const next = { ...prev, [page.id]: "done" as PageState };
+        persist(chapters, next);
+        return next;
+      });
     } catch (error) {
-      setPageStates((prev) => ({ ...prev, [page.id]: "error" }));
+      setPageStates((prev) => {
+        const next = { ...prev, [page.id]: "error" as PageState };
+        persist(chapters, next);
+        return next;
+      });
       setPageErrors((prev) => ({ ...prev, [page.id]: error instanceof Error ? error.message : "Generation failed" }));
     }
   };
@@ -210,6 +300,7 @@ export function NovelImportDialog() {
 
   const totalPages = chapters.reduce((sum, ch) => sum + ch.pages.length, 0);
   const donePages = Object.values(pageStates).filter((s) => s === "done").length;
+  const allCharacters = dedupeCharacters(chapters.flatMap((ch) => ch.characters));
 
   return (
     <div className="fixed inset-0 z-40 grid place-items-center overflow-y-auto bg-black/60 py-6" onMouseDown={close}>
@@ -317,6 +408,50 @@ export function NovelImportDialog() {
           </div>
         )}
 
+        {stage === "characters" && (
+          <>
+            <div className="border-b border-[var(--border-subtle)] px-4 py-2">
+              <p className="text-xs text-zinc-500">
+                {allCharacters.length} character(s) found across {chapters.length} chapter(s). Fix a misspelled or
+                drifted name below — renaming here also merges it with an existing name if you type one that
+                already exists.
+              </p>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {allCharacters.length === 0 ? (
+                <p className="text-xs text-zinc-500">No characters were detected in this text.</p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {allCharacters.map((character) => (
+                    <div key={character.primaryName} className="rounded-md border border-zinc-800 p-2.5">
+                      <input
+                        className="mb-1 w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1 text-xs font-medium text-zinc-200"
+                        defaultValue={character.primaryName}
+                        onBlur={(e) => applyCharacterRename(character.primaryName, e.target.value)}
+                      />
+                      {character.aliases.length > 0 && (
+                        <p className="mb-1 text-[11px] text-zinc-500">Also called: {character.aliases.join(", ")}</p>
+                      )}
+                      {character.description && <p className="text-[11px] text-zinc-600">{character.description}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-between border-t border-[var(--border-subtle)] px-4 py-3">
+              <button className="text-xs text-zinc-500 hover:text-zinc-300" onClick={reset}>
+                Start over
+              </button>
+              <button
+                className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-xs text-white hover:bg-[var(--accent-hover)]"
+                onClick={proceedToPages}
+              >
+                Continue to page planning
+              </button>
+            </div>
+          </>
+        )}
+
         {stage === "review" && (
           <>
             <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-4 py-2">
@@ -345,6 +480,18 @@ export function NovelImportDialog() {
                     ))}
                   </select>
                 </label>
+                <button
+                  className="text-xs text-zinc-500 hover:text-zinc-300 disabled:opacity-40"
+                  onClick={() => setStage("characters")}
+                  disabled={donePages > 0}
+                  title={
+                    donePages > 0
+                      ? "Disabled once a page has been generated — renaming a character would no longer match it"
+                      : "Rename or merge characters, then re-plan pages"
+                  }
+                >
+                  Back to characters
+                </button>
                 <button className="text-xs text-zinc-500 hover:text-zinc-300" onClick={reset}>
                   Start over
                 </button>

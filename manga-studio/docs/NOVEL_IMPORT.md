@@ -118,14 +118,40 @@ there's no DB to checkpoint into, so "resume after a failure" is just
 picks up from there" rather than a server-tracked job. Each chunk also
 carries `knownCharacterNames` (every `primaryName` seen in earlier chunks of
 the same chapter) so the model reuses the established name instead of
-drifting to a nickname mid-chapter — a much lighter-weight substitute for
-MangaFlow's DB-level cross-chunk alias-conflict merge.
+drifting to a nickname mid-chapter.
+
+## Character review (`characterEdits.ts`)
+
+`knownCharacterNames` is a *hint*, not a guarantee — the model can still
+split one character into two across a chunk boundary, or drift a name's
+spelling. After parsing, a **Characters** stage lists every character found
+(deduped case-insensitively across chapters with `dedupeCharacters`) before
+any page is planned. Editing a name in place — to fix a typo, or to type an
+existing character's name to fold this one into it — calls
+`redirectCharacterName` (rewrites every matching `speakerName` and
+`characterPresence` key across every scene, keeping the more specific
+presence value — `visible` beats `offscreen` beats `mentioned` — when a beat
+already mentions both names) and `mergeCharacterEntries` (unions aliases,
+keeps the old name as an alias so it still resolves). Rename and merge are
+the same operation: redirecting every reference from one name onto another.
+Pages are only planned (`planPages`) once you continue past this stage, so
+a rename never has to reconcile against already-computed page prompts.
+
+## Persistence (`storage/novelOutlineStore.ts`)
+
+The parsed outline (chapters, characters, scenes, planned pages, and each
+page's generation status) is saved per project in its own IndexedDB object
+store — separate from `projectStore.ts`'s `ProjectDocument` (no
+`SCHEMA_VERSION` bump: an outline is scratch planning state, not part of
+the project's own domain model). Saved after every state-changing action
+(parse, character rename/merge, re-plan, each page's generation result);
+restored automatically the next time the dialog opens for that project. A
+page once generated is an ordinary `Page`/`Panel` in the real project and
+persists through the normal project-save path regardless — the outline
+store only ever holds the *planning* state around it.
 
 ## Known v1 limitations
 
-- Not persisted: reload the page mid-import and the parsed-but-not-yet-
-  generated outline is gone (pages already generated are ordinary project
-  pages and persist normally, same as anything the Manga Agent makes).
 - "Generate all remaining" walks pages sequentially, auto-proceeding past
   the Creative Director's normal "3+ images, are you sure?" confirmation —
   clicking Generate on a planned page already is the confirmation.
@@ -133,3 +159,6 @@ MangaFlow's DB-level cross-chunk alias-conflict merge.
   (`Chapter N`, `Part N`, `Prologue`/`Epilogue`); a chapter-less paste (a
   short story, one chapter) is the common case and works with zero
   configuration either way.
+- Re-planning the panel budget (or going "Back to characters") after any
+  page has been generated is disabled — re-planning renumbers page ids and
+  would desync already-generated pages from their planned counterpart.
