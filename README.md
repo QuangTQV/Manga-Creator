@@ -79,7 +79,9 @@ machine**:
   one at a time. See
   [docs/NOVEL_IMPORT.md](manga-studio/docs/NOVEL_IMPORT.md).
 - **Persistence & export.** Projects survive refresh (IndexedDB + remote object
-  storage for images); pages export to PNG at 1× / 2×.
+  storage for images); export one page to PNG at 1× / 2×, or the whole
+  project as a CBZ (every page, in order — the standard format comic
+  readers expect).
 
 ## How does the Manga Agent work?
 

@@ -11,14 +11,18 @@
  */
 
 import Konva from "konva";
+import type { ProjectDocument } from "@/domain/types";
 import { useEditorStore } from "@/editor/store";
 import { PAGE_STAGE_ID } from "@/render/constants";
 
-export async function exportCurrentPagePng(scale: 1 | 2): Promise<void> {
-  const state = useEditorStore.getState();
-  const doc = state.doc;
-  if (!doc || !state.currentPageId) throw new Error("No page to export");
-
+/**
+ * Captures one page as a PNG data URL, by id — not necessarily the
+ * currently-selected page, though the caller is responsible for making
+ * sure that page's content is actually what the live Konva stage is
+ * showing (switch `currentPageId` and wait a frame first if it might not
+ * be — see `exportBook.ts`, which walks every page this way).
+ */
+export function capturePageDataUrl(doc: ProjectDocument, pageId: string, scale: 1 | 2): string {
   const stage = Konva.stages.find((s) => s.attrs.id === PAGE_STAGE_ID);
   if (!stage) throw new Error("Canvas is not ready");
 
@@ -26,7 +30,8 @@ export async function exportCurrentPagePng(scale: 1 | 2): Promise<void> {
   // (reference sheets, staged generations) and editor overlays never export.
   const overlay = stage.findOne(".overlay-layer");
   const workspace = stage.findOne(".workspace-layer");
-  const page = doc.pages[state.currentPageId];
+  const page = doc.pages[pageId];
+  if (!page) throw new Error("Page not found");
   const { pageWidth, pageHeight } = doc.project.settings;
   const stageScale = stage.scaleX();
   const position = stage.position();
@@ -34,7 +39,7 @@ export async function exportCurrentPagePng(scale: 1 | 2): Promise<void> {
   overlay?.visible(false);
   workspace?.visible(false);
   try {
-    const dataUrl = stage.toDataURL({
+    return stage.toDataURL({
       x: position.x + page.workspace.x * stageScale,
       y: position.y + page.workspace.y * stageScale,
       width: pageWidth * stageScale,
@@ -43,8 +48,6 @@ export async function exportCurrentPagePng(scale: 1 | 2): Promise<void> {
       pixelRatio: scale / stageScale,
       mimeType: "image/png",
     });
-    const pageName = page.name?.replace(/\s+/g, "-").toLowerCase() ?? "page";
-    downloadDataUrl(dataUrl, `${doc.project.name.replace(/\s+/g, "-").toLowerCase()}-${pageName}@${scale}x.png`);
   } catch (error) {
     if (error instanceof DOMException && error.name === "SecurityError") {
       throw new Error(
@@ -56,6 +59,17 @@ export async function exportCurrentPagePng(scale: 1 | 2): Promise<void> {
     overlay?.visible(true);
     workspace?.visible(true);
   }
+}
+
+export async function exportCurrentPagePng(scale: 1 | 2): Promise<void> {
+  const state = useEditorStore.getState();
+  const doc = state.doc;
+  if (!doc || !state.currentPageId) throw new Error("No page to export");
+
+  const dataUrl = capturePageDataUrl(doc, state.currentPageId, scale);
+  const page = doc.pages[state.currentPageId];
+  const pageName = page.name?.replace(/\s+/g, "-").toLowerCase() ?? "page";
+  downloadDataUrl(dataUrl, `${doc.project.name.replace(/\s+/g, "-").toLowerCase()}-${pageName}@${scale}x.png`);
 }
 
 function downloadDataUrl(dataUrl: string, filename: string): void {

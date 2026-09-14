@@ -31,6 +31,7 @@ import type { BubbleType, EffectKind, LayoutPresetId } from "@/domain/types";
 import { useEditorStore } from "@/editor/store";
 import { useUiStore, type GeneratorRequest } from "@/editor/uiStore";
 import { exportCurrentPagePng } from "@/export/exportPage";
+import { exportBookCbz } from "@/export/exportBook";
 import { getActiveStyleProfile } from "@/styles/profiles";
 
 const BUBBLE_TYPES: { type: BubbleType; label: string }[] = [
@@ -78,6 +79,7 @@ export function TopBar() {
   const openLiveAi = useUiStore((s) => s.openLiveAi);
   const openNovelImport = useUiStore((s) => s.openNovelImport);
   const [exporting, setExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState<string | null>(null);
 
   if (!doc) return null;
 
@@ -105,6 +107,19 @@ export function TopBar() {
       alert(error instanceof Error ? error.message : "Export failed");
     } finally {
       setExporting(false);
+    }
+  };
+
+  const onExportBook = async (scale: 1 | 2) => {
+    setExporting(true);
+    setExportProgress("Preparing…");
+    try {
+      await exportBookCbz(scale, ({ done, total }) => setExportProgress(`Page ${done}/${total}…`));
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Book export failed");
+    } finally {
+      setExporting(false);
+      setExportProgress(null);
     }
   };
 
@@ -234,14 +249,20 @@ export function TopBar() {
       </Button>
 
       <Dropdown
-        label={exporting ? "Exporting…" : "Export"}
+        label={exportProgress ?? (exporting ? "Exporting…" : "Export")}
         accent
         icon={<ExportIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
         items={[
-          { key: "1", label: "Export page @1x" },
-          { key: "2", label: "Export page @2x" },
+          { key: "page-1", label: "Export page @1x" },
+          { key: "page-2", label: "Export page @2x" },
+          { key: "book-1", label: `Export book (all pages) @1x — CBZ` },
+          { key: "book-2", label: `Export book (all pages) @2x — CBZ` },
         ]}
-        onPick={(k) => onExport(Number(k) as 1 | 2)}
+        onPick={(k) => {
+          const scale = k.endsWith("-1") ? 1 : 2;
+          if (k.startsWith("book-")) onExportBook(scale);
+          else onExport(scale);
+        }}
       />
     </header>
   );
