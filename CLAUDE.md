@@ -88,6 +88,7 @@ npm run dev                  # http://localhost:3000
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | eslint |
 | `npm run build` | production build |
+| `npm run test:e2e` (from `manga-studio/`) | Playwright browser smoke tests (`tests/e2e/`) — starts its own dev server on port 3100; not part of the standard four checks above (slower, needs a real browser), but run it too when touching top-level dialogs/navigation/anything a unit test can't see render |
 
 **Before reporting any change as done**, run all four —
 `npm test && npm run typecheck && npm run lint && npm run build` — don't rely
