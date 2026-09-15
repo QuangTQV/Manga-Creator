@@ -33,6 +33,7 @@ import { useEditorStore } from "@/editor/store";
 import { useUiStore, type GeneratorRequest } from "@/editor/uiStore";
 import { exportCurrentPagePng } from "@/export/exportPage";
 import { exportBookCbz } from "@/export/exportBook";
+import { exportWebtoonStrip } from "@/export/exportWebtoon";
 import { getActiveStyleProfile } from "@/styles/profiles";
 
 const BUBBLE_TYPES: { type: BubbleType; label: string }[] = [
@@ -119,6 +120,19 @@ export function TopBar() {
       await exportBookCbz(scale, ({ done, total }) => setExportProgress(`Page ${done}/${total}…`));
     } catch (error) {
       alert(error instanceof Error ? error.message : "Book export failed");
+    } finally {
+      setExporting(false);
+      setExportProgress(null);
+    }
+  };
+
+  const onExportWebtoon = async (scale: 1 | 2) => {
+    setExporting(true);
+    setExportProgress("Preparing…");
+    try {
+      await exportWebtoonStrip(scale, ({ done, total }) => setExportProgress(`Page ${done}/${total}…`));
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Webtoon export failed");
     } finally {
       setExporting(false);
       setExportProgress(null);
@@ -292,10 +306,13 @@ export function TopBar() {
           { key: "page-2", label: "Export page @2x" },
           { key: "book-1", label: `Export book (all pages) @1x — CBZ` },
           { key: "book-2", label: `Export book (all pages) @2x — CBZ` },
+          { key: "webtoon-1", label: `Export webtoon strip @1x — PNG` },
+          { key: "webtoon-2", label: `Export webtoon strip @2x — PNG` },
         ]}
         onPick={(k) => {
           const scale = k.endsWith("-1") ? 1 : 2;
-          if (k.startsWith("book-")) onExportBook(scale);
+          if (k.startsWith("webtoon-")) onExportWebtoon(scale);
+          else if (k.startsWith("book-")) onExportBook(scale);
           else onExport(scale);
         }}
       />

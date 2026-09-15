@@ -33,6 +33,19 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-15 — Webtoon-strip export.** New `export/exportWebtoon.ts`:
+  stitches every page into one continuous vertical PNG (page concatenation,
+  not a true panel-reflow webtoon layout — see its own docstring for that
+  scope boundary). Shares page-walking/pre-warm logic with CBZ export via
+  a new `export/exportPages.ts` (extracted from `exportBook.ts`, no
+  behavior change there). Guards against exceeding a conservative
+  cross-browser canvas-dimension ceiling (16384px) with an actionable
+  error instead of silently producing a blank/truncated image — the pure
+  check is `checkWebtoonCanvasLimit`, unit tested directly. New TopBar
+  Export menu entries; a Playwright test drives the whole real pipeline
+  (canvas capture → decode → stitch → download) since none of it is
+  jsdom-testable. Backlog item #1 (see below) — first item worked
+  top-down from the user-confirmed prioritized list.
 - **2026-09-15 — Dialogue language setting.** `ProjectSettings.dialogueLanguage`
   (free text, e.g. "Vietnamese") + a compact TopBar input. Wired into the
   Creative Director via the existing `contextLine()` in `agent-v3/run.ts`
@@ -132,7 +145,7 @@ an item's status (or strike it through with a one-line note) as it lands,
 rather than leaving this list to drift from reality.
 
 **Tier 1 — quick, low-risk, reuses existing infra**
-1. Webtoon-strip export — concatenate pages into one tall image; reuses `export/exportBook.ts`'s page-walking/pre-warm logic.
+1. ~~Webtoon-strip export~~ — **done 2026-09-15**, see Timeline.
 2. Drag-to-reorder pages — `PagesBar.tsx` only supports add/remove today. Also a prerequisite for #5.
 3. Typography polish — bold/italic/letter-spacing on `BubbleStyle` (additive, no architecture change).
 

@@ -252,3 +252,18 @@ test("renaming a project uses a real dialog, not the browser's native prompt", a
   // event Playwright must auto-dismiss or the test hangs — none fired.
   expect(dialogs).toEqual([]);
 });
+
+test("exporting a webtoon strip captures the real canvas and downloads a PNG", async ({ page }) => {
+  // A real end-to-end exercise of the whole pipeline — page capture off the
+  // live Konva stage, image decode, canvas stitching, toBlob — none of
+  // which a jsdom-based vitest run can actually do.
+  // The Konva stage (and so `Konva.stages`, which capture reads from) only
+  // exists once the canvas has actually mounted and painted — not
+  // guaranteed yet immediately after project creation.
+  await expect(page.locator("canvas").first()).toBeVisible();
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("combobox", { name: "Export" }).selectOption("webtoon-1");
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/-webtoon@1x\.png$/);
+});
