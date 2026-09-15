@@ -33,6 +33,59 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-15 — Character Model Sheet, V1 (backlog #17).** New "Model
+  Sheet" button on each `CharacterCard` (`CharactersTab.tsx`), enabled
+  whenever a character has a reference or any rendered state (not gated
+  to "has pose/expression states" only — a reference-only character
+  should still be able to open it). Opens `ModelSheetDialog.tsx`: every
+  row is a state (canonical reference first, then one row per distinct
+  pose/expression/outfit/view), and — the actual point of this feature —
+  shows EVERY generation of that state, not just the latest, in a
+  zoomable grid, so a creator can visually judge whether generation #3
+  drifted off-design from generation #1 or the reference. "Export as
+  PNG" composites the same rows onto one canvas via
+  `export/exportModelSheet.ts`, reusing the "stitch images onto one
+  canvas" technique already used by `exportWebtoon.ts` — no new
+  compositing approach, just a different layout (a labeled grid instead
+  of a vertical stack).
+
+  Deliberately scoped down from the full backlog idea per the user's own
+  choice after being shown the tradeoff: automatic DRIFT DETECTION
+  (flagging when a generation visually diverges, rather than a human
+  eyeballing the grid) was explicitly cut — it needs either an AI vision
+  call or an image-similarity pipeline, a materially different and
+  riskier feature than compositing existing renders, and was not
+  attempted here. This ships only the comparison SURFACE.
+
+  Extracted `groupCharacterStates`/`titleCaseWords` out of
+  `CharactersTab.tsx` into `characters/state.ts` (now exported,
+  `characters/state.ts` already owned `stateFromAsset` and friends) so
+  the dialog, the exporter, and the existing "Rendered states" shelf
+  share one grouping implementation instead of three copies silently
+  drifting apart. No domain model changes — this reads
+  `character.assetIds` and existing asset metadata exactly the way the
+  shelf already did.
+
+  One real edge case worth knowing: `libraryOps.addAsset` auto-promotes
+  a character's very FIRST asset to `referenceAssetId`/
+  `canonicalReferenceAssetId` regardless of its own `characterAssetRole`
+  — so a character whose first-ever generation was a "state" (not
+  generated via the canonical-reference flow) still gets a "Canonical
+  Reference" row containing that asset. This is existing domain
+  behavior, not something this feature introduced; the Model Sheet just
+  surfaces it (see `exportModelSheet.test.ts`'s test for this exact
+  case).
+
+  Verified with pure-math unit tests (`computeModelSheetLayout`,
+  `modelSheetRows`) plus a real-browser Playwright test that creates a
+  character via the "Reference Only" + uploaded-image path (the ONE
+  character-creation path that needs no AI provider — the plain
+  "Create" button, not "Create Reference", attaches an already-selected
+  file unconditionally before the provider-configured gate is even
+  checked), intercepting `/api/assets/upload` to skip the unrelated
+  background-removal subsystem while still exercising the real
+  dialog render, real canvas compositing, and a real PNG download.
+
 - **2026-09-15 — Print-ready export: DPI + synthetic bleed (backlog #16).**
   New `export/exportPrint.ts` (`exportCurrentPagePrintPng`,
   `exportBookPrintCbz`) and `export/printBleed.ts`, wired into a new
@@ -419,10 +472,11 @@ rather than leaving this list to drift from reality.
     render support); genre-authentic for real Japanese-style manga, absent
     entirely today.
 16. ~~Print-ready export (bleed margin + target DPI)~~ — **done 2026-09-15**, see Timeline.
-17. Character "model sheet" view — `CharactersTab.tsx` already shows a
-    per-character rendered-states gallery (collapses multiple variants to
-    a count label); a dedicated side-by-side model-sheet/export view and
-    any drift-detection between generations do not exist.
+17. ~~Character "model sheet" view (V1: full-variant grid + PNG export)~~ —
+    **done 2026-09-15**, see Timeline. Automatic drift DETECTION (flagging
+    when a generation visually diverges from the reference) was explicitly
+    scoped OUT as a separate, bigger AI-vision feature — not done, not
+    started, needs its own scoping conversation before picking up.
 
 **Not in the backlog — deliberate, don't re-add without the user explicitly overriding**
 - PDF export (rejected design decision, not a gap — see `export/exportBook.ts`).

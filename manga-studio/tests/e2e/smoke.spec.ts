@@ -494,3 +494,66 @@ test("print export renders a real page at a DPI-derived size with bleed", async 
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/-print@300dpi\.png$/);
 });
+
+// A minimal, genuinely valid 8x8 PNG — unlike the font-upload test's
+// magic-bytes-only fake, `uploadAsset.ts` decodes this client-side
+// (`createImageBitmap`, then a >=4px dimension check) before it ever
+// reaches the server, so it has to be real, large-enough image bytes, not
+// just a recognizable header.
+const TINY_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEklEQVQYlWP4z8DwHx9mGBkKAMLXf4GpDKyMAAAAAElFTkSuQmCC",
+  "base64",
+);
+
+test("a character's Model Sheet shows every generation and exports a composited PNG", async ({ page }) => {
+  // Background removal needs a configured AI provider this smoke environment
+  // doesn't have — intercepting the upload route the same way the app's own
+  // server would respond to a successfully-processed upload lets this test
+  // exercise the actual new code (Model Sheet layout, real canvas
+  // compositing, real download) without depending on that unrelated
+  // subsystem, the same boundary-isolation the font-upload test above draws.
+  await page.route("**/api/assets/upload", async (route) => {
+    const dataUrl = `data:image/png;base64,${TINY_PNG.toString("base64")}`;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        sourceUrl: dataUrl,
+        processedImageUrl: dataUrl,
+        mimeType: "image/png",
+        hasAlpha: true,
+        backgroundRemoved: true,
+        processingStatus: "ready",
+      }),
+    });
+  });
+
+  await page.getByRole("button", { name: "+ New Character" }).click();
+  await page.getByRole("textbox", { name: "Name" }).fill("Akari");
+
+  await page
+    .locator('input[type="file"]#character-reference')
+    .setInputFiles({ name: "akari-ref.png", mimeType: "image/png", buffer: TINY_PNG });
+  await expect(page.getByAltText("Character reference preview")).toBeVisible();
+
+  // The plain "Create" button (not "Create Reference") never requires an AI
+  // provider — it only attaches the already-uploaded reference file.
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(page.getByText("Akari", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Model Sheet" }).click();
+  await expect(page.getByRole("heading", { name: "Model Sheet — Akari" })).toBeVisible();
+  await expect(page.getByText("Canonical Reference")).toBeVisible();
+
+  const thumbnail = page.locator('img[alt^="Canonical Reference"]');
+  await expect(thumbnail).toHaveCount(1);
+  await thumbnail.click();
+  await expect(page.getByAltText("Zoomed asset")).toBeVisible();
+  await page.getByAltText("Zoomed asset").click();
+  await expect(page.getByAltText("Zoomed asset")).not.toBeVisible();
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export as PNG" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/-model-sheet\.png$/);
+});

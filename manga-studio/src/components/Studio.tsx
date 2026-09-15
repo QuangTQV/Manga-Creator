@@ -20,6 +20,7 @@ import { HistoryDialog } from "./dialogs/HistoryDialog";
 import { ChaptersDialog } from "./dialogs/ChaptersDialog";
 import { PageOverviewDialog } from "./dialogs/PageOverviewDialog";
 import { PrintExportDialog } from "./dialogs/PrintExportDialog";
+import { ModelSheetDialog } from "./dialogs/ModelSheetDialog";
 import { GeneratorDialog } from "./dialogs/GeneratorDialog";
 import { PuppetCapabilityDialog } from "./dialogs/PuppetCapabilityDialog";
 import { PuppetCompilerDialog } from "./dialogs/PuppetCompilerDialog";
@@ -184,6 +185,7 @@ export function Studio() {
       <ChaptersDialog />
       <PageOverviewDialog />
       <PrintExportDialog />
+      <ModelSheetDialog />
       <ArtStyleDialog />
       <PuppetCapabilityDialog />
       <PuppetCompilerDialog />

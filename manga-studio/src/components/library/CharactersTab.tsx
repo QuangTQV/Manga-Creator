@@ -9,7 +9,9 @@ import { useEffect, useRef, useState } from "react";
 import {
   characterReferenceId,
   findExactCharacterAsset,
+  groupCharacterStates,
   stateFromAsset,
+  titleCaseWords,
 } from "@/characters/state";
 import { starterPackStates } from "@/characters/stateRuntime";
 import { attachCanonicalReferenceFile, createCharacter, generateCanonicalReference, generateCharacterState } from "@/services/characters";
@@ -143,7 +145,18 @@ function CharacterCard({ character }: { character: Character }) {
               full editor here is how two copies drift. */}
           <RelationshipEditor character={character} compact />
           <div>
-            <p className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">Rendered states</p>
+            <div className="mb-1 flex items-center justify-between">
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500">Rendered states</p>
+              {(reference || stateGroups.length > 0) && (
+                <button
+                  className="text-[10px] text-zinc-500 underline hover:text-zinc-300"
+                  title="Compare every generation of this character's reference and states side by side"
+                  onClick={() => useUiStore.getState().openModelSheet(character.id)}
+                >
+                  Model Sheet
+                </button>
+              )}
+            </div>
             <div className="flex flex-wrap gap-2">
               {stateGroups.map(({ label, variants }) => (
                 <AssetThumb
@@ -205,18 +218,6 @@ function CharacterCard({ character }: { character: Character }) {
       {deleteCharacterOpen && <CharacterDeleteDialog character={character} onClose={() => setDeleteCharacterOpen(false)} />}
     </section>
   );
-}
-
-/** Regenerations of one complete state stack instead of becoming duplicates. */
-function groupCharacterStates(assets: SourceAsset[], characterId: string) {
-  const groups = new Map<string, SourceAsset[]>();
-  for (const asset of assets) {
-    const state = stateFromAsset(asset, characterId);
-    if (!state) continue;
-    const label = [state.pose, state.expression, state.outfit, state.view].map(title).join(" · ");
-    groups.set(label, [...(groups.get(label) ?? []), asset]);
-  }
-  return Array.from(groups.entries()).map(([label, variants]) => ({ label, variants }));
 }
 
 type PackMode = "starter" | "reference";
@@ -321,7 +322,7 @@ function CreateCharacterDialog({ onClose }: { onClose: () => void }) {
     const initial: PackItem[] = [
       { label: hasUploadedReference ? "Canonical reference (uploaded)" : "Canonical reference", status: hasUploadedReference ? "done" : "pending" },
       ...states.map((state) => ({
-        label: `${title(state.pose)} · ${title(state.expression)}`,
+        label: `${titleCaseWords(state.pose)} · ${titleCaseWords(state.expression)}`,
         status: "pending" as const,
       })),
     ];
@@ -522,10 +523,6 @@ function CreateCharacterDialog({ onClose }: { onClose: () => void }) {
       </div>
     </div>
   );
-}
-
-function title(value: string): string {
-  return value.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 /**

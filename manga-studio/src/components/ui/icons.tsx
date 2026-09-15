@@ -56,6 +56,7 @@ export {
   BookMarked as ChaptersIcon,
   LayoutGrid as OverviewIcon,
   Printer as PrintIcon,
+  ZoomIn as ZoomIcon,
 } from "lucide-react";
 
 /** Toolbar and inline icon size. 16px reads cleanly on a 32px control. */

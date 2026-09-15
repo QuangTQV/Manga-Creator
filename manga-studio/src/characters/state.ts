@@ -194,3 +194,34 @@ export function availableCharacterStateValues(
   }
   return [...values];
 }
+
+export function titleCaseWords(value: string): string {
+  return value.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+export interface CharacterStateGroup {
+  label: string;
+  variants: SourceAsset[];
+}
+
+/**
+ * Every rendered asset for a character, grouped by its (pose, expression,
+ * outfit, view) state — so repeated regenerations of the same state
+ * collapse into one group instead of becoming visually indistinguishable
+ * duplicates. `variants` keeps EVERY generation of that state, oldest
+ * first (asset creation order), not just the latest — callers that only
+ * want the latest (the library thumbnail) take `variants.at(-1)`; the
+ * Model Sheet (`ModelSheetDialog.tsx`) shows all of them, which is the
+ * whole point of a model sheet: comparing generations against each other
+ * to catch the AI drifting off-design.
+ */
+export function groupCharacterStates(assets: SourceAsset[], characterId: ID): CharacterStateGroup[] {
+  const groups = new Map<string, SourceAsset[]>();
+  for (const asset of assets) {
+    const state = stateFromAsset(asset, characterId);
+    if (!state) continue;
+    const label = [state.pose, state.expression, state.outfit, state.view].map(titleCaseWords).join(" · ");
+    groups.set(label, [...(groups.get(label) ?? []), asset]);
+  }
+  return Array.from(groups.entries()).map(([label, variants]) => ({ label, variants }));
+}
