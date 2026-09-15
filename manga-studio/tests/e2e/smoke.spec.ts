@@ -190,8 +190,17 @@ test("History lets you jump several steps at once, not just one Undo at a time",
 });
 
 test("the project's dialogue language can be set and shows up as a real, undoable edit", async ({ page }) => {
-  const language = page.getByRole("textbox", { name: "Language" });
+  // The `list` attribute (native suggestion dropdown) changes this input's
+  // exposed accessibility role from "textbox" to "combobox" in Chromium —
+  // it's still a plain free-text field otherwise.
+  const language = page.getByRole("combobox", { name: "Language" });
   await expect(language).toHaveValue("");
+
+  // Free text is still the source of truth, but common languages are one
+  // click away via the field's native suggestion dropdown.
+  await expect(language).toHaveAttribute("list", "dialogue-language-options");
+  const presetValues = await page.locator("#dialogue-language-options option").evaluateAll((options) => options.map((o) => o.getAttribute("value")));
+  expect(presetValues).toEqual(expect.arrayContaining(["English", "Vietnamese", "Japanese"]));
 
   await language.fill("Vietnamese");
   await language.blur();

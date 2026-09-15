@@ -39,6 +39,20 @@ import { exportWebtoonStrip } from "@/export/exportWebtoon";
 import { exportProjectArchive } from "@/export/exportProjectArchive";
 import { getActiveStyleProfile } from "@/styles/profiles";
 
+/** Quick picks for the Language field's native suggestion dropdown — not a
+ * fixed list the model is restricted to, any typed name works (see the
+ * field's own title/comment where it's used). */
+const DIALOGUE_LANGUAGE_PRESETS = [
+  "English",
+  "Vietnamese",
+  "Japanese",
+  "Korean",
+  "Chinese (Simplified)",
+  "French",
+  "Spanish",
+  "German",
+];
+
 const BUBBLE_TYPES: { type: BubbleType; label: string }[] = [
   { type: "speech", label: "Speech bubble" },
   { type: "thought", label: "Thought bubble" },
@@ -270,9 +284,11 @@ export function TopBar() {
 
       {/* What language the Agent WRITES new dialogue/narration/text in — never
           applies to text the creator gave verbatim (Rule 6, systemPrompt.ts).
-          Free text, not a fixed list: the model understands a language name
-          directly. `key` forces a remount (and so a fresh defaultValue) when
-          the stored value changes from elsewhere — undo, History, another
+          Free text, not a fixed list — the model understands any language
+          name directly — but `list` attaches a native suggestion dropdown
+          with common ones for a quick pick, no separate control needed.
+          `key` forces a remount (and so a fresh defaultValue) when the
+          stored value changes from elsewhere — undo, History, another
           project load — since this stays an uncontrolled input otherwise. */}
       <label
         className="mr-1 flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px]"
@@ -282,7 +298,8 @@ export function TopBar() {
         Language
         <input
           key={doc.project.settings.dialogueLanguage ?? ""}
-          className="w-24 rounded border border-[var(--border-subtle)] bg-[var(--bg-app)] px-1.5 py-0.5 text-[11px] text-zinc-300"
+          list="dialogue-language-options"
+          className="w-28 rounded border border-[var(--border-subtle)] bg-[var(--bg-app)] px-1.5 py-0.5 text-[11px] text-zinc-300"
           defaultValue={doc.project.settings.dialogueLanguage ?? ""}
           placeholder="Auto"
           onBlur={(event) => {
@@ -292,6 +309,11 @@ export function TopBar() {
           }}
           onKeyDown={(event) => event.key === "Enter" && event.currentTarget.blur()}
         />
+        <datalist id="dialogue-language-options">
+          {DIALOGUE_LANGUAGE_PRESETS.map((name) => (
+            <option key={name} value={name} />
+          ))}
+        </datalist>
       </label>
 
       {/* Advanced reveals rigging and raw camera numerics. Off by default: a
