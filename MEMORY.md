@@ -125,6 +125,39 @@ levels vary a lot within a single bullet):
 | Collaboration and shared asset libraries | **Not built, by design** — contradicts the no-accounts/local-first philosophy; see "Deliberately not built" below. |
 | Mobile & tablet support | **Not built.** No touch handlers, no responsive breakpoints anywhere in the editor chrome — desktop-canvas-only. |
 
+## Backlog (prioritized 2026-09-15, user-confirmed — work top-down)
+
+Ranked by value-vs-risk/effort, not by the campaign site's own order. Update
+an item's status (or strike it through with a one-line note) as it lands,
+rather than leaving this list to drift from reality.
+
+**Tier 1 — quick, low-risk, reuses existing infra**
+1. Webtoon-strip export — concatenate pages into one tall image; reuses `export/exportBook.ts`'s page-walking/pre-warm logic.
+2. Drag-to-reorder pages — `PagesBar.tsx` only supports add/remove today. Also a prerequisite for #5.
+3. Typography polish — bold/italic/letter-spacing on `BubbleStyle` (additive, no architecture change).
+
+**Tier 2 — moderate effort, clear value**
+4. Project archive import/export — a project only exists in one browser's IndexedDB today; real data-loss risk without this.
+5. "Chapter" as a first-class domain concept (needs #2 first) — unlocks Agent targeting a whole chapter and per-chapter export; currently chapters exist only inside Novel Import's pre-generation outline.
+
+**Tier 3 — bigger, needs careful scoping**
+6. Split/merge panels — touches core panel/item domain model.
+7. Draw a custom panel shape from scratch (not just reshaping a preset layout's panels) — new canvas interaction.
+8. Generic layer-effects system (blend modes/opacity stacking) — currently a fixed `EffectKind` enum; touches the render pipeline.
+
+**Tier 4 — needs subsystem study before touching (flagged risky in an earlier session)**
+9. `create_interaction` Agent tool.
+10. Object → character-hand prop attachment UI.
+
+**Tier 5 — architecture-level, needs its own scoping conversation first**
+11. Multi-turn/autonomous Agent orchestration (beyond today's one-Creative-Director-call-per-run design).
+12. Mobile/tablet support — low priority for a canvas-precision editing tool.
+
+**Not in the backlog — deliberate, don't re-add without the user explicitly overriding**
+- PDF export (rejected design decision, not a gap — see `export/exportBook.ts`).
+- Verifying "generative local editing" against a live paid provider (needs the user's own API credentials).
+- Collaboration/shared libraries, auth/accounts (contradict the local-first/no-accounts philosophy).
+
 ## Known gotchas (learned the hard way — save yourself the rediscovery)
 
 - **Dual lockfile.** Root `package-lock.json` must **never** be committed
