@@ -38,7 +38,7 @@ test("AI Settings opens and closes", async ({ page }) => {
 });
 
 test("Live AI opens, shows the empty state, and closes", async ({ page }) => {
-  await page.getByRole("button", { name: "Live AI" }).click();
+  await page.getByRole("combobox", { name: "More" }).selectOption("live-ai");
   await expect(page.getByRole("heading", { name: "Live AI" })).toBeVisible();
   await expect(page.getByText("No AI calls yet.")).toBeVisible();
   await page.getByRole("button", { name: "Close Live AI" }).click();
@@ -46,7 +46,7 @@ test("Live AI opens, shows the empty state, and closes", async ({ page }) => {
 });
 
 test("Novel Import opens with an empty source text field and closes", async ({ page }) => {
-  await page.getByRole("button", { name: "Novel Import" }).click();
+  await page.getByRole("combobox", { name: "More" }).selectOption("novel-import");
   await expect(page.getByRole("heading", { name: "Novel Import" })).toBeVisible();
   const parseButton = page.getByRole("button", { name: "Parse into script" });
   await expect(parseButton).toBeDisabled(); // no text pasted yet
@@ -135,7 +135,7 @@ test("Novel Import lets you edit a planned page's prompt before generating", asy
   });
   expect(seeded).toBe(true);
 
-  await page.getByRole("button", { name: "Novel Import" }).click();
+  await page.getByRole("combobox", { name: "More" }).selectOption("novel-import");
   await expect(page.getByRole("heading", { name: "Novel Import" })).toBeVisible();
 
   const prompt = page.getByRole("textbox", { name: "Prompt for page 1" });
@@ -350,7 +350,7 @@ test("chapters organize pages into named, exportable sections", async ({ page })
   await page.getByRole("button", { name: "Add page" }).click();
   await page.getByRole("button", { name: "Add page" }).click();
 
-  await page.getByRole("button", { name: "Chapters" }).click();
+  await page.getByRole("combobox", { name: "More" }).selectOption("chapters");
   await expect(page.getByRole("heading", { name: "Chapters" })).toBeVisible();
   await expect(page.getByText("No chapters yet — Page 1 – Page 3 (3 pages)")).toBeVisible();
 
@@ -430,7 +430,7 @@ test("Page Overview renders a real thumbnail per page and jumps to the one you c
   await expect(page.locator("canvas").first()).toBeVisible();
   await page.getByRole("button", { name: "Add page" }).click();
 
-  await page.getByRole("button", { name: "Overview" }).click();
+  await page.getByRole("combobox", { name: "More" }).selectOption("overview");
   await expect(page.getByRole("heading", { name: "Page Overview" })).toBeVisible();
 
   const thumbnails = page.locator('img[alt^="Page "]');
@@ -480,7 +480,7 @@ test("print export renders a real page at a DPI-derived size with bleed", async 
   // test above for the same reasoning).
   await expect(page.locator("canvas").first()).toBeVisible();
 
-  await page.getByRole("button", { name: "Print" }).click();
+  await page.getByRole("combobox", { name: "More" }).selectOption("print");
   await expect(page.getByRole("heading", { name: "Print Export" })).toBeVisible();
 
   // Defaults (6.625in wide, 300dpi, 0.125in bleed) against the project's

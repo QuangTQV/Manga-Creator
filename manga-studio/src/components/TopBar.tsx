@@ -15,17 +15,13 @@ import { KumangaMark } from "./brand/KumangaMark";
 import { Button, IconButton, ToolbarDivider } from "./ui/Button";
 import { ChevronDown } from "lucide-react";
 import {
-  ChaptersIcon,
   ExportIcon,
   GenerateIcon,
   HistoryIcon,
   ICON_SIZE,
   ICON_STROKE,
-  LiveIcon,
-  NovelIcon,
-  OverviewIcon,
+  MoreIcon,
   PlusIcon,
-  PrintIcon,
   RedoIcon,
   SettingsIcon,
   StyleIcon,
@@ -228,9 +224,9 @@ export function TopBar() {
           if (page) useEditorStore.getState().dispatch({ type: "set-page-layout", pageId: page.id, layout: key as LayoutPresetId });
         }}
       />
-      <IconButton
-        label="Panel"
-        title="Add a new panel on top of the page — drag its corners into place"
+      <Button
+        variant="ghost"
+        icon={<PlusIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
         onClick={() => {
           if (!page) return;
           const result = useEditorStore.getState().dispatch({
@@ -245,38 +241,16 @@ export function TopBar() {
           useEditorStore.getState().select({ panelId: result.createdId });
           useUiStore.getState().setShapeEditPanel(result.createdId);
         }}
-        icon={<PlusIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
-      />
+        title="Add a new panel on top of the page — drag its corners into place"
+      >
+        Panel
+      </Button>
       <Dropdown
         label="Generate"
         accent
         icon={<GenerateIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
         items={GENERATE_TARGETS.map((target) => ({ key: target.key, label: target.label }))}
         onPick={(key) => openGenerator({ assetType: key as GeneratorRequest["assetType"] })}
-      />
-      <IconButton
-        label="Novel Import"
-        title="Turn pasted novel/story text into a planned page-by-page script"
-        onClick={openNovelImport}
-        icon={<NovelIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
-      />
-      <IconButton
-        label="Chapters"
-        title="Organize pages into named chapters; export any one on its own"
-        onClick={openChapters}
-        icon={<ChaptersIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
-      />
-      <IconButton
-        label="Overview"
-        title="See every page in the book at once, for reviewing pacing"
-        onClick={openPageOverview}
-        icon={<OverviewIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
-      />
-      <IconButton
-        label="Print"
-        title="Export at a real print DPI, with bleed, for sending to a physical printer"
-        onClick={openPrintExport}
-        icon={<PrintIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
       />
       <Dropdown
         label="Bubble"
@@ -290,6 +264,28 @@ export function TopBar() {
         label="Effect"
         items={EFFECT_KINDS.map((e) => ({ key: e.kind, label: e.label }))}
         onPick={(k) => addEffectToPanel(k as EffectKind)}
+      />
+      {/* Everything reached often enough to want on screen, but not often
+          enough to earn its own permanent slot — each one still shows its
+          full name the moment this opens, so nothing here trades away
+          being understandable just to save width. */}
+      <Dropdown
+        label="More"
+        icon={<MoreIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+        items={[
+          { key: "novel-import", label: "Novel Import" },
+          { key: "chapters", label: "Chapters" },
+          { key: "overview", label: "Page Overview" },
+          { key: "print", label: "Print Export" },
+          { key: "live-ai", label: "Live AI" },
+        ]}
+        onPick={(key) => {
+          if (key === "novel-import") openNovelImport();
+          else if (key === "chapters") openChapters();
+          else if (key === "overview") openPageOverview();
+          else if (key === "print") openPrintExport();
+          else if (key === "live-ai") openLiveAi();
+        }}
       />
 
       <div className="flex-1" />
@@ -348,24 +344,18 @@ export function TopBar() {
         icon={<StyleIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
         onClick={openArtStyle}
         title={`Project Art Style: ${activeStyle.name}`}
-        className="max-w-[100px]"
+        className="max-w-[140px]"
       >
         <span className="truncate">{activeStyle.name}</span>
       </Button>
 
-      <IconButton
-        label="Live AI"
-        title="See what was sent to the connected AI and how it responded"
-        onClick={openLiveAi}
-        icon={<LiveIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
-      />
-
-      <IconButton
-        label="AI Settings"
-        title="Configure AI providers and API keys"
-        onClick={openSettings}
+      <Button
+        variant="ghost"
         icon={<SettingsIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
-      />
+        onClick={openSettings}
+      >
+        AI Settings
+      </Button>
 
       <Dropdown
         label={exportProgress ?? (exporting ? "Exporting…" : "Export")}

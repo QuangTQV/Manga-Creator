@@ -33,39 +33,57 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
-- **2026-09-15 — TopBar no longer needs horizontal scroll on common laptop
-  widths.** User reported (with a MacBook Pro 14" screenshot, logical width
-  1512px) that reaching Export/AI Settings required scrolling the toolbar
-  sideways — a real UX regression that had crept in one icon-button at a
-  time as features were added this session (#13 Overview, #14 fonts as
-  the "Font" control in the Inspector not TopBar, #16 Print, #17 Model
-  Sheet's own button lives in CharactersTab not here). Measured actual
-  overflow with a small throwaway Playwright script across common widths
-  (`header.scrollWidth - clientWidth`) rather than guessing — 1512px
-  needed ~mid-100s px trimmed.
+- **2026-09-15 — TopBar overflow fixed with a "More" menu, after an
+  icon-only first attempt was explicitly rejected by the user.** User
+  reported (MacBook Pro 14" screenshot, logical width 1512px) that
+  reaching Export/AI Settings required scrolling the toolbar sideways —
+  a regression that had crept in one button at a time as features were
+  added this session (#13 Overview, #16 Print; #14 and #17 added their
+  own controls elsewhere, not here). Measured actual overflow with a
+  throwaway Playwright script across common widths
+  (`header.scrollWidth - clientWidth`) rather than guessing.
 
-  Fix: converted `Novel Import`, `Live AI`, `AI Settings`, and `+ Panel`
-  from icon+text `Button`s to icon-only `IconButton`s, matching the
-  pattern already used by Undo/Redo/History/Chapters/Overview/Print —
-  `IconButton` sets `aria-label={label}`, so every e2e test locator
-  keyed on the button's accessible name (`getByRole("button", {name:
-  "Panel"})` etc.) kept working unchanged, zero test rewrites needed.
-  Also shrank the Art Style button's `max-w` (200px→100px), the Language
-  input (`w-28`→`w-24`), and toolbar/divider gaps (`gap-1`→`gap-0.5`,
-  divider `mx-1`→`mx-0.5`). Deliberately did NOT reach for an overflow
-  "More" menu — that would have meant re-parenting several buttons out
-  of the always-visible bar, which breaks every e2e test that clicks
-  them directly (they'd need a menu-open step first) for a UX pattern
-  (hidden secondary actions) this app doesn't use anywhere else yet.
+  First attempt: converted `Novel Import`, `Live AI`, `AI Settings`, and
+  `+ Panel` from icon+text `Button`s to icon-only `IconButton`s
+  (`aria-label` kept the same accessible name, so no test rewrites were
+  needed for that part) plus assorted spacing trims. This DID eliminate
+  the overflow at ≥1440px — but the user pushed back immediately:
+  "khó mà biết nó dùng để làm gì" (hard to tell what it's for). Fair:
+  several of the newly-bare icons (a book for Novel Import, a wave for
+  Live AI, a plain "+") aren't universally self-explanatory the way
+  Undo/Redo/History's arrows and clock are, and a tooltip only helps
+  someone already hovering.
 
-  Result, measured the same way after the fix: **zero overflow at
-  1440px and wider** (was overflowing even well past 1512px before);
-  ~17px left at 1366px, ~103px at 1280px — diminishing returns past that
-  without a real overflow-menu redesign, which is a bigger, riskier
-  change than this session's scope. If TopBar keeps growing (more
-  planned features add more buttons), an overflow menu is the next real
-  lever, not more icon-conversion — most of what could safely become
-  icon-only already has.
+  Revised fix (the one that shipped): restored `+ Panel` and
+  `AI Settings` to icon+text, and instead of converting more buttons to
+  icons, moved five lower-frequency actions — Novel Import, Chapters,
+  Page Overview, Print Export, Live AI — into ONE clearly-labeled
+  "••• More" `Dropdown` (the same native-`<select>`-based component
+  `Bubble`/`Effect`/`Layout` already use). Nothing lost its name: opening
+  More shows each item's full text label, same as any other dropdown —
+  the information the user was missing is one click away instead of
+  gone. This DOES require an extra click for those five vs. before, a
+  real tradeoff, but the user's stated priority (clarity over maximum
+  compactness) settles it. `Art Style`'s `max-w` was given back some
+  room too (100px→140px) now that five whole buttons collapsed into one.
+
+  Every e2e test that used to click these five buttons directly now
+  does `page.getByRole("combobox", { name: "More" }).selectOption(key)`
+  instead (`novel-import` / `chapters` / `overview` / `print` /
+  `live-ai`) — six call sites across the Live AI, Novel Import ×2,
+  Chapters, and Page Overview tests. `Panel` and `AI Settings` kept
+  their original `getByRole("button", ...)` locators since they're back
+  to being real buttons.
+
+  Result, same measurement script: **zero overflow at 1440px and
+  wider** (including the user's own reported 1512px); ~87px left at
+  1366px, ~173px at 1280px. Slightly worse numbers on small screens than
+  the icon-only attempt, in exchange for every visible control except
+  Undo/Redo/History (always icon-only, always was, never the complaint)
+  having a readable label. If TopBar keeps growing, the next lever is
+  moving MORE items into the More menu — not converting remaining
+  labeled buttons to icons, which is the exact thing that was just
+  reverted.
 
 - **2026-09-15 — Character Model Sheet, V1 (backlog #17).** New "Model
   Sheet" button on each `CharacterCard` (`CharactersTab.tsx`), enabled

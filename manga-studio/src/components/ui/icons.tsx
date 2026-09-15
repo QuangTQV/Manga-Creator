@@ -57,6 +57,7 @@ export {
   LayoutGrid as OverviewIcon,
   Printer as PrintIcon,
   ZoomIn as ZoomIcon,
+  MoreHorizontal as MoreIcon,
 } from "lucide-react";
 
 /** Toolbar and inline icon size. 16px reads cleanly on a 32px control. */
