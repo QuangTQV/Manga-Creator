@@ -5,6 +5,14 @@
  * `transient` (drag previews — no history entry until commitTransient).
  * The Manga Agent uses the same commit path via a transaction group, so one
  * agent run is one undo step and there is no privileged write path.
+ *
+ * Every history entry carries a human label (and timestamp), not just the
+ * raw document — `undo`/`redo` alone only ever let you step one entry at a
+ * time and never say what any of them WERE, which is fine for "oops" but
+ * not for finding a specific earlier point across many edits and agent
+ * runs. `jumpTo` moves directly to any entry across the whole past/future
+ * span in one step, and the labels are what make a history list legible
+ * (see `components/dialogs/HistoryDialog.tsx`).
  */
 
 import { create } from "zustand";
@@ -12,6 +20,19 @@ import type { ID, ProjectDocument } from "@/domain/types";
 import { applyDomainCommand, type CommandResult, type DomainCommand } from "@/domain/commands";
 
 const HISTORY_LIMIT = 50;
+
+export interface HistoryEntry {
+  doc: ProjectDocument;
+  label: string;
+  at: number;
+}
+
+/** "reset-page-layout" -> "Reset page layout". Self-maintaining: a label for
+ * a command type added later needs no matching entry here to stay readable. */
+function humanizeCommandType(type: string): string {
+  const words = type.replace(/-/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 
 export interface Selection {
   itemId?: ID;
@@ -35,10 +56,15 @@ interface EditorState {
   doc: ProjectDocument | null;
   currentPageId: ID | null;
   selection: Selection;
-  past: ProjectDocument[];
-  future: ProjectDocument[];
+  /** Label/timestamp of whatever action produced the CURRENT `doc`. */
+  currentLabel: string;
+  currentAt: number;
+  past: HistoryEntry[];
+  future: HistoryEntry[];
   /** Snapshot captured at transaction/transient start; null when not active. */
   pendingSnapshot: ProjectDocument | null;
+  /** Label captured at transient-gesture start, for the entry it produces. */
+  pendingLabel: string | null;
   inTransaction: boolean;
   dirty: boolean;
 
@@ -51,14 +77,14 @@ interface EditorState {
   transientDispatch(command: DomainCommand): void;
 
   /** Apply a mutation and push one undo entry. */
-  commit(mutation: DocMutation): void;
+  commit(mutation: DocMutation, label?: string): void;
   /** Apply a mutation without history (live drag). Call commitTransient when done. */
-  transient(mutation: DocMutation): void;
+  transient(mutation: DocMutation, label?: string): void;
   commitTransient(): void;
 
   /** Group many commits into one undo entry (used for agent runs). */
   beginTransaction(): void;
-  endTransaction(): void;
+  endTransaction(label?: string): void;
   /**
    * Discard everything done since `beginTransaction` and restore the snapshot.
    *
@@ -70,7 +96,24 @@ interface EditorState {
 
   undo(): void;
   redo(): void;
+  /**
+   * Jump directly to any point across the combined past/current/future span
+   * — see `historyTimeline` for how that flat, chronological list is built.
+   * A no-op if `index` is already the current position or out of range.
+   */
+  jumpTo(index: number): void;
   markSaved(): void;
+}
+
+/** The full chronological list of documents ever visited that are still
+ * reachable by undo/redo, oldest first, with the current position's index —
+ * what `HistoryDialog` renders and what `jumpTo`'s index addresses into. */
+export function historyTimeline(state: Pick<EditorState, "past" | "future" | "doc" | "currentLabel" | "currentAt">): {
+  entries: HistoryEntry[];
+  currentIndex: number;
+} {
+  const current: HistoryEntry = { doc: state.doc!, label: state.currentLabel, at: state.currentAt };
+  return { entries: [...state.past, current, ...state.future], currentIndex: state.past.length };
 }
 
 /**
@@ -121,9 +164,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   doc: null,
   currentPageId: null,
   selection: {},
+  currentLabel: "Opened project",
+  currentAt: 0,
   past: [],
   future: [],
   pendingSnapshot: null,
+  pendingLabel: null,
   inTransaction: false,
   dirty: false,
 
@@ -133,9 +179,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       doc,
       currentPageId: firstPage?.id ?? null,
       selection: {},
+      currentLabel: "Opened project",
+      currentAt: Date.now(),
       past: [],
       future: [],
       pendingSnapshot: null,
+      pendingLabel: null,
       inTransaction: false,
       dirty: false,
     });
@@ -148,9 +197,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       doc: null,
       currentPageId: null,
       selection: {},
+      currentLabel: "Opened project",
+      currentAt: 0,
       past: [],
       future: [],
       pendingSnapshot: null,
+      pendingLabel: null,
       inTransaction: false,
       dirty: false,
     });
@@ -169,17 +221,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     get().commit((doc) => {
       result = applyDomainCommand(doc, command);
       return result.doc;
-    });
+    }, humanizeCommandType(command.type));
     if (!result) throw new Error("No open project");
     return result;
   },
 
   transientDispatch(command) {
-    get().transient((doc) => applyDomainCommand(doc, command).doc);
+    get().transient((doc) => applyDomainCommand(doc, command).doc, humanizeCommandType(command.type));
   },
 
-  commit(mutation) {
-    const { doc, inTransaction, past } = get();
+  commit(mutation, label = "Edit") {
+    const { doc, inTransaction, past, currentLabel, currentAt } = get();
     if (!doc) return;
     const next = mutation(doc);
     if (next === doc) return;
@@ -187,25 +239,40 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       doc: next,
       dirty: true,
-      ...(inTransaction ? {} : { past: pushBounded(past, doc), future: [] }),
+      ...(inTransaction
+        ? {}
+        : {
+            past: pushBounded(past, { doc, label: currentLabel, at: currentAt }),
+            future: [],
+            currentLabel: label,
+            currentAt: Date.now(),
+          }),
     });
   },
 
-  transient(mutation) {
-    const { doc, pendingSnapshot, inTransaction } = get();
+  transient(mutation, label) {
+    const { doc, pendingSnapshot, pendingLabel, inTransaction } = get();
     if (!doc) return;
     set({
       doc: mutation(doc),
       dirty: true,
       // First transient in a gesture captures the pre-gesture state once.
       pendingSnapshot: inTransaction ? pendingSnapshot : (pendingSnapshot ?? doc),
+      pendingLabel: inTransaction ? pendingLabel : (pendingLabel ?? label ?? "Canvas edit"),
     });
   },
 
   commitTransient() {
-    const { pendingSnapshot, past, inTransaction } = get();
+    const { pendingSnapshot, pendingLabel, past, inTransaction, currentLabel, currentAt } = get();
     if (!pendingSnapshot || inTransaction) return;
-    set({ past: pushBounded(past, pendingSnapshot), future: [], pendingSnapshot: null });
+    set({
+      past: pushBounded(past, { doc: pendingSnapshot, label: currentLabel, at: currentAt }),
+      future: [],
+      pendingSnapshot: null,
+      pendingLabel: null,
+      currentLabel: pendingLabel ?? "Canvas edit",
+      currentAt: Date.now(),
+    });
   },
 
   beginTransaction() {
@@ -230,39 +297,67 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
   },
 
-  endTransaction() {
-    const { pendingSnapshot, past, doc, inTransaction } = get();
+  endTransaction(label = "Agent run") {
+    const { pendingSnapshot, past, doc, inTransaction, currentLabel, currentAt } = get();
     if (!inTransaction) return;
     const changed = pendingSnapshot && doc !== pendingSnapshot;
     set({
       inTransaction: false,
       pendingSnapshot: null,
-      ...(changed ? { past: pushBounded(past, pendingSnapshot), future: [] } : {}),
+      ...(changed
+        ? {
+            past: pushBounded(past, { doc: pendingSnapshot!, label: currentLabel, at: currentAt }),
+            future: [],
+            currentLabel: label,
+            currentAt: Date.now(),
+          }
+        : {}),
     });
   },
 
   undo() {
-    const { past, future, doc } = get();
+    const { past, future, doc, currentLabel, currentAt } = get();
     if (!doc || past.length === 0) return;
     const previous = past[past.length - 1];
     set({
-      doc: previous,
+      doc: previous.doc,
       past: past.slice(0, -1),
-      future: [doc, ...future],
-      selection: pruneSelection(get().selection, previous),
+      future: [{ doc, label: currentLabel, at: currentAt }, ...future],
+      currentLabel: previous.label,
+      currentAt: previous.at,
+      selection: pruneSelection(get().selection, previous.doc),
       dirty: true,
     });
   },
 
   redo() {
-    const { past, future, doc } = get();
+    const { past, future, doc, currentLabel, currentAt } = get();
     if (!doc || future.length === 0) return;
     const [next, ...rest] = future;
     set({
-      doc: next,
-      past: pushBounded(past, doc),
+      doc: next.doc,
+      past: pushBounded(past, { doc, label: currentLabel, at: currentAt }),
       future: rest,
-      selection: pruneSelection(get().selection, next),
+      currentLabel: next.label,
+      currentAt: next.at,
+      selection: pruneSelection(get().selection, next.doc),
+      dirty: true,
+    });
+  },
+
+  jumpTo(index) {
+    const state = get();
+    if (!state.doc) return;
+    const { entries, currentIndex } = historyTimeline(state);
+    if (index === currentIndex || index < 0 || index >= entries.length) return;
+    const target = entries[index];
+    set({
+      doc: target.doc,
+      past: entries.slice(0, index),
+      future: entries.slice(index + 1),
+      currentLabel: target.label,
+      currentAt: target.at,
+      selection: pruneSelection(get().selection, target.doc),
       dirty: true,
     });
   },
@@ -272,8 +367,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 }));
 
-function pushBounded(past: ProjectDocument[], doc: ProjectDocument): ProjectDocument[] {
-  const next = [...past, doc];
+function pushBounded(past: HistoryEntry[], entry: HistoryEntry): HistoryEntry[] {
+  const next = [...past, entry];
   return next.length > HISTORY_LIMIT ? next.slice(next.length - HISTORY_LIMIT) : next;
 }
 

@@ -157,6 +157,38 @@ test("AI Settings disables Test Connection until a provider is actually saved", 
   expect(errors).toEqual([]);
 });
 
+test("History lets you jump several steps at once, not just one Undo at a time", async ({ page }) => {
+  const pageButtons = page.getByRole("button", { name: /^\d+$/ });
+  await expect(pageButtons).toHaveCount(1); // a fresh project starts with one page
+
+  const history = page.getByRole("button", { name: "History" });
+  await expect(history).toBeDisabled(); // nothing to jump to yet
+
+  await page.getByRole("button", { name: "Add page" }).click();
+  await page.getByRole("button", { name: "Add page" }).click();
+  await expect(pageButtons).toHaveCount(3);
+  await expect(history).toBeEnabled();
+
+  await history.click();
+  await expect(page.getByRole("heading", { name: "History" })).toBeVisible();
+
+  const rows = page.getByRole("list", { name: "History entries" }).getByRole("button");
+  await expect(rows).toHaveCount(3);
+  // Most recent first: the current position is on top and marked as such.
+  await expect(rows.first()).toContainText("Add page");
+  await expect(rows.first()).toContainText("Current");
+  await expect(rows.first()).toBeDisabled();
+
+  // Jump straight back to the very first state — two steps in one click,
+  // not two separate Undo clicks.
+  await rows.last().click();
+  await expect(page.getByRole("heading", { name: "History" })).not.toBeVisible();
+  await expect(pageButtons).toHaveCount(1);
+
+  // The jumped-past steps are still reachable — Redo, not gone.
+  await expect(page.getByRole("button", { name: "Redo" })).toBeEnabled();
+});
+
 test("the Manga Agent lets you target a page other than the one open in the canvas", async ({ page }) => {
   // The picker only appears once there is a page to switch TO.
   await page.getByRole("button", { name: "Add page" }).click();

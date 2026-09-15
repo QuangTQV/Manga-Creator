@@ -97,6 +97,8 @@ interface UiState {
   liveAiOpen: boolean;
   /** Novel Import: paste prose, get a planned-page walkthrough. */
   novelImportOpen: boolean;
+  /** History: jump directly to any earlier (or later) point, not just one Undo at a time. */
+  historyOpen: boolean;
   /**
    * Advanced / Developer surface.
    *
@@ -136,6 +138,8 @@ interface UiState {
   closeLiveAi(): void;
   openNovelImport(): void;
   closeNovelImport(): void;
+  openHistory(): void;
+  closeHistory(): void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -157,6 +161,7 @@ export const useUiStore = create<UiState>((set) => ({
   artStyleOpen: false,
   liveAiOpen: false,
   novelImportOpen: false,
+  historyOpen: false,
   advancedMode: false,
   openGenerator: (request) => set({ generator: request }),
   closeGenerator: () => set({ generator: null }),
@@ -189,4 +194,6 @@ export const useUiStore = create<UiState>((set) => ({
   closeLiveAi: () => set({ liveAiOpen: false }),
   openNovelImport: () => set({ novelImportOpen: true }),
   closeNovelImport: () => set({ novelImportOpen: false }),
+  openHistory: () => set({ historyOpen: true }),
+  closeHistory: () => set({ historyOpen: false }),
 }));

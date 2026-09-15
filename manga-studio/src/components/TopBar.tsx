@@ -17,6 +17,7 @@ import { ChevronDown } from "lucide-react";
 import {
   ExportIcon,
   GenerateIcon,
+  HistoryIcon,
   ICON_SIZE,
   ICON_STROKE,
   LiveIcon,
@@ -78,6 +79,7 @@ export function TopBar() {
   const openGenerator = useUiStore((s) => s.openGenerator);
   const openLiveAi = useUiStore((s) => s.openLiveAi);
   const openNovelImport = useUiStore((s) => s.openNovelImport);
+  const openHistory = useUiStore((s) => s.openHistory);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<string | null>(null);
 
@@ -125,8 +127,8 @@ export function TopBar() {
 
   return (
     <header
-      className="flex h-12 shrink-0 items-center gap-1 border-b px-2 text-sm"
-      style={{ background: "var(--bg-panel)", borderColor: "var(--border-subtle)" }}
+      className="flex h-12 shrink-0 items-center gap-1 overflow-x-auto border-b px-2 text-sm"
+      style={{ background: "var(--bg-panel)", borderColor: "var(--border-subtle)", scrollbarWidth: "thin" }}
     >
       {/* Brand: compact by design. This is a creator tool, not a landing page. */}
       <span className="flex items-center gap-2 pl-1 pr-2" title="Kumanga — AI Manga Studio">
@@ -139,11 +141,11 @@ export function TopBar() {
       <span aria-hidden style={{ color: "var(--border-strong)" }}>
         /
       </span>
-      <span className="truncate" style={{ color: "var(--text-secondary)" }}>
+      <span className="min-w-[60px] truncate" style={{ color: "var(--text-secondary)" }}>
         {doc.project.name}
       </span>
       <span
-        className="ml-1 text-[11px]"
+        className="ml-1 shrink-0 text-[11px]"
         style={{ color: dirty ? "var(--warning)" : "var(--text-muted)" }}
       >
         {dirty ? "Saving…" : "Saved"}
@@ -164,6 +166,13 @@ export function TopBar() {
         disabled={!canRedo}
         onClick={() => useEditorStore.getState().redo()}
         icon={<RedoIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+      />
+      <IconButton
+        label="History"
+        title="Jump to any earlier or later point, not just one Undo at a time"
+        disabled={!canUndo && !canRedo}
+        onClick={openHistory}
+        icon={<HistoryIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
       />
 
       <ToolbarDivider />

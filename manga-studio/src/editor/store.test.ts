@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createProjectDocument } from "@/domain/factory";
 import { addAsset } from "@/domain/libraryOps";
 import { placeAsset, updateItemTransform } from "@/domain/itemOps";
-import { useEditorStore } from "./store";
+import { historyTimeline, useEditorStore } from "./store";
 
 function seed() {
   let doc = createProjectDocument("Undo test");
@@ -78,6 +78,55 @@ describe("editor history", () => {
     store.beginTransaction();
     store.endTransaction();
     expect(useEditorStore.getState().past).toHaveLength(pastLength);
+  });
+
+  it("dispatch derives a human label from the command type", () => {
+    const { assetId, panelId } = seed();
+    useEditorStore.getState().dispatch({ type: "add-instance", panelId, assetId });
+    expect(useEditorStore.getState().currentLabel).toBe("Add instance");
+  });
+
+  it("an agent-run transaction is labeled with the run's own summary", () => {
+    const { assetId, panelId } = seed();
+    const store = useEditorStore.getState();
+    store.beginTransaction();
+    store.commit((d) => placeAsset(d, panelId, assetId).doc);
+    store.endTransaction("Agent: create a dramatic close-up");
+    expect(useEditorStore.getState().currentLabel).toBe("Agent: create a dramatic close-up");
+  });
+
+  it("jumpTo moves directly across several steps in one call, in both directions", () => {
+    const { assetId, panelId } = seed();
+    const store = useEditorStore.getState();
+    const origin = store.doc!;
+
+    store.dispatch({ type: "add-instance", panelId, assetId });
+    store.dispatch({ type: "add-bubble", panelId, bubbleType: "speech", text: "Hi" });
+    store.dispatch({ type: "add-effect", panelId, effectKind: "speed-lines" });
+    const latest = useEditorStore.getState().doc!;
+
+    const { entries, currentIndex } = historyTimeline(useEditorStore.getState());
+    expect(entries).toHaveLength(4); // origin + 3 commits
+    expect(currentIndex).toBe(3);
+
+    // Jump straight back to the very first state — no repeated undo() calls.
+    useEditorStore.getState().jumpTo(0);
+    expect(useEditorStore.getState().doc).toBe(origin);
+
+    // And straight forward again to the latest, in one call.
+    useEditorStore.getState().jumpTo(3);
+    expect(useEditorStore.getState().doc).toBe(latest);
+  });
+
+  it("jumpTo to the current position is a no-op", () => {
+    const { assetId, panelId } = seed();
+    const store = useEditorStore.getState();
+    store.dispatch({ type: "add-instance", panelId, assetId });
+    const doc = useEditorStore.getState().doc;
+    const { currentIndex } = historyTimeline(useEditorStore.getState());
+
+    useEditorStore.getState().jumpTo(currentIndex);
+    expect(useEditorStore.getState().doc).toBe(doc);
   });
 
   it("undo drops selection of removed items", () => {

@@ -231,7 +231,7 @@ export async function executePlan(
       useEditorStore.getState().abortTransaction();
       rolledBack = true;
     } else {
-      useEditorStore.getState().endTransaction();
+      useEditorStore.getState().endTransaction(plan.summary ? `Agent: ${plan.summary}` : "Agent run");
     }
     ctx.guards = DENY_ALL_CREATION;
   }
