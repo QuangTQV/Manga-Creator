@@ -33,6 +33,40 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-15 — TopBar no longer needs horizontal scroll on common laptop
+  widths.** User reported (with a MacBook Pro 14" screenshot, logical width
+  1512px) that reaching Export/AI Settings required scrolling the toolbar
+  sideways — a real UX regression that had crept in one icon-button at a
+  time as features were added this session (#13 Overview, #14 fonts as
+  the "Font" control in the Inspector not TopBar, #16 Print, #17 Model
+  Sheet's own button lives in CharactersTab not here). Measured actual
+  overflow with a small throwaway Playwright script across common widths
+  (`header.scrollWidth - clientWidth`) rather than guessing — 1512px
+  needed ~mid-100s px trimmed.
+
+  Fix: converted `Novel Import`, `Live AI`, `AI Settings`, and `+ Panel`
+  from icon+text `Button`s to icon-only `IconButton`s, matching the
+  pattern already used by Undo/Redo/History/Chapters/Overview/Print —
+  `IconButton` sets `aria-label={label}`, so every e2e test locator
+  keyed on the button's accessible name (`getByRole("button", {name:
+  "Panel"})` etc.) kept working unchanged, zero test rewrites needed.
+  Also shrank the Art Style button's `max-w` (200px→100px), the Language
+  input (`w-28`→`w-24`), and toolbar/divider gaps (`gap-1`→`gap-0.5`,
+  divider `mx-1`→`mx-0.5`). Deliberately did NOT reach for an overflow
+  "More" menu — that would have meant re-parenting several buttons out
+  of the always-visible bar, which breaks every e2e test that clicks
+  them directly (they'd need a menu-open step first) for a UX pattern
+  (hidden secondary actions) this app doesn't use anywhere else yet.
+
+  Result, measured the same way after the fix: **zero overflow at
+  1440px and wider** (was overflowing even well past 1512px before);
+  ~17px left at 1366px, ~103px at 1280px — diminishing returns past that
+  without a real overflow-menu redesign, which is a bigger, riskier
+  change than this session's scope. If TopBar keeps growing (more
+  planned features add more buttons), an overflow menu is the next real
+  lever, not more icon-conversion — most of what could safely become
+  icon-only already has.
+
 - **2026-09-15 — Character Model Sheet, V1 (backlog #17).** New "Model
   Sheet" button on each `CharacterCard` (`CharactersTab.tsx`), enabled
   whenever a character has a reference or any rendered state (not gated

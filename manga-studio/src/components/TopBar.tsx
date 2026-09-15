@@ -171,7 +171,7 @@ export function TopBar() {
 
   return (
     <header
-      className="flex h-12 shrink-0 items-center gap-1 overflow-x-auto border-b px-2 text-sm"
+      className="flex h-12 shrink-0 items-center gap-0.5 overflow-x-auto border-b px-1.5 text-sm"
       style={{ background: "var(--bg-panel)", borderColor: "var(--border-subtle)", scrollbarWidth: "thin" }}
     >
       {/* Brand: compact by design. This is a creator tool, not a landing page. */}
@@ -228,9 +228,9 @@ export function TopBar() {
           if (page) useEditorStore.getState().dispatch({ type: "set-page-layout", pageId: page.id, layout: key as LayoutPresetId });
         }}
       />
-      <Button
-        variant="ghost"
-        icon={<PlusIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+      <IconButton
+        label="Panel"
+        title="Add a new panel on top of the page — drag its corners into place"
         onClick={() => {
           if (!page) return;
           const result = useEditorStore.getState().dispatch({
@@ -245,10 +245,8 @@ export function TopBar() {
           useEditorStore.getState().select({ panelId: result.createdId });
           useUiStore.getState().setShapeEditPanel(result.createdId);
         }}
-        title="Add a new panel on top of the page — drag its corners into place"
-      >
-        Panel
-      </Button>
+        icon={<PlusIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+      />
       <Dropdown
         label="Generate"
         accent
@@ -256,14 +254,12 @@ export function TopBar() {
         items={GENERATE_TARGETS.map((target) => ({ key: target.key, label: target.label }))}
         onPick={(key) => openGenerator({ assetType: key as GeneratorRequest["assetType"] })}
       />
-      <Button
-        variant="ghost"
-        icon={<NovelIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
-        onClick={openNovelImport}
+      <IconButton
+        label="Novel Import"
         title="Turn pasted novel/story text into a planned page-by-page script"
-      >
-        Novel Import
-      </Button>
+        onClick={openNovelImport}
+        icon={<NovelIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+      />
       <IconButton
         label="Chapters"
         title="Organize pages into named chapters; export any one on its own"
@@ -307,7 +303,7 @@ export function TopBar() {
           stored value changes from elsewhere — undo, History, another
           project load — since this stays an uncontrolled input otherwise. */}
       <label
-        className="mr-1 flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px]"
+        className="mr-0.5 flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px]"
         style={{ color: "var(--text-muted)" }}
         title="Language the Agent writes new dialogue/narration in. Leave blank to match your own prompt's language. Never translates dialogue you quoted exactly, or a pasted novel's own wording."
       >
@@ -315,7 +311,7 @@ export function TopBar() {
         <input
           key={doc.project.settings.dialogueLanguage ?? ""}
           list="dialogue-language-options"
-          className="w-28 rounded border border-[var(--border-subtle)] bg-[var(--bg-app)] px-1.5 py-0.5 text-[11px] text-zinc-300"
+          className="w-24 rounded border border-[var(--border-subtle)] bg-[var(--bg-app)] px-1.5 py-0.5 text-[11px] text-zinc-300"
           defaultValue={doc.project.settings.dialogueLanguage ?? ""}
           placeholder="Auto"
           onBlur={(event) => {
@@ -335,7 +331,7 @@ export function TopBar() {
       {/* Advanced reveals rigging and raw camera numerics. Off by default: a
           creator directs the scene, the harness picks the implementation. */}
       <label
-        className="mr-1 flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-[11px] hover:bg-[var(--bg-hover)]"
+        className="mr-0.5 flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-1 text-[11px] hover:bg-[var(--bg-hover)]"
         style={{ color: "var(--text-muted)" }}
         title="Show rigging and numeric camera controls"
       >
@@ -352,27 +348,24 @@ export function TopBar() {
         icon={<StyleIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
         onClick={openArtStyle}
         title={`Project Art Style: ${activeStyle.name}`}
-        className="max-w-[200px]"
+        className="max-w-[100px]"
       >
         <span className="truncate">{activeStyle.name}</span>
       </Button>
 
-      <Button
-        variant="ghost"
-        icon={<LiveIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
-        onClick={openLiveAi}
+      <IconButton
+        label="Live AI"
         title="See what was sent to the connected AI and how it responded"
-      >
-        Live AI
-      </Button>
+        onClick={openLiveAi}
+        icon={<LiveIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+      />
 
-      <Button
-        variant="ghost"
-        icon={<SettingsIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+      <IconButton
+        label="AI Settings"
+        title="Configure AI providers and API keys"
         onClick={openSettings}
-      >
-        AI Settings
-      </Button>
+        icon={<SettingsIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+      />
 
       <Dropdown
         label={exportProgress ?? (exporting ? "Exporting…" : "Export")}

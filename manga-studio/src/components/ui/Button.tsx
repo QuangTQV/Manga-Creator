@@ -108,5 +108,5 @@ export function IconButton({
 
 /** A vertical rule between toolbar groups — the only separator the strip needs. */
 export function ToolbarDivider() {
-  return <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-[var(--border-subtle)]" />;
+  return <span aria-hidden className="mx-0.5 h-5 w-px shrink-0 bg-[var(--border-subtle)]" />;
 }
