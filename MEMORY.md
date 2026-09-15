@@ -33,6 +33,44 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-15 — Novel Import cross-checks a project's EXISTING characters,
+  not just duplicates within one parse (backlog #22).** Surfaced by the
+  user asking "is continuing an existing manga supported yet" — investigated
+  end to end (resume a project: yes; chapters: yes; character reuse via the
+  Manga Agent/manual placement: yes) and found one real, previously
+  undocumented gap: `dedupeCharacters` (`agent/novelParser/characterEdits.ts`)
+  only ever merged duplicates WITHIN the characters just parsed from pasted
+  text — pasting chapter 2 into a project that already has chapter 1's
+  characters got no cross-check at all against `doc.characters`, so a
+  differently-spelled or differently-accented repeat of an existing
+  character ("Yuri" vs. the project's own "Yūri") could sail through the
+  review stage and end up proposed as a fresh duplicate.
+
+  New `matchExistingCharacters` (same file) compares every freshly parsed
+  character's name against the project's existing character names —
+  case-insensitive AND diacritic-insensitive (`String.normalize("NFKD")` +
+  stripping combining marks, not full fuzzy/edit-distance matching:
+  edit-distance risks silently merging two GENUINELY different characters,
+  a materially worse failure than an occasional missed near-duplicate that
+  a human still has to eyeball). `NovelImportDialog.tsx`'s character-review
+  cards now show a green "✓ already in this project" note for an exact
+  match (the Creative Director's own resolution layer already reuses this
+  case silently — Rule 7, "reuse before create" — this just tells the
+  creator that's what's about to happen) or an amber "≈ close to existing
+  character" note with a one-click "Use existing name" button for a
+  diacritic-only near-match, which just calls the SAME
+  `applyCharacterRename` the manual rename/merge flow already used — no new
+  mutation path.
+
+  Purely additive: no domain model change, no new command, reads
+  `doc.characters` (already loaded) and reuses the existing rename/merge
+  machinery. Verified with unit tests for the pure matcher (exact,
+  diacritic-near-match, no-match, empty-library cases) and a real-browser
+  Playwright test that creates two real project characters, seeds a Novel
+  outline whose parsed characters exercise both match cases plus a
+  genuinely-unrelated name (no badge), and confirms clicking "Use existing
+  name" actually re-keys the card to the adopted spelling.
+
 - **2026-09-15 — Full-backup project archive: .zip with bundled image/font
   bytes (backlog #21, from the MangaGen feature audit).** The plain
   archive (`exportProjectArchive.ts`) only ever exported the JSON document
@@ -671,6 +709,13 @@ archive import/export" Timeline entry):
 21. ~~Full backup export/import (.zip, bundles actual image/font bytes,
     portable across machines/deployments)~~ — **done 2026-09-15**, see
     Timeline.
+
+**Tier 9 — surfaced by the user asking "is continuing an existing manga
+supported yet"** — audited end to end (resume a project, chapters,
+character reuse via the Agent/manual placement: all already worked). One
+real, previously undocumented gap found and fixed:
+22. ~~Novel Import cross-checks a project's pre-existing characters, not
+    just duplicates within one parse~~ — **done 2026-09-15**, see Timeline.
 
 **Not in the backlog — deliberate, don't re-add without the user explicitly overriding**
 - PDF export (rejected design decision, not a gap — see `export/exportBook.ts`).

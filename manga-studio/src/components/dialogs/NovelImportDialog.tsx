@@ -30,7 +30,7 @@ import { groupSegmentsIntoChunks, splitIntoChapters, splitIntoSegments } from "@
 import type { NovelFidelity } from "@/agent/novelParser/prompt";
 import { MAX_SUPPORTED_PANELS_PER_PAGE, planPages, type PanelBudget, type PlannedPage } from "@/agent/novelParser/pagination";
 import type { NovelCharacter, NovelScene } from "@/agent/novelParser/schema";
-import { dedupeCharacters, mergeCharacterEntries, redirectCharacterName } from "@/agent/novelParser/characterEdits";
+import { dedupeCharacters, matchExistingCharacters, mergeCharacterEntries, redirectCharacterName } from "@/agent/novelParser/characterEdits";
 import type { LayoutPresetId } from "@/domain/types";
 import { useEditorStore } from "@/editor/store";
 import { useUiStore } from "@/editor/uiStore";
@@ -73,6 +73,11 @@ function currentProjectId(): string | null {
 export function NovelImportDialog() {
   const open = useUiStore((s) => s.novelImportOpen);
   const close = useUiStore((s) => s.closeNovelImport);
+  // Only read for the character-review cross-check below — continuing an
+  // already-populated project (pasting chapter 2 after chapter 1 is
+  // already in the project) is exactly when a freshly parsed "Yuri" needs
+  // to know a "Yuri" character already exists.
+  const doc = useEditorStore((s) => s.doc);
 
   const [text, setText] = useState("");
   const [titleHint, setTitleHint] = useState("");
@@ -343,6 +348,10 @@ export function NovelImportDialog() {
   const totalPages = chapters.reduce((sum, ch) => sum + ch.pages.length, 0);
   const donePages = Object.values(pageStates).filter((s) => s === "done").length;
   const allCharacters = dedupeCharacters(chapters.flatMap((ch) => ch.characters));
+  const existingCharacterMatches = matchExistingCharacters(
+    allCharacters,
+    doc ? Object.values(doc.characters).map((c) => c.name) : [],
+  );
 
   return (
     <div className="fixed inset-0 z-40 grid place-items-center overflow-y-auto bg-black/60 py-6" onMouseDown={close}>
@@ -464,19 +473,43 @@ export function NovelImportDialog() {
                 <p className="text-xs text-zinc-500">No characters were detected in this text.</p>
               ) : (
                 <div className="flex flex-col gap-2">
-                  {allCharacters.map((character) => (
-                    <div key={character.primaryName} className="rounded-md border border-zinc-800 p-2.5">
-                      <input
-                        className="mb-1 w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1 text-xs font-medium text-zinc-200"
-                        defaultValue={character.primaryName}
-                        onBlur={(e) => applyCharacterRename(character.primaryName, e.target.value)}
-                      />
-                      {character.aliases.length > 0 && (
-                        <p className="mb-1 text-[11px] text-zinc-500">Also called: {character.aliases.join(", ")}</p>
-                      )}
-                      {character.description && <p className="text-[11px] text-zinc-600">{character.description}</p>}
-                    </div>
-                  ))}
+                  {allCharacters.map((character) => {
+                    const match = existingCharacterMatches.get(character.primaryName);
+                    return (
+                      <div key={character.primaryName} className="rounded-md border border-zinc-800 p-2.5">
+                        <input
+                          className="mb-1 w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1 text-xs font-medium text-zinc-200"
+                          defaultValue={character.primaryName}
+                          onBlur={(e) => applyCharacterRename(character.primaryName, e.target.value)}
+                        />
+                        {match?.exact && (
+                          <p className="mb-1 text-[11px] text-emerald-400">
+                            ✓ Already in this project — will reuse the existing &ldquo;{match.existingName}&rdquo;
+                            instead of creating a new character.
+                          </p>
+                        )}
+                        {match && !match.exact && (
+                          <p className="mb-1 flex flex-wrap items-center gap-1.5 text-[11px] text-amber-400">
+                            <span>
+                              ≈ Close to existing character &ldquo;{match.existingName}&rdquo; — likely the same
+                              person, spelled differently.
+                            </span>
+                            <button
+                              type="button"
+                              className="rounded border border-amber-700/60 px-1.5 py-0.5 text-[10px] text-amber-300 hover:bg-amber-950/40"
+                              onClick={() => applyCharacterRename(character.primaryName, match.existingName)}
+                            >
+                              Use &ldquo;{match.existingName}&rdquo;
+                            </button>
+                          </p>
+                        )}
+                        {character.aliases.length > 0 && (
+                          <p className="mb-1 text-[11px] text-zinc-500">Also called: {character.aliases.join(", ")}</p>
+                        )}
+                        {character.description && <p className="text-[11px] text-zinc-600">{character.description}</p>}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

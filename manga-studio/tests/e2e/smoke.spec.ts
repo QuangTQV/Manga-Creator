@@ -505,6 +505,116 @@ const TINY_PNG = Buffer.from(
   "base64",
 );
 
+test("Novel Import flags a project's existing characters instead of proposing duplicates", async ({ page }) => {
+  // The gap this closes: pasting a new chunk of story into an
+  // already-populated project used to let the character-review step
+  // propose "new" characters that were actually already in the project's
+  // library — silently, with no cross-check. Seed two real, existing
+  // project characters, then a Novel outline whose parsed characters
+  // exercise both match cases: an exact name match ("Momo") and a
+  // diacritic-only near-match ("Yuri" parsed vs. the project's "Yūri").
+  await page.getByRole("button", { name: "+ New Character" }).click();
+  await page.getByRole("textbox", { name: "Name" }).fill("Yūri");
+  await page
+    .locator('input[type="file"]#character-reference')
+    .setInputFiles({ name: "yuri-ref.png", mimeType: "image/png", buffer: TINY_PNG });
+  await expect(page.getByAltText("Character reference preview")).toBeVisible();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(page.getByText("Yūri", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "+ New Character" }).click();
+  await page.getByRole("textbox", { name: "Name" }).fill("Momo");
+  await page
+    .locator('input[type="file"]#character-reference')
+    .setInputFiles({ name: "momo-ref.png", mimeType: "image/png", buffer: TINY_PNG });
+  await expect(page.getByAltText("Character reference preview")).toBeVisible();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(page.getByText("Momo", { exact: true })).toBeVisible();
+
+  // Seeding the outline directly (same technique as the other Novel Import
+  // test above) — real parsing needs a live AI provider this environment
+  // doesn't have. `pages: []` restores straight to the "characters" review
+  // stage this feature lives on, rather than "review".
+  const seeded = await page.evaluate(async () => {
+    function readLastProjectId(): Promise<string | undefined> {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open("manga-studio");
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction("meta", "readonly");
+          const getReq = tx.objectStore("meta").get("lastProjectId");
+          getReq.onsuccess = () => {
+            db.close();
+            resolve(getReq.result as string | undefined);
+          };
+          getReq.onerror = () => {
+            db.close();
+            reject(getReq.error);
+          };
+        };
+        req.onerror = () => reject(req.error);
+      });
+    }
+    const projectId = await readLastProjectId();
+    if (!projectId) return false;
+
+    const outline = {
+      projectId,
+      fidelity: "guided",
+      panelsPerPage: "auto",
+      chapters: [
+        {
+          title: "Chapter 2",
+          characters: [
+            { primaryName: "Yuri", aliases: [], description: "" },
+            { primaryName: "Momo", aliases: [], description: "" },
+            { primaryName: "Kenji", aliases: [], description: "" },
+          ],
+          scenes: [],
+          pages: [],
+        },
+      ],
+      pageStates: {},
+      generatedPageIds: {},
+      savedAt: new Date().toISOString(),
+    };
+    const outlineDb = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open("manga-studio");
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const tx = outlineDb.transaction("novelOutlines", "readwrite");
+      tx.objectStore("novelOutlines").put(outline, projectId);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    outlineDb.close();
+    return true;
+  });
+  expect(seeded).toBe(true);
+
+  await page.getByRole("combobox", { name: "More" }).selectOption("novel-import");
+  await expect(page.getByRole("heading", { name: "Novel Import" })).toBeVisible();
+
+  const yuriCard = page.locator("div.rounded-md.border").filter({ has: page.locator('input[value="Yuri"]') });
+  await expect(yuriCard.getByText(/Close to existing character/)).toBeVisible();
+  await expect(yuriCard.getByRole("button", { name: /Use.*Yūri/ })).toBeVisible();
+
+  const momoCard = page.locator("div.rounded-md.border").filter({ has: page.locator('input[value="Momo"]') });
+  await expect(momoCard.getByText(/Already in this project/)).toBeVisible();
+
+  const kenjiCard = page.locator("div.rounded-md.border").filter({ has: page.locator('input[value="Kenji"]') });
+  await expect(kenjiCard.getByText(/existing character/)).not.toBeVisible();
+
+  // Adopting the suggested exact name re-keys the card to the existing
+  // spelling — proving the fix actually changes what would get generated,
+  // not just what gets displayed.
+  await yuriCard.getByRole("button", { name: /Use.*Yūri/ }).click();
+  await expect(page.locator('input[value="Yuri"]')).toHaveCount(0);
+  await expect(page.locator('input[value="Yūri"]')).toBeVisible();
+});
+
 test("a character's Model Sheet shows every generation and exports a composited PNG", async ({ page }) => {
   // Background removal needs a configured AI provider this smoke environment
   // doesn't have — intercepting the upload route the same way the app's own

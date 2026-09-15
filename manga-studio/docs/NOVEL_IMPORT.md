@@ -155,6 +155,20 @@ the same operation: redirecting every reference from one name onto another.
 Pages are only planned (`planPages`) once you continue past this stage, so
 a rename never has to reconcile against already-computed page prompts.
 
+**Continuing an already-populated project** — pasting a new chunk of story
+(chapter 2+) into a project that already has characters in its library —
+is cross-checked at this same stage via `matchExistingCharacters`: every
+parsed character is compared (case- and diacritic-insensitive, e.g. "Yuri"
+matches "Yūri") against `doc.characters`' names. An exact match shows a
+green "already in this project" note (the Creative Director's own
+resolution layer already reuses this without any help — see
+`agent-v3`'s `resolutionIntent: "existing"`); a near-match (diacritics
+only) shows an amber suggestion with a one-click "Use existing name"
+button, which just calls the same rename path above. Deliberately NOT
+full fuzzy/edit-distance matching — an approximate-string match risks
+silently treating two genuinely different characters as the same person,
+a worse failure than an occasional missed near-duplicate.
+
 ## Persistence (`storage/novelOutlineStore.ts`)
 
 The parsed outline (chapters, characters, scenes, planned pages, each

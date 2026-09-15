@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dedupeCharacters, mergeCharacterEntries, redirectCharacterName } from "./characterEdits";
+import { dedupeCharacters, matchExistingCharacters, mergeCharacterEntries, redirectCharacterName } from "./characterEdits";
 import type { NovelBeat, NovelCharacter, NovelScene } from "./schema";
 
 function beat(overrides: Partial<NovelBeat> = {}): NovelBeat {
@@ -107,5 +107,42 @@ describe("dedupeCharacters", () => {
   it("keeps distinct characters separate", () => {
     const characters = [character({ primaryName: "Aki" }), character({ primaryName: "Momo" })];
     expect(dedupeCharacters(characters)).toHaveLength(2);
+  });
+});
+
+describe("matchExistingCharacters", () => {
+  it("flags an exact (case-insensitive) match to a project character already in the library", () => {
+    const parsed = [character({ primaryName: "yuri" })];
+    const result = matchExistingCharacters(parsed, ["Yuri", "Kenji"]);
+    expect(result.get("yuri")).toEqual({ existingName: "Yuri", exact: false });
+  });
+
+  it("marks exact as true only when the casing is byte-for-byte identical", () => {
+    const parsed = [character({ primaryName: "Yuri" })];
+    const result = matchExistingCharacters(parsed, ["Yuri"]);
+    expect(result.get("Yuri")).toEqual({ existingName: "Yuri", exact: true });
+  });
+
+  it("matches across diacritics — the real-world 'Yuri' vs 'Yūri' case", () => {
+    const parsed = [character({ primaryName: "Yuri" })];
+    const result = matchExistingCharacters(parsed, ["Yūri"]);
+    expect(result.get("Yuri")).toEqual({ existingName: "Yūri", exact: false });
+  });
+
+  it("does not match genuinely different names", () => {
+    const parsed = [character({ primaryName: "Kenji" })];
+    const result = matchExistingCharacters(parsed, ["Yuri", "Momo"]);
+    expect(result.has("Kenji")).toBe(false);
+  });
+
+  it("returns an empty map when the project has no existing characters yet", () => {
+    const parsed = [character({ primaryName: "Yuri" })];
+    expect(matchExistingCharacters(parsed, []).size).toBe(0);
+  });
+
+  it("only reports matched characters, keyed by the parsed primaryName", () => {
+    const parsed = [character({ primaryName: "Yuri" }), character({ primaryName: "Kenji" })];
+    const result = matchExistingCharacters(parsed, ["Yuri"]);
+    expect([...result.keys()]).toEqual(["Yuri"]);
   });
 });
