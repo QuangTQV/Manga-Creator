@@ -33,6 +33,76 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-15 — Full-backup project archive: .zip with bundled image/font
+  bytes (backlog #21, from the MangaGen feature audit).** The plain
+  archive (`exportProjectArchive.ts`) only ever exported the JSON document
+  — every asset URL still points at THIS deployment's own object storage,
+  a deliberate scope cut made explicit in that file's own docstring and in
+  this file's 2026-09-15 "Project archive import/export" entry when
+  archives first shipped. This is that deferred capability, added
+  alongside the existing one rather than replacing it.
+
+  New `export/projectBackup.ts`: `exportFullBackup(doc)` walks every
+  URL-bearing field across the WHOLE domain model (not just
+  `SourceAsset.storageUrl` — also `processedImageUrl`/`thumbnailUrl`/
+  `sourceUrl`, a local-edit's `maskUrl`, `FontAsset.storageUrl`,
+  `MangaLanguageAsset.thumbnailUrl`, and a custom `StyleProfile`'s
+  `previewImage`), `fetch()`s each distinct URL client-side (already
+  proven reliable — canvas export already relies on the exact same
+  same-origin/CORS-open fetchability), and zips them alongside
+  `project.json` (untouched) and a `manifest.json` (old URL → bundled
+  path) via JSZip. New `domain/assetUrls.ts` (`collectAssetUrls`,
+  `remapAssetUrls`) is the single source of truth for "every URL-bearing
+  field" — both export (what to bundle) and import (what to rewrite) read
+  from it, so they can't silently drift apart from each other as new
+  entity types gain URL fields later.
+
+  Import (`importFullBackupZip`) deliberately runs `deserializeProject`
+  on the extracted `project.json` FIRST, before any URL rewriting — that
+  means the rewriting code only ever has to understand the CURRENT schema
+  shape, never a historical one; full schema migration already happened
+  by the time `remapAssetUrls` runs. Each bundled file is re-uploaded
+  through a new, minimal route, `api/assets/upload-archive-file/route.ts`
+  — modeled directly on `upload-font/route.ts`'s "raw bytes in, URL out,
+  zero processing" pattern (tries image magic-byte detection first, then
+  font detection, rejects anything else), deliberately NOT the general
+  `assets/upload` pipeline, which would wastefully (and wrongly) re-run
+  background removal on bytes that are already a finished derivative.
+
+  Refactored `projectsStore.ts`'s `importProject(json)` to extract its
+  "commit as a new project" tail into a new `importDocument(doc)` store
+  method, shared by both the plain-JSON path (`deserializeProject` then
+  `importDocument`) and the new zip path
+  (`importFullBackupZip` then `importDocument`) — no duplicated commit
+  logic between the two import flows.
+
+  UI: TopBar's Export dropdown label was ALSO wrong before this — it said
+  "Export project archive (.json) — full backup" when it was never a full
+  backup (fixed to just "Export project archive (.json)"), with a new
+  "Export full backup (.zip) — includes images, portable" entry alongside
+  it. Same pairing added to each project's "⋯" menu in `ProjectsPanel.tsx`.
+  The single Import file input's `accept` widened to take both `.json` and
+  `.zip`; which import path runs is decided by file extension, since
+  nothing else about the UI flow differs between them.
+
+  One failure mode handled deliberately, not incidentally: any single
+  asset that fails to fetch (export) or fails to re-upload (import) is
+  just left out of the manifest / left unmapped — the same broken-link
+  fallback the plain document-only export already accepted as its
+  baseline, not a new way for the whole backup to fail over one bad URL.
+
+  Verified with unit tests for the pure URL walker
+  (`assetUrls.test.ts`) and the new route
+  (`upload-archive-file/route.test.ts`, mirroring
+  `remove-background/route.test.ts`'s mock-`putObject` pattern), plus a
+  real, UNMOCKED Playwright e2e test — the strongest integration test in
+  this session — that creates a character with a real uploaded reference
+  image, exports a real full-backup zip, imports it back through the real
+  local dev file server (no AI provider or route mocking involved
+  anywhere in this one), and asserts the imported character's image URL
+  is both DIFFERENT from the original (proving genuine re-upload, not a
+  carried-over reference) and actually serves real bytes.
+
 - **2026-09-15 — Multi-candidate generation (backlog #18, from the
   MangaFlow feature audit).** `GeneratorDialog.tsx`'s `generate()` fires 1
   (default, unchanged) to 4 independent `generateImage()` calls via
@@ -588,6 +658,19 @@ items were genuine, verified gaps:
 20. Character "model package" export/import (bundle canonical + all states
     + version, reusable across projects) — not done, not started, lower
     value than #18, fine to leave for later.
+
+**Tier 8 — audited against `BluePointDigital/mangagen` (another comparable
+AI manga workbench, audited 2026-09-15)** — same story as Tier 7: mostly
+already covered or a deliberate architectural difference (its cost-
+estimation dashboard, its Docker/multi-user deployment story). Notably it
+uses Konva/react-konva too — same canvas engine choice as Kumanga, an
+independent validation of that pick, not a feature to adopt. One genuine,
+verified gap, and it directly confirmed something already flagged and
+deliberately deferred in this repo's own history (2026-09-15 "Project
+archive import/export" Timeline entry):
+21. ~~Full backup export/import (.zip, bundles actual image/font bytes,
+    portable across machines/deployments)~~ — **done 2026-09-15**, see
+    Timeline.
 
 **Not in the backlog — deliberate, don't re-add without the user explicitly overriding**
 - PDF export (rejected design decision, not a gap — see `export/exportBook.ts`).

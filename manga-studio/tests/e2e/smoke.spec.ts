@@ -636,3 +636,62 @@ test("generating multiple candidates lets you keep several instead of losing the
   await page.getByRole("button", { name: "Scenes" }).click();
   await expect(page.locator('div[title^="Candidate batch test scene"]')).toHaveCount(2);
 });
+
+test("a full backup (.zip) round-trips a character's image to a new, independent project", async ({ page }, testInfo) => {
+  // Real upload pipeline this time — deliberately NOT mocking
+  // /api/assets/upload or the new /api/assets/upload-archive-file route,
+  // because the entire point of this test is proving the actual
+  // bundle-then-re-upload round trip works end to end against the real
+  // local dev file server, not just that the UI wires up correctly.
+  await page.getByRole("button", { name: "+ New Character" }).click();
+  await page.getByRole("textbox", { name: "Name" }).fill("Akari");
+  await page
+    .locator('input[type="file"]#character-reference')
+    .setInputFiles({ name: "akari-ref.png", mimeType: "image/png", buffer: TINY_PNG });
+  await expect(page.getByAltText("Character reference preview")).toBeVisible();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(page.getByText("Akari", { exact: true })).toBeVisible();
+
+  const originalReference = page.locator('img[alt="Akari reference"]');
+  await expect(originalReference).toBeVisible();
+  const originalSrc = await originalReference.getAttribute("src");
+  expect(originalSrc).toBeTruthy();
+
+  // Distinctive name so the two list entries (original + imported) are easy
+  // to reason about, same technique as the plain-archive round-trip test.
+  await page.getByRole("button", { name: /Smoke Test Project/ }).hover();
+  await page.getByRole("button", { name: /Project options for/ }).click();
+  await page.getByRole("button", { name: "Rename", exact: true }).click();
+  await page.getByRole("textbox", { name: "New project name" }).fill("Full Backup Round Trip");
+  await page.getByRole("button", { name: "Save" }).click();
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: /Full Backup Round Trip/ }).hover();
+  await page.getByRole("button", { name: /Project options for/ }).click();
+  await page.getByRole("button", { name: "Export full backup (.zip)" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/\.kumanga-backup\.zip$/);
+  const savedPath = testInfo.outputPath("full-backup-round-trip.zip");
+  await download.saveAs(savedPath);
+
+  await page.locator('input[type="file"][accept*="zip"]').setInputFiles(savedPath);
+
+  // Two distinct list entries with the same name — the archive's own name
+  // is kept as-is, matching the plain-archive import's behavior.
+  await expect(page.getByRole("button", { name: /^Full Backup Round Trip/ })).toHaveCount(2);
+
+  // Import auto-opens the newly created copy, so the character shelf now
+  // showing is the IMPORTED project's, not the original's.
+  await expect(page.getByText("Akari", { exact: true })).toBeVisible();
+  const importedReference = page.locator('img[alt="Akari reference"]');
+  await expect(importedReference).toBeVisible();
+  const importedSrc = await importedReference.getAttribute("src");
+  expect(importedSrc).toBeTruthy();
+
+  // The real proof this isn't just a URL carried over unchanged: the
+  // imported project's image was independently re-uploaded and got its own
+  // new storage location, and that location actually serves real bytes.
+  expect(importedSrc).not.toBe(originalSrc);
+  const fetched = await page.request.get(importedSrc!);
+  expect(fetched.ok()).toBe(true);
+});

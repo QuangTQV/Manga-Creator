@@ -15,6 +15,7 @@ import { useEditorStore } from "@/editor/store";
 import { useProjectsStore } from "@/editor/projectsStore";
 import { indexedDbPersistence } from "@/storage/projectStore";
 import { exportProjectArchive } from "@/export/exportProjectArchive";
+import { exportFullBackup, importFullBackupZip } from "@/export/projectBackup";
 import { BUILTIN_STYLE_PROFILES } from "@/styles/profiles";
 
 export function ProjectsPanel() {
@@ -45,21 +46,35 @@ export function ProjectsPanel() {
   const importFile = async (file?: File) => {
     if (!file) return;
     await run(async () => {
-      const text = await file.text();
-      const id = await useProjectsStore.getState().importProject(text);
+      // A full backup is a zip (bundles the actual image/font bytes, so it
+      // survives moving to a different machine/deployment); the plain
+      // archive is JSON whose asset URLs point at THIS deployment's own
+      // storage — see `export/projectBackup.ts`'s docstring for why both
+      // exist. Detected by extension: nothing else about the two import
+      // paths' UI differs, so there's no reason to ask the creator which
+      // kind they picked.
+      const id = file.name.toLowerCase().endsWith(".zip")
+        ? await useProjectsStore.getState().importDocument(await importFullBackupZip(file))
+        : await useProjectsStore.getState().importProject(await file.text());
       await openProject(id);
     });
   };
 
+  const loadDocFor = async (project: { id: string }) => {
+    // The open project is the source of truth for its own id (unsaved
+    // edits included); any other project is read straight from storage.
+    const doc =
+      project.id === activeProjectId ? useEditorStore.getState().doc : await indexedDbPersistence.loadProject(project.id);
+    if (!doc) throw new Error("That project could not be read");
+    return doc;
+  };
+
   const exportProject = async (project: { id: string; name: string }) => {
-    await run(async () => {
-      // The open project is the source of truth for its own id (unsaved
-      // edits included); any other project is read straight from storage.
-      const doc =
-        project.id === activeProjectId ? useEditorStore.getState().doc : await indexedDbPersistence.loadProject(project.id);
-      if (!doc) throw new Error("That project could not be read");
-      exportProjectArchive(doc);
-    });
+    await run(async () => exportProjectArchive(await loadDocFor(project)));
+  };
+
+  const exportProjectFull = async (project: { id: string; name: string }) => {
+    await run(async () => exportFullBackup(await loadDocFor(project)));
   };
 
   return (
@@ -70,7 +85,7 @@ export function ProjectsPanel() {
           <input
             ref={importInputRef}
             type="file"
-            accept=".json,application/json"
+            accept=".json,application/json,.zip,application/zip"
             className="hidden"
             onChange={(e) => {
               void importFile(e.target.files?.[0]);
@@ -81,7 +96,7 @@ export function ProjectsPanel() {
             className="rounded-md px-2 py-0.5 text-[10px] font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
             onClick={() => importInputRef.current?.click()}
             disabled={busy}
-            title="Restore a project archive (.json) exported from Kumanga"
+            title="Restore a project archive (.json) or full backup (.zip) exported from Kumanga"
           >
             Import
           </button>
@@ -146,6 +161,7 @@ export function ProjectsPanel() {
                     Duplicate
                   </MenuItem>
                   <MenuItem onClick={() => void exportProject(project)}>Export archive</MenuItem>
+                  <MenuItem onClick={() => void exportProjectFull(project)}>Export full backup (.zip)</MenuItem>
                   <MenuItem
                     danger
                     onClick={() => {

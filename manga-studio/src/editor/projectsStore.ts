@@ -46,6 +46,13 @@ interface ProjectsState {
    * too-new JSON. Always creates a NEW project (fresh id), never overwrites
    * an existing one, even if a project with the same name exists. */
   importProject(json: string): Promise<string>;
+  /** Shared tail for every "bring in a project document from outside" path
+   * (plain-JSON import above, and the full-backup zip import in
+   * `export/projectBackup.ts`) — always a fresh id, never overwrites an
+   * existing project. `doc` must already be a current-schema
+   * `ProjectDocument` (run it through `deserializeProject` first if it
+   * came from raw JSON). */
+  importDocument(doc: ProjectDocument): Promise<string>;
   deleteProject(projectId: string): Promise<void>;
 }
 
@@ -150,13 +157,16 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
   },
 
   async importProject(json) {
-    const parsed = deserializeProject(json);
+    return get().importDocument(deserializeProject(json));
+  },
+
+  async importDocument(doc) {
     await saveActive();
     // Reuses duplicateProjectDocument purely for its ID-reassignment
     // machinery (fresh project id, every owned entity re-parented to it) —
     // passing the document's own name keeps it as-is instead of appending
     // "copy", which duplicateProjectDocument does when name is omitted.
-    const imported = duplicateProjectDocument(parsed, parsed.project.name);
+    const imported = duplicateProjectDocument(doc, doc.project.name);
     await persistence.saveProject(imported);
     set({ projects: await persistence.listProjects() });
     return imported.project.id;

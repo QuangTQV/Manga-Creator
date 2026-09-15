@@ -35,6 +35,7 @@ import { exportCurrentPagePng } from "@/export/exportPage";
 import { exportBookCbz } from "@/export/exportBook";
 import { exportWebtoonStrip } from "@/export/exportWebtoon";
 import { exportProjectArchive } from "@/export/exportProjectArchive";
+import { exportFullBackup } from "@/export/projectBackup";
 import { getActiveStyleProfile } from "@/styles/profiles";
 
 /** Quick picks for the Language field's native suggestion dropdown — not a
@@ -162,6 +163,17 @@ export function TopBar() {
       exportProjectArchive(doc);
     } catch (error) {
       alert(error instanceof Error ? error.message : "Project archive export failed");
+    }
+  };
+
+  const onExportFullBackup = async () => {
+    setExporting(true);
+    try {
+      await exportFullBackup(doc);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Full backup export failed");
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -368,10 +380,12 @@ export function TopBar() {
           { key: "book-2", label: `Export book (all pages) @2x — CBZ` },
           { key: "webtoon-1", label: `Export webtoon strip @1x — PNG` },
           { key: "webtoon-2", label: `Export webtoon strip @2x — PNG` },
-          { key: "archive", label: "Export project archive (.json) — full backup" },
+          { key: "archive", label: "Export project archive (.json)" },
+          { key: "full-backup", label: "Export full backup (.zip) — includes images, portable" },
         ]}
         onPick={(k) => {
           if (k === "archive") return onExportArchive();
+          if (k === "full-backup") return void onExportFullBackup();
           const scale = k.endsWith("-1") ? 1 : 2;
           if (k.startsWith("webtoon-")) onExportWebtoon(scale);
           else if (k.startsWith("book-")) onExportBook(scale);
