@@ -1,13 +1,19 @@
 "use client";
 
-/** Bottom dock: page navigation — add, switch, delete. */
+/** Bottom dock: page navigation — add, switch, delete, drag to reorder. */
 
+import { useState } from "react";
 import { useEditorStore } from "@/editor/store";
 import { CloseIcon, ICON_STROKE, PlusIcon } from "./ui/icons";
 
 export function PagesBar() {
   const doc = useEditorStore((s) => s.doc);
   const currentPageId = useEditorStore((s) => s.currentPageId);
+  // Native HTML5 drag-and-drop: `draggingId` is the page picked up,
+  // `dragOverId` is whichever page the pointer is currently over (drives
+  // the drop-target highlight only — the actual move happens on drop).
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
   if (!doc) return null;
 
   const pages = Object.values(doc.pages).sort((a, b) => a.index - b.index);
@@ -18,13 +24,37 @@ export function PagesBar() {
       {pages.map((page) => (
         <div key={page.id} className="group relative">
           <button
+            draggable
+            onDragStart={(e) => {
+              setDraggingId(page.id);
+              e.dataTransfer.effectAllowed = "move";
+            }}
+            onDragEnd={() => {
+              setDraggingId(null);
+              setDragOverId(null);
+            }}
+            onDragOver={(e) => {
+              if (!draggingId || draggingId === page.id) return;
+              e.preventDefault(); // required for onDrop to fire at all
+              e.dataTransfer.dropEffect = "move";
+              setDragOverId(page.id);
+            }}
+            onDragLeave={() => setDragOverId((id) => (id === page.id ? null : id))}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOverId(null);
+              if (!draggingId || draggingId === page.id) return;
+              useEditorStore.getState().dispatch({ type: "reorder-page", pageId: draggingId, toIndex: page.index });
+            }}
             onClick={() => useEditorStore.getState().setCurrentPage(page.id)}
-            className={`h-14 w-11 rounded-sm border text-[10px] ${
+            className={`h-14 w-11 rounded-sm border text-[10px] transition-colors ${
               page.id === currentPageId
                 ? "bg-[var(--accent-soft)] text-[var(--accent-text)]"
                 : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-500"
+            } ${draggingId === page.id ? "opacity-40" : ""} ${
+              dragOverId === page.id ? "border-2 border-[var(--accent)]" : ""
             }`}
-            title={page.name}
+            title={`${page.name} — drag to reorder`}
           >
             {page.index + 1}
           </button>

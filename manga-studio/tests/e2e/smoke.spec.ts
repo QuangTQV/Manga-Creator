@@ -267,3 +267,20 @@ test("exporting a webtoon strip captures the real canvas and downloads a PNG", a
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/-webtoon@1x\.png$/);
 });
+
+test("dragging a page in the Pages bar reorders it, by identity not just position", async ({ page }) => {
+  await page.getByRole("button", { name: "Add page" }).click();
+  await page.getByRole("button", { name: "Add page" }).click();
+
+  // Page NAMES are assigned once at creation and never renamed by a
+  // reorder — a stable way to tell pages apart even though every slot's
+  // visible NUMBER is just its current position (1, 2, 3 either way).
+  const pageOrder = () => page.locator("footer button[title^='Page ']").evaluateAll((els) => els.map((el) => el.getAttribute("title")));
+  await expect.poll(pageOrder).toEqual(["Page 1 — drag to reorder", "Page 2 — drag to reorder", "Page 3 — drag to reorder"]);
+
+  await page.locator("footer button[title^='Page 1']").dragTo(page.locator("footer button[title^='Page 3']"));
+
+  await expect.poll(pageOrder).toEqual(["Page 2 — drag to reorder", "Page 3 — drag to reorder", "Page 1 — drag to reorder"]);
+  // The moved page's visible slot NUMBER follows its new position (3rd).
+  await expect(page.locator("footer button[title^='Page 1']")).toHaveText("3");
+});

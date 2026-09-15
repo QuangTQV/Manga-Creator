@@ -86,6 +86,39 @@ export function resetPageLayout(doc: ProjectDocument, pageId: ID, layout: Layout
   return next;
 }
 
+/**
+ * Move a page to a new reading-order position. `toIndex` is clamped into
+ * range, and every affected page's `index` AND `workspace.x` are
+ * recomputed together (`defaultPageWorkspacePosition` is the only place
+ * that ever sets `workspace`, at creation time — nothing else moves a page
+ * in the infinite workspace canvas), so the spatial left-to-right layout
+ * stays in sync with reading order rather than going stale after a reorder.
+ * Returns the SAME `doc` reference, unchanged, for a no-op move (already at
+ * that position) — `editor/store.ts`'s `commit` treats reference equality
+ * as "nothing happened" and skips pushing a history entry for it.
+ */
+export function reorderPage(doc: ProjectDocument, pageId: ID, toIndex: number): ProjectDocument {
+  const page = doc.pages[pageId];
+  if (!page) throw new Error(`Unknown page: ${pageId}`);
+
+  const ordered = Object.values(doc.pages).sort((a, b) => a.index - b.index);
+  const from = ordered.findIndex((p) => p.id === pageId);
+  const clampedTo = Math.max(0, Math.min(toIndex, ordered.length - 1));
+  if (from === clampedTo) return doc;
+
+  ordered.splice(from, 1);
+  ordered.splice(clampedTo, 0, page);
+
+  const next = cloneDoc(doc);
+  ordered.forEach((p, i) => {
+    const movedPage = next.pages[p.id];
+    movedPage.index = i;
+    movedPage.workspace = defaultPageWorkspacePosition(i, next.project.settings.pageWidth);
+  });
+  touch(next);
+  return next;
+}
+
 export function removePage(doc: ProjectDocument, pageId: ID): ProjectDocument {
   const next = cloneDoc(doc);
   const page = next.pages[pageId];

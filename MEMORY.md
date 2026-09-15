@@ -33,6 +33,19 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-15 — Drag-to-reorder pages.** New `reorderPage` in
+  `domain/pageOps.ts` (`reorder-page` command): moves a page to a new
+  reading-order position, clamped into range, a true no-op (same `doc`
+  reference, no history entry) when dropped at its current spot. Also
+  recomputes every affected page's `workspace.x` via
+  `defaultPageWorkspacePosition` — that function is the *only* place that
+  ever sets `workspace` (at creation), so without this the infinite
+  workspace canvas's left-to-right spatial layout would go stale and no
+  longer match reading order after a reorder. `PagesBar.tsx` got native
+  HTML5 drag-and-drop (no library); a page's visible slot NUMBER always
+  reflects its current index, but its `name` never changes on reorder — the
+  Playwright test uses that distinction (`title` attribute) to verify
+  identity moved, not just that *some* reshuffling happened. Backlog #2.
 - **2026-09-15 — Webtoon-strip export.** New `export/exportWebtoon.ts`:
   stitches every page into one continuous vertical PNG (page concatenation,
   not a true panel-reflow webtoon layout — see its own docstring for that
@@ -146,7 +159,7 @@ rather than leaving this list to drift from reality.
 
 **Tier 1 — quick, low-risk, reuses existing infra**
 1. ~~Webtoon-strip export~~ — **done 2026-09-15**, see Timeline.
-2. Drag-to-reorder pages — `PagesBar.tsx` only supports add/remove today. Also a prerequisite for #5.
+2. ~~Drag-to-reorder pages~~ — **done 2026-09-15**, see Timeline. Still a prerequisite for #5 (chapters).
 3. Typography polish — bold/italic/letter-spacing on `BubbleStyle` (additive, no architecture change).
 
 **Tier 2 — moderate effort, clear value**

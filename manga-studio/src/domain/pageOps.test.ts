@@ -65,3 +65,62 @@ describe("resetPageLayout", () => {
     expect(after.pages[otherPageId]).toEqual(before);
   });
 });
+
+function threePages(): { doc: ProjectDocument; ids: [ID, ID, ID] } {
+  let doc = createProjectDocument("Reorder page test");
+  const first = Object.values(doc.pages)[0].id;
+  const second = applyDomainCommand(doc, { type: "add-page" });
+  doc = second.doc;
+  const third = applyDomainCommand(doc, { type: "add-page" });
+  doc = third.doc;
+  return { doc, ids: [first, second.createdId as ID, third.createdId as ID] };
+}
+
+describe("reorderPage", () => {
+  it("moves a page to a later position and renumbers everyone in between", () => {
+    const { doc, ids: [first, second, third] } = threePages();
+
+    const after = applyDomainCommand(doc, { type: "reorder-page", pageId: first, toIndex: 2 }).doc;
+
+    expect(after.pages[second].index).toBe(0);
+    expect(after.pages[third].index).toBe(1);
+    expect(after.pages[first].index).toBe(2);
+  });
+
+  it("moves a page to an earlier position and renumbers everyone in between", () => {
+    const { doc, ids: [first, second, third] } = threePages();
+
+    const after = applyDomainCommand(doc, { type: "reorder-page", pageId: third, toIndex: 0 }).doc;
+
+    expect(after.pages[third].index).toBe(0);
+    expect(after.pages[first].index).toBe(1);
+    expect(after.pages[second].index).toBe(2);
+  });
+
+  it("keeps workspace.x in sync with the new reading order", () => {
+    const { doc, ids: [first, , third] } = threePages();
+    const pageWidth = doc.project.settings.pageWidth;
+
+    const after = applyDomainCommand(doc, { type: "reorder-page", pageId: third, toIndex: 0 }).doc;
+
+    expect(after.pages[third].workspace).toEqual({ x: 0, y: 0 });
+    expect(after.pages[first].workspace).toEqual({ x: pageWidth + 240, y: 0 });
+  });
+
+  it("clamps an out-of-range target instead of throwing", () => {
+    const { doc, ids: [first, , third] } = threePages();
+
+    const after = applyDomainCommand(doc, { type: "reorder-page", pageId: first, toIndex: 999 }).doc;
+
+    expect(after.pages[first].index).toBe(2);
+    expect(after.pages[third].index).toBe(1);
+  });
+
+  it("is a true no-op (same doc reference) when the page is already at that position", () => {
+    const { doc, ids: [first] } = threePages();
+
+    const after = applyDomainCommand(doc, { type: "reorder-page", pageId: first, toIndex: 0 }).doc;
+
+    expect(after).toBe(doc);
+  });
+});
