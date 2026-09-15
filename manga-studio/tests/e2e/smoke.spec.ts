@@ -284,3 +284,26 @@ test("dragging a page in the Pages bar reorders it, by identity not just positio
   // The moved page's visible slot NUMBER follows its new position (3rd).
   await expect(page.locator("footer button[title^='Page 1']")).toHaveText("3");
 });
+
+test("bold and italic toggle on a speech bubble and persist through the style patch", async ({ page }) => {
+  await page.getByRole("combobox", { name: "Bubble" }).selectOption("speech");
+  await page.getByText("Appearance", { exact: true }).click();
+
+  const bold = page.getByRole("button", { name: "Bold" });
+  const italic = page.getByRole("button", { name: "Italic" });
+  await expect(bold).toHaveAttribute("aria-pressed", "false");
+  await expect(italic).toHaveAttribute("aria-pressed", "false");
+
+  await bold.click();
+  await italic.click();
+  await expect(bold).toHaveAttribute("aria-pressed", "true");
+  await expect(italic).toHaveAttribute("aria-pressed", "true");
+
+  // A real store round-trip, not just local button state: reopening the
+  // panel (switch tabs and back) must show the same persisted values.
+  await page.getByRole("button", { name: "Position" }).click();
+  await page.getByRole("button", { name: "Look" }).click();
+  await page.getByText("Appearance", { exact: true }).click();
+  await expect(page.getByRole("button", { name: "Bold" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Italic" })).toHaveAttribute("aria-pressed", "true");
+});

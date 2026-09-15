@@ -74,6 +74,7 @@ export function defaultBubbleStyle(bubbleType: BubbleType): BubbleStyle {
         outlineColor: PAPER,
         warp: 0,
         vertical: false,
+        bold: true,
       };
   }
 }
@@ -120,6 +121,9 @@ export function normalizeBubbleStyle(bubbleType: BubbleType, style: unknown): Bu
     textAlign: aligns.includes(raw.textAlign!) ? raw.textAlign! : base.textAlign,
     padding: clamp(raw.padding, 0, 0.45, base.padding),
     fontFamily: typeof raw.fontFamily === "string" ? raw.fontFamily : base.fontFamily,
+    bold: typeof raw.bold === "boolean" ? raw.bold : base.bold,
+    italic: typeof raw.italic === "boolean" ? raw.italic : base.italic,
+    letterSpacing: clamp(raw.letterSpacing, -10, 60, base.letterSpacing ?? 0),
     maskAssetId: typeof raw.maskAssetId === "string" ? raw.maskAssetId : base.maskAssetId,
     outlineWidth: clamp(raw.outlineWidth, 0, 40, base.outlineWidth ?? 0),
     outlineColor: typeof raw.outlineColor === "string" ? raw.outlineColor : base.outlineColor,

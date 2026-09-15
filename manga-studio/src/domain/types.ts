@@ -603,6 +603,10 @@ export interface BubbleStyle {
   /** Fraction of the bubble box kept clear around the text. */
   padding: number;
   fontFamily?: string;
+  bold?: boolean;
+  italic?: boolean;
+  /** Extra space between characters, in pixels (Konva's `letterSpacing`). */
+  letterSpacing?: number;
   /** Custom silhouette from the Manga Language Library; text stays editable. */
   maskAssetId?: ID;
   // ── SFX-only (§14). Ignored by balloon shapes. ──

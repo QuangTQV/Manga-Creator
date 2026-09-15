@@ -113,6 +113,15 @@ export function BubbleNode({ item, interactive, onDragMove, onDragEnd, onDoubleC
   );
 }
 
+/** "bold", "italic", "bold italic" or "normal" — Konva's `fontStyle` takes
+ * one space-separated string, not separate booleans. SFX's own forced-bold
+ * look is materialized into its style at creation (`defaultBubbleStyle`),
+ * not a runtime fallback here, so this just reads what's actually stored. */
+function fontStyleFor(style: BubbleStyle): string {
+  const parts = [style.bold && "bold", style.italic && "italic"].filter(Boolean);
+  return parts.length > 0 ? parts.join(" ") : "normal";
+}
+
 function BubbleText({ item, style }: { item: SpeechBubbleItem; style: BubbleStyle }) {
   const pad = style.padding;
   const shared = {
@@ -123,6 +132,7 @@ function BubbleText({ item, style }: { item: SpeechBubbleItem; style: BubbleStyl
     text: item.text,
     fontSize: item.fontSize,
     fontFamily: style.fontFamily ?? "'Comic Sans MS', 'Segoe UI', sans-serif",
+    letterSpacing: style.letterSpacing ?? 0,
     align: style.textAlign,
     verticalAlign: "middle" as const,
     wrap: "word" as const,
@@ -132,6 +142,7 @@ function BubbleText({ item, style }: { item: SpeechBubbleItem; style: BubbleStyl
   // SFX lettering reads as impact: heavy stroke behind a solid fill. Konva
   // strokes on top of fill, so the outline is a second Text node underneath.
   if (style.outlineWidth && style.outlineWidth > 0) {
+    const fontStyle = fontStyleFor(style);
     return (
       <>
         <Text
@@ -140,13 +151,13 @@ function BubbleText({ item, style }: { item: SpeechBubbleItem; style: BubbleStyl
           stroke={style.outlineColor ?? "#ffffff"}
           strokeWidth={style.outlineWidth}
           lineJoin="round"
-          fontStyle="bold"
+          fontStyle={fontStyle}
         />
-        <Text {...shared} fill={style.textColor} fontStyle="bold" />
+        <Text {...shared} fill={style.textColor} fontStyle={fontStyle} />
       </>
     );
   }
-  return <Text {...shared} fill={style.textColor} />;
+  return <Text {...shared} fill={style.textColor} fontStyle={fontStyleFor(style)} />;
 }
 
 /** A custom silhouette behind editable text (§8). */

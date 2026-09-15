@@ -879,6 +879,49 @@ function BubbleStyleControls({ item }: { item: SpeechBubbleItem }) {
           </select>
         </div>
         <div>
+          <Label>Style</Label>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              aria-label="Bold"
+              aria-pressed={Boolean(style.bold)}
+              className={`flex-1 rounded border py-1.5 text-sm font-bold ${
+                style.bold
+                  ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-text)]"
+                  : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-500"
+              }`}
+              onClick={() => patch({ bold: !style.bold })}
+            >
+              B
+            </button>
+            <button
+              type="button"
+              aria-label="Italic"
+              aria-pressed={Boolean(style.italic)}
+              className={`flex-1 rounded border py-1.5 text-sm italic ${
+                style.italic
+                  ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-text)]"
+                  : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-500"
+              }`}
+              onClick={() => patch({ italic: !style.italic })}
+            >
+              I
+            </button>
+          </div>
+        </div>
+        <div>
+          <Label>Letter spacing {style.letterSpacing ?? 0}px</Label>
+          <input
+            type="range"
+            min={-4}
+            max={20}
+            step={1}
+            className="w-full"
+            value={style.letterSpacing ?? 0}
+            onChange={(e) => patch({ letterSpacing: Number(e.target.value) })}
+          />
+        </div>
+        <div>
           <Label>Padding {Math.round(style.padding * 100)}%</Label>
           <input
             type="range"

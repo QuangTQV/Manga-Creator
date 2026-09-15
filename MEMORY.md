@@ -33,6 +33,20 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-15 — Bubble typography: bold/italic/letter spacing.** Added to
+  `BubbleStyle` (`domain/types.ts`) and `normalizeBubbleStyle`
+  (`bubbleStyles.ts` — that function reconstructs the object field-by-field,
+  so a new field silently vanishes if only added to the type, not there
+  too). SFX's forced-bold impact-lettering look, previously hard-coded in
+  the renderer (`fontStyle="bold"`), is now **materialized into
+  `defaultBubbleStyle("sfx")`** instead — consistent with how SFX's other
+  defaults (`outlineWidth`, `outlineColor`) already worked, makes an
+  explicit `bold: false` override actually stick, and a pre-existing saved
+  SFX bubble with no `bold` key still resolves to bold through
+  `normalizeBubbleStyle`'s own fallback-to-type-default chain (verified in
+  `bubbleStyles.test.ts`). New Bold/Italic toggle buttons + a letter-spacing
+  slider in the Inspector's bubble "Appearance" section. Backlog #3 — all
+  3 Tier-1 backlog items now done.
 - **2026-09-15 — Drag-to-reorder pages.** New `reorderPage` in
   `domain/pageOps.ts` (`reorder-page` command): moves a page to a new
   reading-order position, clamped into range, a true no-op (same `doc`
@@ -160,7 +174,7 @@ rather than leaving this list to drift from reality.
 **Tier 1 — quick, low-risk, reuses existing infra**
 1. ~~Webtoon-strip export~~ — **done 2026-09-15**, see Timeline.
 2. ~~Drag-to-reorder pages~~ — **done 2026-09-15**, see Timeline. Still a prerequisite for #5 (chapters).
-3. Typography polish — bold/italic/letter-spacing on `BubbleStyle` (additive, no architecture change).
+3. ~~Typography polish~~ — **done 2026-09-15**, see Timeline. (All 3 Tier-1 items now done.)
 
 **Tier 2 — moderate effort, clear value**
 4. Project archive import/export — a project only exists in one browser's IndexedDB today; real data-loss risk without this.
