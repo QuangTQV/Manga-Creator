@@ -2,7 +2,7 @@
 
 import { Circle, Ellipse, Group, Image as KonvaImage, Line, Rect, Text } from "react-konva";
 import type Konva from "konva";
-import { bubbleHasTail, resolvedBubbleStyle } from "@/domain/bubbleStyles";
+import { bubbleHasTail, fontStyleFor, resolvedBubbleStyle } from "@/domain/bubbleStyles";
 import type { BubbleStyle, SpeechBubbleItem } from "@/domain/types";
 import { useEditorStore } from "@/editor/store";
 import { assetRenderUrl } from "@/assets/renderSource";
@@ -113,22 +113,13 @@ export function BubbleNode({ item, interactive, onDragMove, onDragEnd, onDoubleC
   );
 }
 
-/** "bold", "italic", "bold italic" or "normal" — Konva's `fontStyle` takes
- * one space-separated string, not separate booleans. SFX's own forced-bold
- * look is materialized into its style at creation (`defaultBubbleStyle`),
- * not a runtime fallback here, so this just reads what's actually stored. */
-function fontStyleFor(style: BubbleStyle): string {
-  const parts = [style.bold && "bold", style.italic && "italic"].filter(Boolean);
-  return parts.length > 0 ? parts.join(" ") : "normal";
-}
-
 function BubbleText({ item, style }: { item: SpeechBubbleItem; style: BubbleStyle }) {
   const pad = style.padding;
-  const shared = {
-    x: item.width * pad,
-    y: item.height * pad,
-    width: item.width * (1 - pad * 2),
-    height: item.height * (1 - pad * 2),
+  const innerWidth = item.width * (1 - pad * 2);
+  const innerHeight = item.height * (1 - pad * 2);
+  const boxProps = {
+    width: innerWidth,
+    height: innerHeight,
     text: item.text,
     fontSize: item.fontSize,
     fontFamily: style.fontFamily ?? "'Comic Sans MS', 'Segoe UI', sans-serif",
@@ -141,23 +132,56 @@ function BubbleText({ item, style }: { item: SpeechBubbleItem; style: BubbleStyl
 
   // SFX lettering reads as impact: heavy stroke behind a solid fill. Konva
   // strokes on top of fill, so the outline is a second Text node underneath.
-  if (style.outlineWidth && style.outlineWidth > 0) {
-    const fontStyle = fontStyleFor(style);
-    return (
+  const fontStyle = fontStyleFor(style);
+  const content =
+    style.outlineWidth && style.outlineWidth > 0 ? (
       <>
         <Text
-          {...shared}
+          {...boxProps}
           fill={style.outlineColor ?? "#ffffff"}
           stroke={style.outlineColor ?? "#ffffff"}
           strokeWidth={style.outlineWidth}
           lineJoin="round"
           fontStyle={fontStyle}
         />
-        <Text {...shared} fill={style.textColor} fontStyle={fontStyle} />
+        <Text {...boxProps} fill={style.textColor} fontStyle={fontStyle} />
       </>
+    ) : (
+      <Text {...boxProps} fill={style.textColor} fontStyle={fontStyle} />
+    );
+
+  /**
+   * Impact lettering (§25): a perspective-like shear plus a horizontal
+   * stretch, driven by the single `warp` 0..1 dial — "0" is the common
+   * case and must render byte-identical to before this existed, so the
+   * transform only ever wraps the text in an extra Group when warp is
+   * actually turned on. Pivots from the text box's own center (via
+   * `offsetX`/`offsetY`) so the text warps in place instead of sliding
+   * toward a corner.
+   */
+  const warp = style.warp ?? 0;
+  if (warp <= 0) {
+    return (
+      <Group x={item.width * pad} y={item.height * pad} listening={false}>
+        {content}
+      </Group>
     );
   }
-  return <Text {...shared} fill={style.textColor} fontStyle={fontStyleFor(style)} />;
+  const cx = innerWidth / 2;
+  const cy = innerHeight / 2;
+  return (
+    <Group
+      x={item.width * pad + cx}
+      y={item.height * pad + cy}
+      offsetX={cx}
+      offsetY={cy}
+      skewX={warp * 0.5}
+      scaleX={1 + warp * 0.25}
+      listening={false}
+    >
+      {content}
+    </Group>
+  );
 }
 
 /** A custom silhouette behind editable text (§8). */

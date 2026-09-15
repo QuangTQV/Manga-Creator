@@ -65,3 +65,31 @@ describe("blend mode on panel items", () => {
     expect((patched.doc.items[itemId] as SpeechBubbleItem).blendMode).toBe("overlay");
   });
 });
+
+describe("update-bubble height patch (auto-fit)", () => {
+  it("accepts a height alongside text, in the same command", () => {
+    const { doc, panelId } = seededPanel();
+    const added = applyDomainCommand(doc, { type: "add-bubble", panelId, bubbleType: "speech", text: "Hi" });
+    const itemId = added.createdId!;
+    const originalHeight = (added.doc.items[itemId] as SpeechBubbleItem).height;
+
+    const patched = applyDomainCommand(added.doc, {
+      type: "update-bubble",
+      itemId,
+      patch: { text: "A much longer line of dialogue that needs more room", height: originalHeight * 2 },
+    });
+    const item = patched.doc.items[itemId] as SpeechBubbleItem;
+    expect(item.text).toBe("A much longer line of dialogue that needs more room");
+    expect(item.height).toBe(originalHeight * 2);
+  });
+
+  it("leaves height untouched when the patch omits it (a plain text edit with no fit computed)", () => {
+    const { doc, panelId } = seededPanel();
+    const added = applyDomainCommand(doc, { type: "add-bubble", panelId, bubbleType: "speech", text: "Hi" });
+    const itemId = added.createdId!;
+    const originalHeight = (added.doc.items[itemId] as SpeechBubbleItem).height;
+
+    const patched = applyDomainCommand(added.doc, { type: "update-bubble", itemId, patch: { text: "Still short" } });
+    expect((patched.doc.items[itemId] as SpeechBubbleItem).height).toBe(originalHeight);
+  });
+});

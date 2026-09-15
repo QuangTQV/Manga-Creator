@@ -317,6 +317,57 @@ test("bold and italic toggle on a speech bubble and persist through the style pa
   await expect(page.getByRole("button", { name: "Italic" })).toHaveAttribute("aria-pressed", "true");
 });
 
+test("a bubble grows to fit a long line of dialogue, then shrinks back down for a short one", async ({ page }) => {
+  // Adding a bubble via the toolbar auto-selects it (TopBar.tsx's
+  // addBubbleToPanel), so the FloatingToolbar's "Edit text" button is
+  // already available — no need to hit a Konva-rendered shape at exact
+  // canvas pixel coordinates to enter edit mode.
+  await page.getByRole("combobox", { name: "Bubble" }).selectOption("speech");
+  await page.getByRole("button", { name: "Edit text" }).click();
+
+  const editor = page.getByRole("textbox", { name: "Bubble text" });
+  await expect(editor).toBeVisible();
+  const shortBox = await editor.boundingBox();
+
+  // A single long word-wrapped line, not literal newlines — exercises the
+  // same Konva word-wrap the real bubble renders with, via
+  // render/bubbleFit.ts's offscreen measurement.
+  await editor.fill(
+    "This is a very long line of dialogue that will not fit on a single row and must wrap across several lines inside the bubble",
+  );
+  await editor.press("Enter");
+  await expect(editor).not.toBeVisible();
+
+  await page.getByRole("button", { name: "Edit text" }).click();
+  const longBox = await page.getByRole("textbox", { name: "Bubble text" }).boundingBox();
+  expect(longBox!.height).toBeGreaterThan(shortBox!.height * 1.3);
+
+  // Shrinks back down for a short line too — this is a real refit on every
+  // commit, not a one-way "only ever grows" ratchet.
+  await page.getByRole("textbox", { name: "Bubble text" }).fill("Hi");
+  await page.getByRole("textbox", { name: "Bubble text" }).press("Enter");
+  await page.getByRole("button", { name: "Edit text" }).click();
+  const backToShortBox = await page.getByRole("textbox", { name: "Bubble text" }).boundingBox();
+  expect(backToShortBox!.height).toBeLessThan(longBox!.height * 0.8);
+});
+
+test("warp (impact lettering) applies to a bubble and persists through the style patch", async ({ page }) => {
+  await page.getByRole("combobox", { name: "Bubble" }).selectOption("speech");
+  await page.getByText("Appearance", { exact: true }).click();
+
+  const warp = page.getByRole("slider", { name: "Warp" });
+  await expect(page.getByText("Warp 0%")).toBeVisible();
+
+  await warp.fill("0.6");
+  await expect(page.getByText("Warp 60%")).toBeVisible();
+
+  // A real store round-trip, not just local slider state.
+  await page.getByRole("button", { name: "Position" }).click();
+  await page.getByRole("button", { name: "Look" }).click();
+  await page.getByText("Appearance", { exact: true }).click();
+  await expect(page.getByText("Warp 60%")).toBeVisible();
+});
+
 test("a project archive exports and re-imports as a real, independent project", async ({ page }, testInfo) => {
   // Give the project a distinctive name so it's unambiguous in the list
   // after import — "Smoke Test Project" (from beforeEach) would otherwise

@@ -146,6 +146,16 @@ export function resolvedBubbleStyle(item: { bubbleType: BubbleType; style?: Bubb
   return item.style ? normalizeBubbleStyle(item.bubbleType, item.style) : defaultBubbleStyle(item.bubbleType);
 }
 
+/** "bold", "italic", "bold italic" or "normal" — Konva's `fontStyle` takes
+ * one space-separated string, not separate booleans. Shared by the actual
+ * renderer (`render/BubbleNode.tsx`) and anything that needs to measure
+ * text as it will actually be drawn (`render/bubbleFit.ts`), so the two
+ * can never disagree about what font style a bubble's text uses. */
+export function fontStyleFor(style: Pick<BubbleStyle, "bold" | "italic">): string {
+  const parts = [style.bold && "bold", style.italic && "italic"].filter(Boolean);
+  return parts.length > 0 ? parts.join(" ") : "normal";
+}
+
 function clamp(value: unknown, min: number, max: number, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
 }

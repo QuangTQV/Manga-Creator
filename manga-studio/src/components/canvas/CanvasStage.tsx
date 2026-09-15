@@ -28,6 +28,8 @@ import { LooseAssetNode } from "@/render/LooseAssetNode";
 import { assetRenderUrl } from "@/assets/renderSource";
 import { PanelGhost, PanelRenderer, type PanelInteraction } from "@/render/PanelRenderer";
 import { PAGE_STAGE_ID } from "@/render/constants";
+import { fitBubbleHeight } from "@/render/bubbleFit";
+import { resolvedBubbleStyle } from "@/domain/bubbleStyles";
 import { BubbleTextEditor } from "./BubbleTextEditor";
 import { FloatingToolbar } from "./FloatingToolbar";
 import { ShapeEditOverlay } from "./ShapeEditOverlay";
@@ -733,7 +735,16 @@ export function CanvasStage() {
           scale={view.scale}
           stagePos={{ x: view.x, y: view.y }}
           onCommit={(text) => {
-            useEditorStore.getState().dispatch({ type: "update-bubble", itemId: editingBubble.id, patch: { text } });
+            // Fit height to the new text right alongside the text change
+            // itself, in the SAME dispatch — two separate dispatches would
+            // mean two separate History entries for what reads as one edit.
+            const height = fitBubbleHeight({
+              text,
+              width: editingBubble.width,
+              fontSize: editingBubble.fontSize,
+              style: resolvedBubbleStyle(editingBubble),
+            });
+            useEditorStore.getState().dispatch({ type: "update-bubble", itemId: editingBubble.id, patch: { text, height } });
             setEditingBubbleId(null);
           }}
           onCancel={() => setEditingBubbleId(null)}

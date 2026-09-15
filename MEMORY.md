@@ -33,6 +33,59 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-15 — Bubble auto-fit height + warp/impact-lettering (backlog
+  #24, #25), from a verified (not guessed) audit of remaining
+  professional-tool gaps.** Two small, independent typography features
+  shipped together.
+
+  **#24 — auto-fit.** `BubbleTextEditor.tsx`'s textarea was always bound
+  directly to `bubble.width`/`height` with no growth logic — typing a
+  long line just overflowed the bubble until a creator remembered to drag
+  it taller by hand. New `render/bubbleFit.ts`'s `fitBubbleHeight` measures
+  with a real, offscreen (never attached to a Stage) `Konva.Text` node —
+  the only way to get a number that matches what `BubbleNode.tsx` actually
+  renders, rather than reimplementing Konva's word-wrap/line-height math
+  by hand. Deliberately HEIGHT-only, never width: growing width too on
+  every keystroke would keep reshaping non-rectangular silhouettes
+  (cloud, spiky, …) rather than just making room for text — a creator who
+  wants a wider bubble still resizes that by hand. Wired into
+  `CanvasStage.tsx`'s existing `BubbleTextEditor` `onCommit` handler,
+  folded into the SAME `update-bubble` dispatch as the text change itself
+  (`updateBubble`'s patch type widened to accept `height` alongside
+  `text`/`fontSize`/`bubbleType`/`tail`) — two separate dispatches would
+  have meant two separate History entries for what reads as one edit.
+  Refits on EVERY commit, shrinking back down for a short line too, not a
+  one-way "only ever grows" ratchet. Does not cover Agent-set dialogue
+  text (a different code path, not wired to this) — a disclosed, deliberate
+  scope cut, not an oversight.
+
+  **#25 — warp.** `BubbleStyle.warp?: number` already existed in the
+  schema (clamped 0..1 in `normalizeBubbleStyle`, described as
+  "Perspective/scale exaggeration for impact lettering") but nothing ever
+  read it — a dead field, presumably started and abandoned in an earlier
+  session. Wired up as a Konva `skewX`/`scaleX` transform on a `Group`
+  wrapping the bubble's text (`BubbleNode.tsx`'s `BubbleText`) — `warp*0.5`
+  shear plus `1+warp*0.25` horizontal stretch, pivoting from the text
+  box's own center so it warps in place rather than sliding toward a
+  corner. `warp <= 0` (the default, and the untouched case for every
+  existing bubble/document) renders through the exact same Group wrapper
+  but with a fully inert transform, so nothing visually changes for
+  anyone who never touches the new control. New "Warp" slider in the
+  Inspector's bubble Appearance section, next to Letter spacing. Extracted
+  `fontStyleFor` (bold+italic → Konva's space-separated `fontStyle` string)
+  out of `BubbleNode.tsx` into `domain/bubbleStyles.ts` so both the
+  renderer and the new `bubbleFit.ts` measurement share one implementation
+  instead of two copies drifting apart.
+
+  Verified with unit tests (`fontStyleFor`, `warp` clamping/defaults,
+  `update-bubble`'s new `height` field) and two real-browser Playwright
+  tests: one typing a long word-wrapped line and confirming the bubble
+  measurably grows then shrinks back for a short line, one toggling Warp
+  and confirming it persists through a tab-switch round trip (same
+  pattern the bold/italic test already used) — plus a manual screenshot
+  crop confirming the skew is visibly, correctly a slanted "impact"
+  look, not a rendering glitch.
+
 - **2026-09-15 — Bulk page import: bring existing manga images in as real
   project pages, in order (backlog #23).** Follow-up to #22 — the user
   asked whether "import an existing manga, then continue it" was
@@ -785,6 +838,26 @@ real, previously undocumented gap found and fixed:
     themselves" — automatic vision-based character extraction or
     OCR-based plot understanding from the imported bitmaps was explicitly
     rejected as disproportionately complex/risky for what was asked.
+
+**Tier 10 — from a fresh "what's still missing for a professional tool"
+audit (2026-09-15), this time verifying candidate gaps by reading code
+instead of guessing — several suspected gaps turned out to be real, several
+didn't (native browser spellcheck already works on bubble text for free;
+no i18n system exists, 100% hardcoded English UI, not flagged as a gap
+worth chasing on its own)**
+24. ~~Bubble auto-fit height to its text~~ — **done 2026-09-15**, see
+    Timeline.
+25. ~~Warp: perspective-style shear/stretch for impact lettering, wired up
+    to the `BubbleStyle.warp` field that already existed in the schema but
+    had no renderer or Inspector control~~ — **done 2026-09-15**, see
+    Timeline.
+26. Print crop/registration marks (Print Export only has bleed today) —
+    not done, not started, low effort/low risk when picked up.
+27. Two-page spreads (art intentionally spanning two facing pages) — not
+    done, not started; a real architecture change (panels are hard-
+    clamped to one page's 0..1 coordinate space everywhere: export,
+    canvas, panel ops), needs its own scoping conversation, not a quick
+    add.
 
 **Not in the backlog — deliberate, don't re-add without the user explicitly overriding**
 - PDF export (rejected design decision, not a gap — see `export/exportBook.ts`).

@@ -146,7 +146,17 @@ export type DomainCommand =
   | {
       type: "update-bubble";
       itemId: ID;
-      patch: { text?: string; bubbleType?: BubbleType; fontSize?: number; tail?: Point; style?: Partial<BubbleStyle> };
+      patch: {
+        text?: string;
+        bubbleType?: BubbleType;
+        fontSize?: number;
+        tail?: Point;
+        /** Set alongside `text` when auto-fitting the bubble to its new
+         * content (`render/bubbleFit.ts`) — not a general resize path,
+         * which goes through `update-instance-transform` instead. */
+        height?: number;
+        style?: Partial<BubbleStyle>;
+      };
     }
   | { type: "add-effect"; panelId: ID; effectKind: EffectKind }
   // ── Tones (non-destructive shading layers) ──

@@ -1034,6 +1034,20 @@ function BubbleStyleControls({ item }: { item: SpeechBubbleItem }) {
           />
         </div>
         <div>
+          <Label>Warp {Math.round((style.warp ?? 0) * 100)}%</Label>
+          <input
+            type="range"
+            aria-label="Warp"
+            min={0}
+            max={1}
+            step={0.05}
+            className="w-full"
+            value={style.warp ?? 0}
+            onChange={(e) => patch({ warp: Number(e.target.value) })}
+            title="Perspective-style shear and stretch for impact lettering — 0 is a normal, unwarped bubble"
+          />
+        </div>
+        <div>
           <Label>Padding {Math.round(style.padding * 100)}%</Label>
           <input
             type="range"

@@ -300,7 +300,7 @@ export function swapInstanceAsset(doc: ProjectDocument, itemId: ID, newSourceAss
 export function updateBubble(
   doc: ProjectDocument,
   itemId: ID,
-  patch: Partial<Pick<SpeechBubbleItem, "text" | "fontSize" | "bubbleType" | "tail">> & {
+  patch: Partial<Pick<SpeechBubbleItem, "text" | "fontSize" | "bubbleType" | "tail" | "height">> & {
     style?: Partial<BubbleStyle>;
   },
 ): ProjectDocument {

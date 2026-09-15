@@ -33,6 +33,7 @@ export function BubbleTextEditor({ bubble, panelRect, scale, stagePos, onCommit,
   return (
     <textarea
       ref={ref}
+      aria-label="Bubble text"
       value={text}
       onChange={(e) => setText(e.target.value)}
       onBlur={() => onCommit(text)}
