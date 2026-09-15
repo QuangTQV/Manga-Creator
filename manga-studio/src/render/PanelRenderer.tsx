@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { Group, Image as KonvaImage, Line, Rect } from "react-konva";
 import { panelBoundsPx, panelPolygonPx } from "@/domain/coords";
 import type { ID, Panel, PanelItem, Point, ProjectDocument } from "@/domain/types";
@@ -11,6 +12,7 @@ import { EffectNode } from "./EffectNode";
 import { ToneNode } from "./ToneNode";
 import { useImageElement } from "./useImageElement";
 import { blendModeToCanvas } from "./blendMode";
+import { ensureCustomFontLoaded } from "./customFonts";
 
 export interface PanelInteraction {
   selectedItemId?: ID;
@@ -38,6 +40,14 @@ interface PanelRendererProps {
  * coordinates are panel-local, anchored at the polygon's bbox origin.
  */
 export function PanelRenderer({ doc, panel, interactive, interaction = {} }: PanelRendererProps) {
+  // Every custom font the project owns, not just the ones this panel's
+  // bubbles currently use — cheap (idempotent, cached after the first
+  // load) and means switching a bubble to an already-uploaded font never
+  // has to wait, even the first time that font is picked.
+  useEffect(() => {
+    for (const font of Object.values(doc.fonts)) void ensureCustomFontLoaded(font);
+  }, [doc.fonts]);
+
   const polygon = panelPolygonPx(doc, panel);
   const bounds = panelBoundsPx(doc, panel);
   const localPoints = polygon.map((p) => ({ x: p.x - bounds.x, y: p.y - bounds.y }));

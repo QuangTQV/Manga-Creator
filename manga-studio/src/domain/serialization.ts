@@ -307,6 +307,13 @@ const MIGRATIONS: Record<number, Migration> = {
    * same as every project had before this existed.
    */
   13: (doc) => ({ ...doc, chapters: doc.chapters ?? {}, schemaVersion: 14 }),
+  /**
+   * v14 → v15: creator-uploaded lettering fonts.
+   *
+   * Purely additive, nothing to backfill — a font is something a creator
+   * explicitly uploads, never inferred from an existing document.
+   */
+  14: (doc) => ({ ...doc, fonts: doc.fonts ?? {}, schemaVersion: 15 }),
 };
 
 function migrate(input: unknown): ProjectDocument {
@@ -334,6 +341,7 @@ function assertDocumentShape(doc: ProjectDocument): void {
   if (missing.length > 0) throw new Error(`Corrupt project document: missing ${missing.join(", ")}`);
   if (!Array.isArray(doc.generationHistory)) doc.generationHistory = [];
   if (typeof doc.chapters !== "object" || doc.chapters === null) doc.chapters = {};
+  if (typeof doc.fonts !== "object" || doc.fonts === null) doc.fonts = {};
   if (typeof doc.characterStates !== "object" || doc.characterStates === null) doc.characterStates = {};
   if (typeof doc.puppets !== "object" || doc.puppets === null) doc.puppets = {};
   if (typeof doc.workspaceItems !== "object" || doc.workspaceItems === null) doc.workspaceItems = {};

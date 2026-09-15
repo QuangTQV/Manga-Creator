@@ -75,6 +75,7 @@ export function duplicateProjectDocument(doc: ProjectDocument, name?: string): P
   for (const character of Object.values(next.characters)) character.projectId = projectId;
   for (const page of Object.values(next.pages)) page.projectId = projectId;
   for (const chapter of Object.values(next.chapters ?? {})) chapter.projectId = projectId;
+  for (const font of Object.values(next.fonts ?? {})) font.projectId = projectId;
   for (const languageAsset of Object.values(next.language ?? {})) languageAsset.projectId = projectId;
 
   return next;
@@ -90,6 +91,7 @@ export function referencedProjectIds(doc: ProjectDocument): Set<ID> {
   for (const character of Object.values(doc.characters)) ids.add(character.projectId);
   for (const page of Object.values(doc.pages)) ids.add(page.projectId);
   for (const chapter of Object.values(doc.chapters ?? {})) ids.add(chapter.projectId);
+  for (const font of Object.values(doc.fonts ?? {})) ids.add(font.projectId);
   for (const languageAsset of Object.values(doc.language ?? {})) ids.add(languageAsset.projectId);
   return ids;
 }

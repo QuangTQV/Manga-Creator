@@ -10,6 +10,7 @@ import { addTone, updateTone, type TonePatch } from "./toneOps";
 import type { ProceduralToneParams, ToneMask } from "./tones";
 import { addPage, removePage, reorderPage, resetPageLayout, setPageLayout } from "./pageOps";
 import { addChapter, moveChapterStart, removeChapter, renameChapter } from "./chapterOps";
+import { addFontAsset, removeFontAsset } from "./fontOps";
 import { renameProject, setDialogueLanguage } from "./projectOps";
 import { addRelationship, removeRelationship } from "./relationships";
 import {
@@ -40,6 +41,7 @@ import type {
   BlendMode,
   BubbleStyle,
   BubbleType,
+  FontAsset,
   CropMode,
   MangaLanguageCategory,
   RelationshipType,
@@ -170,6 +172,8 @@ export type DomainCommand =
   | { type: "rename-chapter"; chapterId: ID; name: string }
   | { type: "remove-chapter"; chapterId: ID }
   | { type: "move-chapter-start"; chapterId: ID; toPageId: ID }
+  | { type: "add-font-asset"; name: string; storageUrl: string; format: FontAsset["format"] }
+  | { type: "remove-font-asset"; fontId: ID }
   | { type: "add-page"; layout?: LayoutPresetId }
   | { type: "remove-page"; pageId: ID }
   | { type: "add-workspace-instance"; assetId: ID; at: Point }
@@ -409,6 +413,12 @@ function applyCommandCore(doc: ProjectDocument, command: DomainCommand): Command
       return { doc: removeChapter(doc, command.chapterId) };
     case "move-chapter-start":
       return { doc: moveChapterStart(doc, command.chapterId, command.toPageId) };
+    case "add-font-asset": {
+      const result = addFontAsset(doc, command);
+      return { doc: result.doc, createdId: result.fontId };
+    }
+    case "remove-font-asset":
+      return { doc: removeFontAsset(doc, command.fontId) };
     case "add-page": {
       const result = addPage(doc, command.layout);
       return { doc: result.doc, createdId: result.pageId };

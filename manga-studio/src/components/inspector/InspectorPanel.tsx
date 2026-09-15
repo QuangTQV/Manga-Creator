@@ -31,6 +31,7 @@ import {
   ToBackIcon,
   ToFrontIcon,
   UpIcon,
+  UploadIcon,
 } from "../ui/icons";
 import { PoseEditControls } from "./PoseEditControls";
 import { PuppetControls } from "./PuppetControls";
@@ -46,17 +47,20 @@ import type {
   BubbleType,
   CharacterState,
   CropMode,
+  FontAsset,
   ID,
   PanelItem,
   SourceAsset,
   SpeechBubbleItem,
 } from "@/domain/types";
 import { resolvedBubbleStyle } from "@/domain/bubbleStyles";
+import { fontFamilyNameFor } from "@/render/customFonts";
+import { uploadFontFile } from "../library/uploadFont";
 import { findExactCharacterAsset } from "@/characters/state";
 import { searchLanguageAssets } from "@/language/library";
 import { useEditorStore } from "@/editor/store";
 import { characterIdOfInstance } from "@/characters/identity";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 const CROP_MODES: { mode: CropMode; label: string }[] = [
   { mode: "fit", label: "Fit" },
@@ -796,6 +800,107 @@ const SHAPES: BubbleStyle["shape"][] = [
   "none",
 ];
 
+/** Web-safe names needing no upload — resolved by the browser for free,
+ * same as the render fallback (`BubbleNode.tsx`) when `fontFamily` is unset. */
+const WEB_SAFE_FONTS: { label: string; value: string }[] = [
+  { label: "Default (Comic Sans MS)", value: "" },
+  { label: "Arial", value: "Arial, sans-serif" },
+  { label: "Georgia", value: "Georgia, serif" },
+  { label: "Impact", value: "Impact, sans-serif" },
+  { label: "Courier New", value: "'Courier New', monospace" },
+  { label: "Times New Roman", value: "'Times New Roman', serif" },
+];
+
+/**
+ * Font picker + upload, shared by every bubble type. A custom font is
+ * uploaded once per project (`doc.fonts`) and then just another option in
+ * the list — `render/customFonts.ts` handles actually loading the file
+ * into the browser once it's selected on a bubble.
+ */
+function FontControl({
+  value,
+  fonts,
+  onChange,
+}: {
+  value: string | undefined;
+  fonts: FontAsset[];
+  onChange: (fontFamily: string | undefined) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const upload = async (file?: File) => {
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { familyName } = await uploadFontFile(file);
+      onChange(familyName);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Font upload failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // The dropdown only ever shows a value it actually offers — an unknown
+  // custom fontFamily string (from an older project export, say) falls
+  // back to showing "Default" rather than a blank/broken selection.
+  const known = WEB_SAFE_FONTS.some((f) => f.value === (value ?? "")) || fonts.some((f) => fontFamilyNameFor(f.id) === value);
+
+  return (
+    <div className="mt-2">
+      <Label>Font</Label>
+      <div className="flex gap-1.5">
+        <select
+          aria-label="Font"
+          className="min-w-0 flex-1 rounded border border-zinc-700 bg-zinc-800 px-1 py-1.5"
+          value={known ? (value ?? "") : ""}
+          onChange={(e) => onChange(e.target.value || undefined)}
+          disabled={busy}
+        >
+          {WEB_SAFE_FONTS.map((f) => (
+            <option key={f.label} value={f.value}>
+              {f.label}
+            </option>
+          ))}
+          {fonts.length > 0 && (
+            <optgroup label="Uploaded">
+              {fonts.map((f) => (
+                <option key={f.id} value={fontFamilyNameFor(f.id)}>
+                  {f.name}
+                </option>
+              ))}
+            </optgroup>
+          )}
+        </select>
+        <button
+          type="button"
+          aria-label="Upload font"
+          title="Upload a font file (.ttf, .otf, .woff, .woff2)"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-zinc-700 bg-zinc-800 text-zinc-400 hover:bg-zinc-700 disabled:opacity-40"
+          disabled={busy}
+          onClick={() => inputRef.current?.click()}
+        >
+          <UploadIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />
+        </button>
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".ttf,.otf,.woff,.woff2"
+        className="hidden"
+        onChange={(e) => {
+          void upload(e.target.files?.[0]);
+          e.target.value = "";
+        }}
+      />
+      {error && <p className="mt-1 text-[10px] text-red-400">{error}</p>}
+    </div>
+  );
+}
+
 /**
  * Bubble appearance stays editable forever, because it is parameters rather
  * than a rendered image. A custom silhouette from the Manga FX shelf can be
@@ -959,6 +1064,8 @@ function BubbleStyleControls({ item }: { item: SpeechBubbleItem }) {
           />
         </div>
       </div>
+
+      <FontControl value={style.fontFamily} fonts={doc ? Object.values(doc.fonts) : []} onChange={(fontFamily) => patch({ fontFamily })} />
 
       {masks.length > 0 && (
         <div className="mt-2">

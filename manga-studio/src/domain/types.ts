@@ -1045,6 +1045,24 @@ export interface InteractionRender {
   createdAt: ISODate;
 }
 
+/**
+ * A creator-uploaded font (SFX/lettering), separate from `SourceAsset`
+ * (which is heavily image-shaped: dimensions, alpha, background-removal
+ * provenance — none of it meaningful for a font file). `format` is
+ * confirmed server-side from the file's own magic bytes at upload time,
+ * never trusted from a filename or client-claimed MIME type. `render/
+ * customFonts.ts` derives the actual CSS font-family name from `id`
+ * (`kumanga-font-<id>`) — `BubbleStyle.fontFamily` stores that derived
+ * string like any other font name once selected.
+ */
+export interface FontAsset {
+  id: ID;
+  projectId: ID;
+  name: string;
+  storageUrl: string;
+  format: "ttf" | "otf" | "woff" | "woff2";
+}
+
 export interface ProjectDocument {
   schemaVersion: number;
   project: Project;
@@ -1053,6 +1071,8 @@ export interface ProjectDocument {
   pages: Record<ID, Page>;
   /** See `Chapter`'s own docstring: a boundary marker, not a page tag. */
   chapters: Record<ID, Chapter>;
+  /** Creator-uploaded lettering fonts — see `FontAsset`'s own docstring. */
+  fonts: Record<ID, FontAsset>;
   panels: Record<ID, Panel>;
   scenes: Record<ID, PanelScene>;
   /** The character state graph: semantic nodes with reference lineage. */
@@ -1077,4 +1097,4 @@ export interface ProjectDocument {
   generationHistory: GenerationRecord[];
 }
 
-export const SCHEMA_VERSION = 14;
+export const SCHEMA_VERSION = 15;

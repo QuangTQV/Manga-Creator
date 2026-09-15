@@ -33,6 +33,47 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-15 — Custom font upload for lettering (backlog #14).** New
+  `FontAsset` (`domain/types.ts`, schema v14→v15) — deliberately its own
+  `doc.fonts` collection, not shoehorned into `SourceAsset` (which is
+  heavily image-shaped: dimensions, alpha, background-removal provenance,
+  none of it meaningful for a font file). New, ISOLATED upload route
+  `app/api/assets/upload-font/route.ts` — NOT reusing `assets/upload`,
+  which is deeply image-specific (dimension reading via
+  `createImageBitmap`, the whole AI background-removal pipeline); mixing
+  the two would mean threading "this might not be an image at all"
+  through code that assumes it always is. Same untrusted-input discipline
+  as the image route: a font's actual TYPE is decided by its own magic
+  bytes (`storage/fontValidation.ts`'s `detectFontType`, unit tested —
+  TTF/OTF/WOFF/WOFF2 signatures), never a filename or client-claimed MIME
+  type. Reuses the SAME underlying `objectStore.putObject` (already
+  format-agnostic). Also fixed the local dev file server
+  (`api/files/[...path]/route.ts`) to recognize font magic bytes too —
+  it was falling back to `application/octet-stream` for anything that
+  wasn't a known image, and FontFace loading is stricter about a correct
+  Content-Type than `<img>` tends to be.
+
+  Render side (`render/customFonts.ts`): `BubbleStyle.fontFamily` stores
+  a derived family name (`kumanga-font-<fontId>`) once a custom font is
+  selected — no new field, it's just another value in the same string.
+  The real subtlety: a freshly-uploaded font isn't in the browser yet, so
+  the FIRST draw uses a fallback until `FontFace.load()` resolves, and
+  Konva has no idea that happened (canvas draws are imperative, not tied
+  to React reconciliation for text metrics) — so loading nudges every
+  `Konva.stages` entry to `batchDraw()` once the font is ready.
+  `PanelRenderer.tsx` preloads every font the project owns (idempotent,
+  cached after first load) rather than only the ones currently in use, so
+  picking an already-uploaded font on a NEW bubble never has to wait.
+  `exportPages.ts`'s pre-warm step now awaits font loads the same way it
+  already awaited image loads, for the identical reason: a page captured
+  mid-load would bake in the wrong font.
+
+  A broken/fake font upload (passes the server's magic-byte check but
+  isn't real font data) must never crash rendering — `ensureCustomFontLoaded`
+  swallows a failed `FontFace.load()` and just keeps the fallback font;
+  this exact path is what the e2e test actually exercises (a real font
+  binary wasn't available in this environment to test successful glyph
+  rendering — see the test's own comment).
 - **2026-09-15 — Page Overview / storyboard grid (backlog #13).** New
   `PageOverviewDialog.tsx` (TopBar, "Overview") shows every page as a real
   rendered thumbnail (not the 44px strip in `PagesBar.tsx`, which is for
@@ -326,10 +367,7 @@ rather than leaving this list to drift from reality.
 **Tier 6 — "professional manga tool" gaps (audited 2026-09-15, user-confirmed
 "do what you think is necessary" — working top-down same as before)**
 13. ~~Page Overview / storyboard grid~~ — **done 2026-09-15**, see Timeline.
-14. Custom font upload for bubble/SFX lettering — `BubbleStyle.fontFamily` is
-    a CSS name only today, resolved against whatever's already installed;
-    no font-FILE upload, no `AssetCategory` for it, no `@font-face`
-    injection.
+14. ~~Custom font upload for bubble/SFX lettering~~ — **done 2026-09-15**, see Timeline.
 15. Furigana/ruby text on bubbles — confirmed fully absent (no field, no
     render support); genre-authentic for real Japanese-style manga, absent
     entirely today.

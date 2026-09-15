@@ -11,6 +11,7 @@
 import { assetRenderUrl } from "@/assets/renderSource";
 import { useEditorStore } from "@/editor/store";
 import { loadImageElement } from "@/render/useImageElement";
+import { ensureCustomFontLoaded } from "@/render/customFonts";
 import { capturePageDataUrl } from "./exportPage";
 
 export interface ExportProgress {
@@ -55,7 +56,13 @@ export async function captureAllPages(
   const urls = Object.values(doc.assets)
     .map(assetRenderUrl)
     .filter((url): url is string => Boolean(url));
-  await Promise.allSettled(urls.map(loadImageElement));
+  await Promise.allSettled([
+    ...urls.map(loadImageElement),
+    // A custom lettering font still loading when the capture happens would
+    // export with the fallback font baked in — same reasoning as the image
+    // pre-warm above, just for fonts instead of pictures.
+    ...Object.values(doc.fonts).map(ensureCustomFontLoaded),
+  ]);
 
   const originalPageId = state.currentPageId;
   const dataUrls: string[] = [];

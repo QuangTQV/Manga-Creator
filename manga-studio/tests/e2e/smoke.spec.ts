@@ -443,3 +443,32 @@ test("Page Overview renders a real thumbnail per page and jumps to the one you c
   await expect(page.getByRole("heading", { name: "Page Overview" })).not.toBeVisible();
   await expect(page.locator('footer button[title^="Page 2"]')).toHaveAttribute("aria-current", "page");
 });
+
+test("a custom font uploads and becomes selectable on a bubble", async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+
+  await page.getByRole("combobox", { name: "Bubble" }).selectOption("speech");
+  await page.getByText("Appearance", { exact: true }).click();
+
+  const fontSelect = page.getByRole("combobox", { name: "Font" });
+  await expect(fontSelect).toHaveValue(""); // "Default (Comic Sans MS)"
+
+  // A minimal fake TTF: the server only checks the sfnt magic bytes (real
+  // font parsing happens in the browser, not the upload route) — see
+  // storage/fontValidation.ts. Built in-memory; no fixture file needed.
+  const fakeTtf = Buffer.concat([Buffer.from([0x00, 0x01, 0x00, 0x00]), Buffer.alloc(64)]);
+  await page
+    .locator('input[type="file"][accept*="ttf"]')
+    .setInputFiles({ name: "My Lettering Font.ttf", mimeType: "font/ttf", buffer: fakeTtf });
+
+  // Uploaded, registered, and selected automatically — no error surfaced.
+  await expect(page.locator("text=/Font upload failed/")).not.toBeVisible();
+  await expect(fontSelect).toHaveValue(/^kumanga-font-/);
+  const selectedLabel = await fontSelect.locator("option:checked").textContent();
+  expect(selectedLabel).toBe("My Lettering Font");
+
+  // Picking an uploaded font whose bytes aren't a real, parseable font
+  // must not crash the app — it just keeps the fallback glyphs on screen.
+  expect(pageErrors).toEqual([]);
+});
