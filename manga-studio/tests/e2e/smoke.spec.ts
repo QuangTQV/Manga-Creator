@@ -189,6 +189,26 @@ test("History lets you jump several steps at once, not just one Undo at a time",
   await expect(page.getByRole("button", { name: "Redo" })).toBeEnabled();
 });
 
+test("the project's dialogue language can be set and shows up as a real, undoable edit", async ({ page }) => {
+  const language = page.getByRole("textbox", { name: "Language" });
+  await expect(language).toHaveValue("");
+
+  await language.fill("Vietnamese");
+  await language.blur();
+  await expect(language).toHaveValue("Vietnamese"); // committed, not reverted
+
+  await page.getByRole("button", { name: "History" }).click();
+  const rows = page.getByRole("list", { name: "History entries" }).getByRole("button");
+  await expect(rows.first()).toContainText("Set dialogue language");
+  await expect(rows.first()).toContainText("Current");
+  await page.getByRole("button", { name: "Close History" }).click();
+
+  // Clearing it back to blank is the "match my own prompt's language" state.
+  await language.fill("");
+  await language.blur();
+  await expect(language).toHaveValue("");
+});
+
 test("the Manga Agent lets you target a page other than the one open in the canvas", async ({ page }) => {
   // The picker only appears once there is a page to switch TO.
   await page.getByRole("button", { name: "Add page" }).click();
@@ -224,7 +244,7 @@ test("renaming a project uses a real dialog, not the browser's native prompt", a
   await page.getByRole("button", { name: "Rename" }).click();
   await expect(page.getByRole("heading", { name: "Rename project" })).toBeVisible();
 
-  await page.getByRole("textbox").fill("Renamed Project");
+  await page.getByRole("textbox", { name: "New project name" }).fill("Renamed Project");
   await page.getByRole("button", { name: "Save" }).click();
 
   await expect(page.getByText("Renamed Project").first()).toBeVisible();

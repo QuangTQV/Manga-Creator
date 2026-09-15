@@ -44,10 +44,14 @@ export interface RunV3Result {
   execution: ExecutionSummary;
 }
 
-function contextLine(state: { currentPageId: string | null; selection: { panelId?: string } }, doc: ProjectDocument): string {
+export function contextLine(state: { currentPageId: string | null; selection: { panelId?: string } }, doc: ProjectDocument): string {
   const page = state.currentPageId ? doc.pages[state.currentPageId] : undefined;
   const panelCount = page?.panelIds.length ?? 0;
-  return `Current page: ${page?.name ?? "none"} with ${panelCount} panel(s). Selection: ${state.selection.panelId ? "a panel is selected" : "none"}.`;
+  const language = doc.project.settings.dialogueLanguage;
+  return (
+    `Current page: ${page?.name ?? "none"} with ${panelCount} panel(s). Selection: ${state.selection.panelId ? "a panel is selected" : "none"}.` +
+    (language ? ` Dialogue/narration language: ${language}.` : "")
+  );
 }
 
 export async function runCreativeDirection(

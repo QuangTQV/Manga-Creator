@@ -29,6 +29,16 @@ export function renameProject(doc: ProjectDocument, name: string): ProjectDocume
   return next;
 }
 
+/** `null`/empty clears it back to "match the creator's own prompt language". */
+export function setDialogueLanguage(doc: ProjectDocument, language: string | null): ProjectDocument {
+  const next = cloneDoc(doc);
+  const trimmed = language?.trim();
+  if (trimmed) next.project.settings.dialogueLanguage = trimmed;
+  else delete next.project.settings.dialogueLanguage;
+  touch(next);
+  return next;
+}
+
 /**
  * Duplicate a project into an independent document.
  *

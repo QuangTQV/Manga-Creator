@@ -9,7 +9,7 @@ import { addBubble, addEffect, duplicateItem, moveItemToIndex, placeAsset, remov
 import { addTone, updateTone, type TonePatch } from "./toneOps";
 import type { ProceduralToneParams, ToneMask } from "./tones";
 import { addPage, removePage, resetPageLayout, setPageLayout } from "./pageOps";
-import { renameProject } from "./projectOps";
+import { renameProject, setDialogueLanguage } from "./projectOps";
 import { addRelationship, removeRelationship } from "./relationships";
 import {
   createInteraction,
@@ -163,6 +163,7 @@ export type DomainCommand =
   | { type: "panel-to-workspace"; instanceId: ID; at?: Point }
   | { type: "delete-workspace-instance"; itemId: ID }
   | { type: "rename-project"; name: string }
+  | { type: "set-dialogue-language"; language: string | null }
   // ── Relationships and interactions ──
   | { type: "add-relationship"; characterAId: ID; characterBId: ID; relationshipType: RelationshipType; label?: string }
   | { type: "remove-relationship"; relationshipId: ID }
@@ -420,6 +421,8 @@ function applyCommandCore(doc: ProjectDocument, command: DomainCommand): Command
     }
     case "rename-project":
       return { doc: renameProject(doc, command.name) };
+    case "set-dialogue-language":
+      return { doc: setDialogueLanguage(doc, command.language) };
     case "set-project-style":
       return { doc: setProjectStyle(doc, command.styleId) };
     case "add-custom-style": {

@@ -751,6 +751,16 @@ export interface ProjectSettings {
   pageHeight: number;
   readingDirection: ReadingDirection;
   artStyle: ProjectArtStyleSettings;
+  /**
+   * The language the Manga Agent should WRITE new dialogue/narration/text in
+   * (e.g. "Vietnamese", "English", "Japanese") — free text, understood by the
+   * model rather than matched against a fixed list. Unset means "whatever
+   * language the creator's own prompt is written in" (today's behavior,
+   * unchanged). Never applies to text the creator gave verbatim (exact
+   * quoted dialogue, or a pasted novel's own wording) — see the Creative
+   * Director's literal-lock rule in `agent-v3/director/systemPrompt.ts`.
+   */
+  dialogueLanguage?: string;
 }
 
 export interface Project {

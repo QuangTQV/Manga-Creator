@@ -280,6 +280,7 @@ function RenameProjectDialog({
         <h2 className="mb-3 font-semibold text-zinc-100">Rename project</h2>
         <input
           autoFocus
+          aria-label="New project name"
           className="mb-4 w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1.5"
           value={name}
           onChange={(e) => setName(e.target.value)}

@@ -215,6 +215,32 @@ export function TopBar() {
 
       <div className="flex-1" />
 
+      {/* What language the Agent WRITES new dialogue/narration/text in — never
+          applies to text the creator gave verbatim (Rule 6, systemPrompt.ts).
+          Free text, not a fixed list: the model understands a language name
+          directly. `key` forces a remount (and so a fresh defaultValue) when
+          the stored value changes from elsewhere — undo, History, another
+          project load — since this stays an uncontrolled input otherwise. */}
+      <label
+        className="mr-1 flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px]"
+        style={{ color: "var(--text-muted)" }}
+        title="Language the Agent writes new dialogue/narration in. Leave blank to match your own prompt's language. Never translates dialogue you quoted exactly, or a pasted novel's own wording."
+      >
+        Language
+        <input
+          key={doc.project.settings.dialogueLanguage ?? ""}
+          className="w-24 rounded border border-[var(--border-subtle)] bg-[var(--bg-app)] px-1.5 py-0.5 text-[11px] text-zinc-300"
+          defaultValue={doc.project.settings.dialogueLanguage ?? ""}
+          placeholder="Auto"
+          onBlur={(event) => {
+            const trimmed = event.target.value.trim();
+            if (trimmed === (doc.project.settings.dialogueLanguage ?? "")) return;
+            useEditorStore.getState().dispatch({ type: "set-dialogue-language", language: trimmed || null });
+          }}
+          onKeyDown={(event) => event.key === "Enter" && event.currentTarget.blur()}
+        />
+      </label>
+
       {/* Advanced reveals rigging and raw camera numerics. Off by default: a
           creator directs the scene, the harness picks the implementation. */}
       <label
