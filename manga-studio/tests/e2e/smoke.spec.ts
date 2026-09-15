@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import sharp from "sharp";
 
 /**
  * A real browser smoke test — the thing no vitest component test can
@@ -544,6 +545,56 @@ test("print export renders a real page at a DPI-derived size with bleed", async 
   await page.getByRole("button", { name: "Export current page (PNG)" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/-print@300dpi\.png$/);
+});
+
+test("print export can add real crop marks in the bleed margin", async ({ page }, testInfo) => {
+  await expect(page.locator("canvas").first()).toBeVisible();
+  await page.getByRole("combobox", { name: "More" }).selectOption("print");
+  await expect(page.getByRole("heading", { name: "Print Export" })).toBeVisible();
+
+  // Default bleed (0.125in) leaves room for a mark, so the checkbox starts
+  // enabled — same math as the dimension test above: 300dpi * 0.125in bleed
+  // = 38px, and cropMarkGeometry(38) puts the top-left corner's vertical
+  // tick at x=38, spanning y≈8..30.
+  const cropMarksCheckbox = page.getByRole("checkbox", { name: "Add crop marks" });
+  await expect(cropMarksCheckbox).toBeEnabled();
+  await expect(cropMarksCheckbox).not.toBeChecked();
+
+  const patch = { left: 34, top: 15, width: 8, height: 8 };
+  // sharp's `.stats()` doesn't play well chained after `.extract()` (its
+  // mean came back much higher than the region's own raw bytes justify —
+  // some internal resampling/estimation, not this test's concern), so
+  // this averages the raw decoded bytes directly instead.
+  const meanBrightness = async (path: string) => {
+    const { data, info } = await sharp(path).extract(patch).raw().toBuffer({ resolveWithObject: true });
+    let sum = 0;
+    const pixelCount = info.width * info.height;
+    for (let i = 0; i < pixelCount; i++) sum += data[i * info.channels]; // R channel; content here is greyscale
+    return sum / pixelCount;
+  };
+
+  const withoutMarksPath = testInfo.outputPath("print-without-crop-marks.png");
+  const download1 = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Export current page (PNG)" }).click(),
+  ]).then(([d]) => d);
+  await download1.saveAs(withoutMarksPath);
+  // Bled page background there, no mark drawn — bright/white.
+  expect(await meanBrightness(withoutMarksPath)).toBeGreaterThan(250);
+
+  await cropMarksCheckbox.check();
+  await expect(page.getByText(/^Output: /)).toHaveText("Output: 2064×3057px (bleed + crop marks)");
+
+  const withMarksPath = testInfo.outputPath("print-with-crop-marks.png");
+  const download2 = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Export current page (PNG)" }).click(),
+  ]).then(([d]) => d);
+  await download2.saveAs(withMarksPath);
+  // The same patch is now darkened by a real drawn tick mark (a thin dark
+  // stripe inside an otherwise-white 8x8 patch pulls the mean well below
+  // white, even though most of the patch is still background).
+  expect(await meanBrightness(withMarksPath)).toBeLessThan(230);
 });
 
 // A minimal, genuinely valid 8x8 PNG — unlike the font-upload test's

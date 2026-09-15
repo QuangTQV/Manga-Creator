@@ -27,6 +27,7 @@ export function PrintExportDialog() {
   const [physicalWidthInches, setPhysicalWidthInches] = useState(6.625);
   const [dpi, setDpi] = useState(300);
   const [bleedInches, setBleedInches] = useState(0.125);
+  const [cropMarks, setCropMarks] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -59,7 +60,7 @@ export function PrintExportDialog() {
     }
   };
 
-  const options = { physicalWidthInches, dpi, bleedInches };
+  const options = { physicalWidthInches, dpi, bleedInches, cropMarks: cropMarks && bleedInches > 0 };
 
   return (
     <div className="fixed inset-0 z-40 grid place-items-center overflow-y-auto bg-black/60 py-6" onMouseDown={close}>
@@ -111,6 +112,23 @@ export function PrintExportDialog() {
             </label>
           </div>
 
+          <label
+            className="mt-2 flex items-center gap-2 text-[11px] text-zinc-500"
+            title={
+              bleedInches > 0
+                ? "Draws corner trim marks in the bleed margin, for a print shop to cut to"
+                : "Needs a bleed margin above 0 to have room to draw marks in"
+            }
+          >
+            <input
+              type="checkbox"
+              checked={cropMarks}
+              disabled={bleedInches <= 0}
+              onChange={(e) => setCropMarks(e.target.checked)}
+            />
+            Add crop marks
+          </label>
+
           <div className="mt-3">
             <p className="mb-1 text-[11px] text-zinc-500">DPI</p>
             <div className="flex items-center gap-2">
@@ -140,7 +158,9 @@ export function PrintExportDialog() {
 
           <p className="mt-3 text-[11px] text-zinc-500">
             {preview
-              ? `Output: ${preview.widthPx}×${preview.heightPx}px${bleedInches > 0 ? " (bleed included)" : ""}`
+              ? `Output: ${preview.widthPx}×${preview.heightPx}px${
+                  bleedInches > 0 ? (options.cropMarks ? " (bleed + crop marks)" : " (bleed included)") : ""
+                }`
               : "Enter a page width and DPI greater than zero"}
           </p>
 

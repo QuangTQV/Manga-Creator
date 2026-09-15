@@ -33,6 +33,46 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-15 — Print crop (trim) marks (backlog #26).** Print Export
+  (#16) only ever drew synthetic bleed, never marked where the actual
+  trim line is. New `export/printCropMarks.ts`: `cropMarkGeometry(bleedPx)`
+  sizes the corner tick marks PROPORTIONALLY to the bleed itself
+  (gap = 20% of bleed, length = 60%, so gap+length always stays inside
+  the bleed band with margin on both ends) rather than a fixed real-world
+  length — this guarantees marks always fit at any DPI/bleed combination
+  with no extra configuration, and returns `null` (draw nothing) below a
+  4px bleed, since there's no room for a mark without touching either
+  the trim line or the canvas edge.
+
+  Drawn INSIDE the bleed margin (`drawCropMarks`, a `ctx.stroke()` call on
+  the SAME canvas `printBleed.ts`'s edge-stretch already produced — one
+  canvas pass, not a second decode/re-encode round trip per page), not
+  just outside it the way real print-prep tooling usually would: adding a
+  second margin dimension purely for mark placement would have been a
+  bigger, riskier change to the export pipeline than this feature is
+  worth, and Kumanga's bleed margin is already synthetic/approximate
+  (see #16's own docstring) — a mark sitting inside that same band, clear
+  of the trim line and the canvas edge, tells a print shop the same thing.
+
+  New "Add crop marks" checkbox in `PrintExportDialog.tsx`, disabled when
+  bleed is 0 (nowhere to put a mark) — default UNCHECKED, so print export
+  output is byte-identical to before for anyone who doesn't touch it,
+  matching how every other addition this session default off/no-change
+  (candidate count, warp, …). `PrintExportOptions.cropMarks` threaded
+  through both `exportCurrentPagePrintPng` and `exportBookPrintCbz`.
+
+  Verified with unit tests for the pure sizing math, plus a real-browser
+  Playwright test that exports the SAME page once without and once with
+  crop marks checked, decodes both real downloaded PNGs with `sharp`, and
+  confirms a small patch at the exact predicted tick location is bright/
+  white without marks and measurably darkened with them — actual pixel
+  proof, not just "the export didn't throw." One thing worth remembering
+  for next time: `sharp`'s `.stats()` chained after `.extract()` returned
+  a mean inconsistent with the region's own raw decoded bytes on this
+  version — averaging `.raw()` bytes directly was reliable and is what
+  the test actually does; don't trust `.extract().stats()` blindly if
+  this comes up again elsewhere.
+
 - **2026-09-15 — Bubble auto-fit height + warp/impact-lettering (backlog
   #24, #25), from a verified (not guessed) audit of remaining
   professional-tool gaps.** Two small, independent typography features
@@ -851,8 +891,7 @@ worth chasing on its own)**
     to the `BubbleStyle.warp` field that already existed in the schema but
     had no renderer or Inspector control~~ — **done 2026-09-15**, see
     Timeline.
-26. Print crop/registration marks (Print Export only has bleed today) —
-    not done, not started, low effort/low risk when picked up.
+26. ~~Print crop/registration marks~~ — **done 2026-09-15**, see Timeline.
 27. Two-page spreads (art intentionally spanning two facing pages) — not
     done, not started; a real architecture change (panels are hard-
     clamped to one page's 0..1 coordinate space everywhere: export,

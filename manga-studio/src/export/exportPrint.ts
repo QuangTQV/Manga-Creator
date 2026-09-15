@@ -47,6 +47,11 @@ export interface PrintExportOptions {
   dpi: number;
   /** Bleed margin added on all four sides, in inches. 0 disables it. */
   bleedInches: number;
+  /** Draw corner trim marks in the bleed margin, for a print shop to cut
+   * to. No-op when the bleed margin ends up too thin to hold one (see
+   * `printCropMarks.ts`'s `cropMarkGeometry`) — most relevantly when
+   * `bleedInches` is 0, since marks need bleed to sit in. */
+  cropMarks?: boolean;
 }
 
 /** Pulled out as a pure function so the DPI math is unit-testable without
@@ -66,7 +71,9 @@ export async function exportCurrentPagePrintPng(options: PrintExportOptions): Pr
 
   const scale = computePrintScale(doc.project.settings.pageWidth, options.physicalWidthInches, options.dpi);
   const dataUrl = capturePageDataUrl(doc, state.currentPageId, scale);
-  const finalDataUrl = await addBleedToDataUrl(dataUrl, computeBleedPx(options.bleedInches, options.dpi));
+  const finalDataUrl = await addBleedToDataUrl(dataUrl, computeBleedPx(options.bleedInches, options.dpi), {
+    cropMarks: options.cropMarks,
+  });
 
   const page = doc.pages[state.currentPageId];
   const pageName = page.name?.replace(/\s+/g, "-").toLowerCase() ?? "page";
@@ -87,7 +94,7 @@ export async function exportBookPrintCbz(
   const scale = computePrintScale(doc.project.settings.pageWidth, options.physicalWidthInches, options.dpi);
   const dataUrls = await captureAllPages(scale, onProgress, scope?.pageIds);
   const bleedPx = computeBleedPx(options.bleedInches, options.dpi);
-  const bled = await Promise.all(dataUrls.map((url) => addBleedToDataUrl(url, bleedPx)));
+  const bled = await Promise.all(dataUrls.map((url) => addBleedToDataUrl(url, bleedPx, { cropMarks: options.cropMarks })));
 
   const zip = new JSZip();
   const digits = String(bled.length).length;

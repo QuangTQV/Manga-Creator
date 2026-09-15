@@ -9,7 +9,13 @@
  * the full reasoning). Good enough that a printer's trim tolerance won't
  * expose a white sliver at the edge; not a substitute for deliberately
  * bled artwork.
+ *
+ * Optionally also draws crop marks (`printCropMarks.ts`) into that same
+ * bleed margin, on the same canvas, right before encoding — one pass, not
+ * a second decode/re-encode round trip per page.
  */
+
+import { drawCropMarks } from "./printCropMarks";
 
 /** Bleed margin in device pixels, at the export's own DPI — kept as a
  * separate pure function so the math is unit-testable without a canvas. */
@@ -32,7 +38,11 @@ function loadImage(dataUrl: string): Promise<HTMLImageElement> {
  * fill the margin — plain `drawImage` calls with mismatched source/
  * destination rectangle sizes, no image-processing library needed.
  */
-export function addBleedByExtendingEdges(source: CanvasImageSource & { width: number; height: number }, bleedPx: number): HTMLCanvasElement {
+export function addBleedByExtendingEdges(
+  source: CanvasImageSource & { width: number; height: number },
+  bleedPx: number,
+  options?: { cropMarks?: boolean },
+): HTMLCanvasElement {
   const { width, height } = source;
   const canvas = document.createElement("canvas");
   canvas.width = width + bleedPx * 2;
@@ -59,16 +69,22 @@ export function addBleedByExtendingEdges(source: CanvasImageSource & { width: nu
   ctx.drawImage(source, 0, height - 1, 1, 1, 0, height + bleedPx, bleedPx, bleedPx); // bottom-left
   ctx.drawImage(source, width - 1, height - 1, 1, 1, width + bleedPx, height + bleedPx, bleedPx, bleedPx); // bottom-right
 
+  if (options?.cropMarks) drawCropMarks(canvas, bleedPx);
+
   return canvas;
 }
 
 /** Same as `addBleedByExtendingEdges`, but from/to data URLs — the shape
  * the exporters actually pass around. Returns `dataUrl` unchanged when
- * `bleedPx` is 0, so callers can unconditionally call this without a
- * branch for "no bleed requested". */
-export async function addBleedToDataUrl(dataUrl: string, bleedPx: number): Promise<string> {
-  if (bleedPx <= 0) return dataUrl;
+ * `bleedPx` is 0 AND crop marks weren't requested either, so callers can
+ * unconditionally call this without a branch for "nothing to add". */
+export async function addBleedToDataUrl(
+  dataUrl: string,
+  bleedPx: number,
+  options?: { cropMarks?: boolean },
+): Promise<string> {
+  if (bleedPx <= 0 && !options?.cropMarks) return dataUrl;
   const image = await loadImage(dataUrl);
-  const canvas = addBleedByExtendingEdges(image, bleedPx);
+  const canvas = addBleedByExtendingEdges(image, bleedPx, options);
   return canvas.toDataURL("image/png");
 }
