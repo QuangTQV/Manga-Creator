@@ -39,6 +39,12 @@ export const LAYOUT_PRESETS: Record<LayoutPresetId, LayoutPreset> = {
   "three-vertical": { id: "three-vertical", label: "Three panels (stacked)", rects: grid(1, 3) },
   "four-grid": { id: "four-grid", label: "Four-panel grid", rects: grid(2, 2) },
   yonkoma: { id: "yonkoma", label: "Yonkoma (4 stacked)", rects: grid(1, 4) },
+  // Deliberately zero margin, unlike `single` (which keeps MARGIN so a
+  // panel reads as a panel on the page). This one exists for content that
+  // should cover the physical page edge to edge — a splash page, or an
+  // imported page image that already IS a finished page and must not be
+  // framed with an extra border around it (see `services/importPages.ts`).
+  "full-bleed": { id: "full-bleed", label: "Full bleed (edge to edge)", rects: [{ x: 0, y: 0, width: 1, height: 1 }] },
 };
 
 export function isLayoutPresetId(value: string): value is LayoutPresetId {

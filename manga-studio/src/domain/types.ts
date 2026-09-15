@@ -323,7 +323,8 @@ export type LayoutPresetId =
   | "two-horizontal"
   | "three-vertical"
   | "four-grid"
-  | "yonkoma";
+  | "yonkoma"
+  | "full-bleed";
 
 export interface Page {
   id: ID;

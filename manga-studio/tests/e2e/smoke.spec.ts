@@ -505,6 +505,33 @@ const TINY_PNG = Buffer.from(
   "base64",
 );
 
+test("importing existing page images appends them as real pages, in filename order", async ({ page }) => {
+  // A creator switching to Kumanga with manga they already made elsewhere
+  // shouldn't have to restart — this bulk-imports existing page images as
+  // new project pages, each placed edge-to-edge (no letterbox border), in
+  // reading order. Real upload pipeline, no mocking: the point is proving
+  // the whole plumbing (upload -> full-bleed page -> filled panel) works.
+  await expect(page.locator("footer button[title^='Page ']")).toHaveCount(1); // the fresh project's own page 1
+
+  await page
+    .locator('input[aria-label="Import pages"]')
+    .setInputFiles([
+      { name: "page03.png", mimeType: "image/png", buffer: TINY_PNG },
+      { name: "page01.png", mimeType: "image/png", buffer: TINY_PNG },
+      { name: "page02.png", mimeType: "image/png", buffer: TINY_PNG },
+    ]);
+
+  // Filename order (page01, page02, page03), not selection order — three
+  // new pages appended after the project's existing page 1.
+  await expect(page.locator("footer button[title^='Page ']")).toHaveCount(4);
+
+  // The last imported page is the one left open, and it really is a
+  // full-bleed single-panel page holding the uploaded image — not an
+  // empty page, and not the default four-grid layout.
+  await expect(page.getByRole("listitem").filter({ hasText: "Panel 1" })).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: "Panel 2" })).not.toBeVisible();
+});
+
 test("Novel Import flags a project's existing characters instead of proposing duplicates", async ({ page }) => {
   // The gap this closes: pasting a new chunk of story into an
   // already-populated project used to let the character-review step

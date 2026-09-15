@@ -10,7 +10,7 @@
  * buttons.
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { KumangaMark } from "./brand/KumangaMark";
 import { Button, IconButton, ToolbarDivider } from "./ui/Button";
 import { ChevronDown } from "lucide-react";
@@ -36,6 +36,7 @@ import { exportBookCbz } from "@/export/exportBook";
 import { exportWebtoonStrip } from "@/export/exportWebtoon";
 import { exportProjectArchive } from "@/export/exportProjectArchive";
 import { exportFullBackup } from "@/export/projectBackup";
+import { importPagesFromFiles } from "@/services/importPages";
 import { getActiveStyleProfile } from "@/styles/profiles";
 
 /** Quick picks for the Language field's native suggestion dropdown — not a
@@ -102,6 +103,9 @@ export function TopBar() {
   const openHistory = useUiStore((s) => s.openHistory);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<string | null>(null);
+  const [importingPages, setImportingPages] = useState(false);
+  const [importPagesProgress, setImportPagesProgress] = useState<string | null>(null);
+  const importPagesInputRef = useRef<HTMLInputElement>(null);
 
   if (!doc) return null;
 
@@ -174,6 +178,20 @@ export function TopBar() {
       alert(error instanceof Error ? error.message : "Full backup export failed");
     } finally {
       setExporting(false);
+    }
+  };
+
+  const onImportPages = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setImportingPages(true);
+    setImportPagesProgress("Preparing…");
+    try {
+      await importPagesFromFiles(Array.from(files), ({ done, total }) => setImportPagesProgress(`Page ${done}/${total}…`));
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Importing pages failed");
+    } finally {
+      setImportingPages(false);
+      setImportPagesProgress(null);
     }
   };
 
@@ -281,10 +299,23 @@ export function TopBar() {
           enough to earn its own permanent slot — each one still shows its
           full name the moment this opens, so nothing here trades away
           being understandable just to save width. */}
+      <input
+        ref={importPagesInputRef}
+        type="file"
+        aria-label="Import pages"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          void onImportPages(e.target.files);
+          e.target.value = "";
+        }}
+      />
       <Dropdown
-        label="More"
+        label={importPagesProgress ?? (importingPages ? "Importing…" : "More")}
         icon={<MoreIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
         items={[
+          { key: "import-pages", label: "Import pages (existing manga images)" },
           { key: "novel-import", label: "Novel Import" },
           { key: "chapters", label: "Chapters" },
           { key: "overview", label: "Page Overview" },
@@ -292,7 +323,8 @@ export function TopBar() {
           { key: "live-ai", label: "Live AI" },
         ]}
         onPick={(key) => {
-          if (key === "novel-import") openNovelImport();
+          if (key === "import-pages") importPagesInputRef.current?.click();
+          else if (key === "novel-import") openNovelImport();
           else if (key === "chapters") openChapters();
           else if (key === "overview") openPageOverview();
           else if (key === "print") openPrintExport();

@@ -33,6 +33,65 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-15 — Bulk page import: bring existing manga images in as real
+  project pages, in order (backlog #23).** Follow-up to #22 — the user
+  asked whether "import an existing manga, then continue it" was
+  supported. Scoped through a real back-and-forth before writing code:
+  the full ask ("AI learns from the old pages so new ones stay
+  consistent") splits into a cheap, safe half (get the old pages INTO the
+  project, in order) and an expensive, risky half (AI visually
+  understanding those pages) — this ships only the first half, explicitly
+  with the user's sign-off after laying out why automatic character
+  extraction or OCR-based plot understanding from bitmaps was rejected as
+  disproportionate. The existing character-reference upload
+  ("Reference Only" character creation) and Art Style custom reference
+  upload ALREADY cover "make new generations match old art" once a
+  creator manually points them at a crop from an imported page — nothing
+  new needed there, this is genuinely just the missing plumbing to get
+  the old pages in.
+
+  New `LayoutPresetId` value `"full-bleed"` (`domain/layouts.ts`) — a
+  single panel at `{x:0,y:0,width:1,height:1}`, zero margin, unlike
+  `single` (which keeps the normal 3% margin so a panel reads as a panel
+  on the page). Zero domain risk: `LayoutPresetId` is never persisted on
+  `Page` itself, only consumed once at panel-creation time, so this is a
+  pure addition with nothing to migrate. It also just shows up in the
+  existing "Layout" TopBar dropdown for free (splash pages are a
+  legitimate manual use for it too, independent of import).
+
+  New `services/importPages.ts`: `importPagesFromFiles` uploads each
+  selected file (category `"upload"` — same category `ReferencePicker`
+  already uses for source material that must NOT go through
+  background-removal, since a full page is not a character cutout),
+  dispatches the EXISTING `add-page`/`add-instance` commands per file
+  (`layout: "full-bleed"`, `cropMode: "fill"` so the image covers the
+  page edge-to-edge without a letterbox gap) — no new domain command, no
+  new mutation path, purely composing what already existed. Sequential,
+  not parallel, matching `generatePack`/`captureAllPages`'s existing
+  pacing for other multi-step bulk operations. `sortFilesByName` (numeric-
+  aware, unit tested) gives deterministic "page01, page02, …" reading
+  order regardless of file-picker selection order, which browsers don't
+  reliably preserve. Wired into the TopBar "More" menu as
+  "Import pages (existing manga images)", reusing that menu's existing
+  progress-in-label pattern (`"Page 3/15…"`) the Export dropdown already
+  established.
+
+  One real thing worth knowing for later: the canvas camera does NOT
+  auto-pan to a newly imported (or newly added, via the ordinary
+  "+ Add page" button — same underlying behavior, not something this
+  feature changed) page — `defaultPageWorkspacePosition` places each
+  page far to the right of the last, and after a bulk import lands the
+  creator on the LAST imported page, the canvas can appear to be looking
+  at empty black space until "Fit page" is clicked. Confirmed via a real
+  screenshot during manual verification; pre-existing behavior, not a
+  regression, not fixed here.
+
+  Verified with a unit test for `sortFilesByName` and a real (unmocked)
+  Playwright e2e test that imports 3 files out of filename order and
+  confirms 4 total pages (project's original + 3 imported) land in the
+  right reading order, with the last one genuinely holding a single
+  full-bleed panel (not the default four-grid layout, not empty).
+
 - **2026-09-15 — Novel Import cross-checks a project's EXISTING characters,
   not just duplicates within one parse (backlog #22).** Surfaced by the
   user asking "is continuing an existing manga supported yet" — investigated
@@ -716,6 +775,16 @@ character reuse via the Agent/manual placement: all already worked). One
 real, previously undocumented gap found and fixed:
 22. ~~Novel Import cross-checks a project's pre-existing characters, not
     just duplicates within one parse~~ — **done 2026-09-15**, see Timeline.
+23. ~~Bulk-import existing page images as new project pages, in order~~ —
+    **done 2026-09-15**, see Timeline. Follow-up to #22: the user then
+    asked whether importing an existing (externally-made) manga to
+    continue it was supported. Scoped down deliberately, with the user's
+    explicit sign-off, from "AI understands the imported pages" to "place
+    the images as real pages, then the creator connects them to the
+    ALREADY-existing character-reference/Art-Style-reference systems
+    themselves" — automatic vision-based character extraction or
+    OCR-based plot understanding from the imported bitmaps was explicitly
+    rejected as disproportionately complex/risky for what was asked.
 
 **Not in the backlog — deliberate, don't re-add without the user explicitly overriding**
 - PDF export (rejected design decision, not a gap — see `export/exportBook.ts`).
