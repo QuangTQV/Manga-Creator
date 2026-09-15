@@ -7,13 +7,53 @@
 import { cloneDoc, touch } from "./docHelpers";
 import { pageSize, panelBoundsPx, panelLocalToPage, pageToPanelLocal } from "./coords";
 import { clipPolygonHalfPlane, convexHull, polygonBounds, polygonToNormalized, polygonToPx } from "./geometry";
-import { newId } from "./factory";
+import { createPanelFromRect, newId } from "./factory";
 import { applyAttachments } from "./languageOps";
 import { createEmptyScene, syncPanelScene } from "./sceneOps";
-import type { ID, Panel, Point, ProjectDocument } from "./types";
+import type { ID, Panel, Point, ProjectDocument, Rect } from "./types";
 
 export const MIN_PANEL_POINTS = 3;
 export const MAX_PANEL_POINTS = 10;
+/** Below this (2% of the page on either axis) a drag reads as a stray
+ * click, not an intentional new panel. */
+const MIN_CUSTOM_PANEL_SIZE = 0.02;
+
+/**
+ * Draws a brand-new rectangular panel directly onto a page — the creator's
+ * own placement, not one of the layout presets. It's added on top, never
+ * replacing what's already there: overlapping an existing panel is a
+ * legitimate manga staging choice (a bleeding/breakout panel), not an
+ * error, so no overlap check is applied here.
+ *
+ * Rectangular is a deliberate starting point, not the whole feature: the
+ * result is an ordinary Panel — draggable into any polygon afterward with
+ * the same vertex-handle reshape tool (`reshapePanel`/`ShapeEditOverlay`)
+ * every other panel already uses. Splitting a full click-to-plot-a-polygon
+ * tool out of that existing, tested machinery is a smaller and safer step
+ * than building a second, parallel point-editing interaction.
+ */
+export function addCustomPanel(doc: ProjectDocument, pageId: ID, rect: Rect): { doc: ProjectDocument; panelId: ID } {
+  const page = doc.pages[pageId];
+  if (!page) throw new Error(`Unknown page: ${pageId}`);
+  const clamped = clampRectToPage(rect);
+  if (clamped.width < MIN_CUSTOM_PANEL_SIZE || clamped.height < MIN_CUSTOM_PANEL_SIZE) {
+    throw new Error("Drag out a larger area for the new panel");
+  }
+
+  const next = cloneDoc(doc);
+  const panel = createPanelFromRect(pageId, clamped);
+  next.panels[panel.id] = panel;
+  next.scenes[panel.id] = createEmptyScene(panel.id);
+  next.pages[pageId].panelIds.push(panel.id);
+  touch(next);
+  return { doc: next, panelId: panel.id };
+}
+
+function clampRectToPage(rect: Rect): Rect {
+  const x = clamp01(rect.x);
+  const y = clamp01(rect.y);
+  return { x, y, width: Math.min(Math.max(0, rect.width), 1 - x), height: Math.min(Math.max(0, rect.height), 1 - y) };
+}
 
 /** Replace a panel's polygon (normalized page coords, clamped to the page). */
 export function reshapePanel(doc: ProjectDocument, panelId: ID, points: Point[]): ProjectDocument {

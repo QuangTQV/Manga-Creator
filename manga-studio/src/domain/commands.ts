@@ -32,7 +32,7 @@ import {
   type NewLanguageAssetInput,
 } from "./languageOps";
 import { cloneDoc, panelPxRect, touch } from "./docHelpers";
-import { mergePanels, reshapePanel, splitPanel } from "./panelOps";
+import { addCustomPanel, mergePanels, reshapePanel, splitPanel } from "./panelOps";
 import { addSceneRelationship, setSceneCharacterSemantics, setSceneContinuity } from "./sceneOps";
 import { addCustomStyle, setProjectStyle } from "./styleOps";
 import { addWorkspaceItem, instanceToWorkspaceItem, removeWorkspaceItem, updateWorkspaceItem, workspaceItemToInstance } from "./workspaceOps";
@@ -49,6 +49,7 @@ import type {
   LayoutPresetId,
   Point,
   ProjectDocument,
+  Rect,
   CharacterState,
   InstanceStage,
   SceneDepth,
@@ -156,6 +157,7 @@ export type DomainCommand =
   | { type: "reshape-panel"; panelId: ID; points: Point[] }
   | { type: "split-panel"; panelId: ID; direction: "vertical" | "horizontal"; fraction?: number }
   | { type: "merge-panels"; panelAId: ID; panelBId: ID }
+  | { type: "add-custom-panel"; pageId: ID; rect: Rect }
   | { type: "set-page-layout"; pageId: ID; layout: LayoutPresetId }
   | { type: "reset-page-layout"; pageId: ID; layout: LayoutPresetId }
   | { type: "reorder-page"; pageId: ID; toIndex: number }
@@ -382,6 +384,10 @@ function applyCommandCore(doc: ProjectDocument, command: DomainCommand): Command
     }
     case "merge-panels":
       return { doc: mergePanels(doc, command.panelAId, command.panelBId) };
+    case "add-custom-panel": {
+      const result = addCustomPanel(doc, command.pageId, command.rect);
+      return { doc: result.doc, createdId: result.panelId };
+    }
     case "set-page-layout":
       return { doc: setPageLayout(doc, command.pageId, command.layout) };
     case "reset-page-layout":

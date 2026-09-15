@@ -171,3 +171,80 @@ describe("mergePanels", () => {
     ).toThrow();
   });
 });
+
+describe("addCustomPanel", () => {
+  it("adds a new panel on top, without touching the existing ones", () => {
+    const { doc, panelId } = docWithItemAt(0.5, 0.5);
+    const pageId = doc.panels[panelId].pageId;
+
+    const result = applyDomainCommand(doc, {
+      type: "add-custom-panel",
+      pageId,
+      rect: { x: 0.1, y: 0.1, width: 0.3, height: 0.2 },
+    });
+    const newPanelId = result.createdId as ID;
+
+    expect(result.doc.pages[pageId].panelIds).toEqual([panelId, newPanelId]);
+    expect(result.doc.panels[panelId]).toEqual(doc.panels[panelId]); // untouched
+    expect(result.doc.scenes[newPanelId]).toBeDefined();
+    expect(result.doc.panels[newPanelId].itemIds).toEqual([]);
+    const points = result.doc.panels[newPanelId].points;
+    const expected = [
+      { x: 0.1, y: 0.1 },
+      { x: 0.4, y: 0.1 },
+      { x: 0.4, y: 0.3 },
+      { x: 0.1, y: 0.3 },
+    ];
+    expect(points).toHaveLength(expected.length);
+    points.forEach((p, i) => {
+      expect(p.x).toBeCloseTo(expected[i].x, 10);
+      expect(p.y).toBeCloseTo(expected[i].y, 10);
+    });
+  });
+
+  it("is a real panel, immediately reshapable and splittable like any other", () => {
+    const { doc, panelId } = docWithItemAt(0.5, 0.5);
+    const pageId = doc.panels[panelId].pageId;
+    const added = applyDomainCommand(doc, { type: "add-custom-panel", pageId, rect: { x: 0.1, y: 0.1, width: 0.3, height: 0.2 } });
+    const newPanelId = added.createdId as ID;
+
+    const reshaped = applyDomainCommand(added.doc, {
+      type: "reshape-panel",
+      panelId: newPanelId,
+      points: [
+        { x: 0.1, y: 0.1 },
+        { x: 0.4, y: 0.1 },
+        { x: 0.25, y: 0.3 },
+      ],
+    }).doc;
+    expect(reshaped.panels[newPanelId].points).toHaveLength(3);
+
+    expect(() => applyDomainCommand(reshaped, { type: "split-panel", panelId: newPanelId, direction: "vertical" })).not.toThrow();
+  });
+
+  it("allows overlapping an existing panel — a deliberate manga staging choice, not an error", () => {
+    const { doc, panelId } = docWithItemAt(0.5, 0.5);
+    const pageId = doc.panels[panelId].pageId;
+    const existingRect = { x: 0.1, y: 0.1, width: 0.5, height: 0.5 };
+
+    expect(() => applyDomainCommand(doc, { type: "add-custom-panel", pageId, rect: existingRect })).not.toThrow();
+  });
+
+  it("clamps a rect that runs off the page instead of throwing", () => {
+    const { doc, panelId } = docWithItemAt(0.5, 0.5);
+    const pageId = doc.panels[panelId].pageId;
+
+    const result = applyDomainCommand(doc, { type: "add-custom-panel", pageId, rect: { x: 0.8, y: 0.8, width: 0.5, height: 0.5 } });
+    const newPanelId = result.createdId as ID;
+    const bounds = result.doc.panels[newPanelId].points;
+    expect(bounds.every((p) => p.x <= 1 && p.y <= 1)).toBe(true);
+  });
+
+  it("refuses a drag too small to be an intentional panel", () => {
+    const { doc, panelId } = docWithItemAt(0.5, 0.5);
+    const pageId = doc.panels[panelId].pageId;
+    expect(() =>
+      applyDomainCommand(doc, { type: "add-custom-panel", pageId, rect: { x: 0.5, y: 0.5, width: 0.001, height: 0.001 } }),
+    ).toThrow();
+  });
+});

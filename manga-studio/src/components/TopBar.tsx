@@ -23,6 +23,7 @@ import {
   ICON_STROKE,
   LiveIcon,
   NovelIcon,
+  PlusIcon,
   RedoIcon,
   SettingsIcon,
   StyleIcon,
@@ -209,6 +210,27 @@ export function TopBar() {
           if (page) useEditorStore.getState().dispatch({ type: "set-page-layout", pageId: page.id, layout: key as LayoutPresetId });
         }}
       />
+      <Button
+        variant="ghost"
+        icon={<PlusIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+        onClick={() => {
+          if (!page) return;
+          const result = useEditorStore.getState().dispatch({
+            type: "add-custom-panel",
+            pageId: page.id,
+            rect: { x: 0.3, y: 0.3, width: 0.4, height: 0.4 },
+          });
+          if (!result.createdId) return;
+          // Drops straight into the same vertex-handle reshape mode a
+          // double-click enters for any panel — drag the four corners into
+          // place, same tool, nothing new to learn.
+          useEditorStore.getState().select({ panelId: result.createdId });
+          useUiStore.getState().setShapeEditPanel(result.createdId);
+        }}
+        title="Add a new panel on top of the page — drag its corners into place"
+      >
+        Panel
+      </Button>
       <Dropdown
         label="Generate"
         accent

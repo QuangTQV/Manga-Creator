@@ -385,3 +385,16 @@ test("splitting and merging a panel round-trips the panel count", async ({ page 
 
   await expect(panelButtons).toHaveCount(4);
 });
+
+test("the Panel button draws a new custom panel and drops straight into reshape mode", async ({ page }) => {
+  const panelButtons = page.getByRole("button", { name: /^Panel \d+$/ });
+  await expect(panelButtons).toHaveCount(4);
+
+  await page.getByRole("button", { name: "Panel", exact: true }).click();
+
+  // A 5th panel exists, on top of the existing four, and is immediately
+  // selected — the Inspector shows its controls without a further click.
+  await expect(panelButtons).toHaveCount(5);
+  await expect(page.getByRole("heading", { name: "Panel", exact: true })).toBeVisible();
+  await expect(page.getByText("Split / merge")).toBeVisible();
+});

@@ -33,6 +33,24 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-15 — Draw a custom panel (backlog #7).** New `addCustomPanel`
+  in `domain/panelOps.ts` (`add-custom-panel` command) — a rectangular
+  panel dropped on top of a page at a given rect, reusing
+  `factory.ts`'s existing `createPanelFromRect` (the exact function
+  `applyLayout`/preset layouts already use, so there's no second panel-
+  construction code path). Deliberately did NOT build a full click-to-
+  plot-an-arbitrary-polygon canvas tool — `CanvasStage.tsx` is a large,
+  intricate pointer-event state machine (pan/select/shape-edit/pose-edit
+  all coexisting) and adding a new drag-gesture mode there directly was
+  judged too risky for the value versus the alternative actually shipped:
+  a "Panel" button in TopBar drops a new 40%-sized starter panel onto the
+  page and immediately enters the SAME vertex-handle reshape mode a
+  double-click already opens for any panel (`ShapeEditOverlay.tsx`,
+  unchanged) — so shaping/positioning the new panel reuses existing,
+  tested interaction code instead of a second, parallel one. Overlapping
+  an existing panel is allowed on purpose (a bleeding/breakout panel is a
+  legitimate manga staging choice, not a mistake to prevent) — no overlap
+  check.
 - **2026-09-15 — Split/merge panels (backlog #6).** New `splitPanel`/
   `mergePanels` in `domain/panelOps.ts`, working on ANY panel shape, not
   just rectangles: split is a real polygon clip (`clipPolygonHalfPlane`,
@@ -249,7 +267,7 @@ rather than leaving this list to drift from reality.
 
 **Tier 3 — bigger, needs careful scoping**
 6. ~~Split/merge panels~~ — **done 2026-09-15**, see Timeline.
-7. Draw a custom panel shape from scratch (not just reshaping a preset layout's panels) — new canvas interaction.
+7. ~~Draw a custom panel shape from scratch~~ — **done 2026-09-15**, see Timeline.
 8. Generic layer-effects system (blend modes/opacity stacking) — currently a fixed `EffectKind` enum; touches the render pipeline.
 
 **Tier 4 — needs subsystem study before touching (flagged risky in an earlier session)**
