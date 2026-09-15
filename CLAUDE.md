@@ -149,6 +149,11 @@ path). Don't treat these as bugs to fix on sight.
 
 ## Where to look for more
 
+- `MEMORY.md` (root) — **read this too, not just this file.** A running,
+  dated log of what's actually been built in this fork and why, gotchas
+  discovered the hard way, and what was deliberately rejected/deferred (so
+  you don't re-litigate a settled decision). Keep it updated after
+  meaningful work — see its own header for what qualifies.
 - `ARCHITECTURE.md` (root) — module boundaries, full agent pipeline diagram
 - `docs/RELEASE_FREEZE_V0.1.md` (root) — baseline, invariants, freeze rule, known limitations
 - `manga-studio/docs/AGENT_ARCHITECTURE.md` — tools, skills, planner, executor detail

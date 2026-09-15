@@ -1,5 +1,11 @@
 # Manga Studio — Verified Project State
 
+> **Historical record — not current.** This describes the *upstream*
+> `BotTony329/mangaharness` project before this repo forked it on
+> 2026-09-14 (back when it was still called "Manga Studio"); it was never
+> updated after the fork. For what's actually current, see `MEMORY.md` at
+> the repo root.
+
 Last updated: 2026-08-21 (character transparency pipeline repaired — see D30)
 
 ## Current status

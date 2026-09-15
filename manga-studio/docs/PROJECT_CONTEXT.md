@@ -1,5 +1,11 @@
 # Kumanga Engineering Context
 
+> **Historical record — not current.** This document served the purpose
+> described below for the *upstream* `BotTony329/mangaharness` project;
+> it was never updated after this repo forked it on 2026-09-14, so
+> everything below predates the fork. `MEMORY.md` at the repo root is now
+> where that "update after every meaningful task" convention actually lives.
+
 > Read this first, then check `git log --oneline -10`. If this document
 > disagrees with the code, the code wins — correct this file before implementing.
 > Update it at the END of every meaningful task, before reporting.
