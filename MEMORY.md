@@ -105,6 +105,26 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
   then pushed to `QuangTQV/Manga-Creator`. This is where this fork's own
   history starts.
 
+## Crowdfunding roadmap vs. actual code (audited 2026-09-15)
+
+The marketing/crowdfunding site (`kumanga-website.vercel.app`) lists 7 items
+under "Next — funded by the campaign" (i.e. its author's claim of what's
+*not* built yet). Audited against this repo's actual code on 2026-09-15 —
+the site is stale in both directions (some items already done, effort
+levels vary a lot within a single bullet):
+
+| Roadmap item | Actual status |
+|---|---|
+| PDF, webtoon-strip and print-ready export | **Not built.** PDF was explicitly *rejected* as a format (see `export/exportBook.ts` docstring) — CBZ was chosen instead. No webtoon-strip (long vertical concat), no bleed/CMYK/DPI options. |
+| Multi-project management | **Already done**, unrelated to the campaign — full CRUD (`editor/projectsStore.ts`, `ProjectsPanel.tsx`) predates this claim. |
+| …& project archive import/export | **Not built.** No project-level `.json`/`.zip` download+reupload — only manga-page/book export exists. |
+| Custom panel drawing, split & merge | **Not built.** `panelOps.ts` only has `reshapePanel` (drag existing points) and `movePanelPoint` — no draw-from-blank, no split/merge commands anywhere. |
+| Advanced typography & layer effects | **Partial.** Bubbles already have `fontSize`/`fontFamily`/`textAlign`/`vertical` (`types.ts` `BubbleStyle`); missing bold/italic/letter-spacing. Effects are a fixed enum (`speed-lines`/`focus-lines`/`screentone`/`impact-burst`/`emotion`), no generic blend-mode/layer-stacking system. |
+| Long-form story tools | **Already done** — this *is* Novel Import (2026-09-14 entry above), unrelated to the campaign. |
+| …& richer agent orchestration | **Not built.** Still exactly one Creative-Director call per run (`agent-v3/run.ts`'s documented design) — no multi-turn/autonomous planning loop. |
+| Collaboration and shared asset libraries | **Not built, by design** — contradicts the no-accounts/local-first philosophy; see "Deliberately not built" below. |
+| Mobile & tablet support | **Not built.** No touch handlers, no responsive breakpoints anywhere in the editor chrome — desktop-canvas-only. |
+
 ## Known gotchas (learned the hard way — save yourself the rediscovery)
 
 - **Dual lockfile.** Root `package-lock.json` must **never** be committed
@@ -148,8 +168,8 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
   the local-first, no-accounts design philosophy directly.
 - **Mobile/tablet support.** Desktop-canvas-only today; no touch handling,
   no responsive breakpoints anywhere in the editor chrome.
-- **Custom panel drawing from scratch, split/merge panels, a generic
-  layer-effects system (blend modes), bold/italic/letter-spacing
-  typography.** Audited against the project's own crowdfunding roadmap
-  (2026-09-15) and confirmed absent — genuine gaps, not yet started, no
-  design decisions made about them yet.
+- **Custom panel drawing/split/merge, generic layer effects, typography
+  polish (bold/italic/letter-spacing), PDF/webtoon-strip/print export,
+  project archive import/export, richer multi-turn agent orchestration.**
+  Genuine gaps, not yet started, no design decisions made — see the
+  crowdfunding roadmap table above for the full breakdown.
