@@ -37,6 +37,7 @@ import { PuppetControls } from "./PuppetControls";
 import { isPuppetInstance } from "@/domain/puppetOps";
 import { InstanceStageControls } from "./InstanceStageControls";
 import { ToneControls } from "./ToneControls";
+import { BlendModeSelect } from "./BlendModeSelect";
 import type { ReorderDirection } from "@/domain/itemOps";
 import type { DomainCommand } from "@/domain/commands";
 import type {
@@ -394,6 +395,10 @@ function ItemInspector({ item, asset }: { item: PanelItem; asset?: SourceAsset }
           onChange={(e) => dispatch({ type: "set-instance-props", instanceId: id, patch: { opacity: Number(e.target.value) } })}
         />
       </div>
+      <BlendModeSelect
+        value={item.blendMode}
+        onChange={(blendMode) => dispatch({ type: "set-instance-props", instanceId: id, patch: { blendMode } })}
+      />
 
       {item.kind === "asset" && asset && (
         <div>

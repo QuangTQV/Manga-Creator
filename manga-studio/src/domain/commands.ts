@@ -37,6 +37,7 @@ import { addSceneRelationship, setSceneCharacterSemantics, setSceneContinuity } 
 import { addCustomStyle, setProjectStyle } from "./styleOps";
 import { addWorkspaceItem, instanceToWorkspaceItem, removeWorkspaceItem, updateWorkspaceItem, workspaceItemToInstance } from "./workspaceOps";
 import type {
+  BlendMode,
   BubbleStyle,
   BubbleType,
   CropMode,
@@ -120,7 +121,11 @@ export type DomainCommand =
   | { type: "swap-instance-asset"; instanceId: ID; assetId: ID }
   | { type: "set-framing"; instanceId: ID; cropMode: CropMode }
   | { type: "update-instance-transform"; instanceId: ID; patch: { cx?: number; cy?: number; width?: number; height?: number; rotation?: number } }
-  | { type: "set-instance-props"; instanceId: ID; patch: { opacity?: number; flipX?: boolean; visible?: boolean; locked?: boolean } }
+  | {
+      type: "set-instance-props";
+      instanceId: ID;
+      patch: { opacity?: number; flipX?: boolean; visible?: boolean; locked?: boolean; blendMode?: BlendMode };
+    }
   | { type: "set-panel-background"; panelId: ID; assetId: ID; location?: string; sourcePanelId?: ID }
   | {
       type: "compose-character";

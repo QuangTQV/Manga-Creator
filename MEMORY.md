@@ -33,6 +33,39 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-15 — Blend modes: a generic layer-effects system (backlog
+  #8).** New `blendMode?: BlendMode` on `PanelItemBase` (`domain/types.ts`)
+  — applies uniformly to every item kind (asset, bubble, effect, tone)
+  because it's a property of BEING a layer, not of what the layer
+  contains; `EffectKind`'s fixed enum (speed-lines/screentone/etc.) is
+  untouched, this is additive alongside it, not a replacement. 12 common
+  blend modes (multiply, screen, overlay, darken, lighten, color-dodge,
+  color-burn, hard-light, soft-light, difference, exclusion, plus
+  "normal") — real `GlobalCompositeOperation` canvas strings, no
+  translation layer except the "normal" sentinel (`render/blendMode.ts`'s
+  `blendModeToCanvas`, unit tested). Applied ONCE, centrally, in
+  `render/PanelRenderer.tsx`'s `renderItem` by wrapping a rendered node in
+  a `<Group globalCompositeOperation={...}>` — not threaded into each of
+  the 5 node components (AssetNode/BubbleNode/EffectNode/ToneNode/
+  PuppetNode) individually. The default (no blendMode set) skips the
+  wrapping Group entirely, so the overwhelmingly common case renders
+  byte-identical to before this existed. New shared `BlendModeSelect.tsx`
+  dropdown, used from both `InspectorPanel.tsx` (asset/bubble/effect) and
+  `ToneControls.tsx` (tone has its own patch path, `update-tone`).
+  **Known test gap, stated plainly**: covered by domain tests (state
+  persistence, the canvas-string mapping) and an e2e test that the
+  dropdown works and persists through the store — NOT independently
+  pixel-verified that Konva's Group-level `globalCompositeOperation`
+  actually composites correctly on screen (building that proof turned out
+  to need either exposing internal app state to `window` for Playwright,
+  or Node-side PNG pixel decoding neither of which existed in this repo
+  already — judged not worth adding for this). The implementation follows
+  Konva's own documented, standard pattern for per-node blend modes
+  (`.cache()` isn't required for simple compositing operations like
+  multiply/screen — only for masking-style ones, which is why the
+  UNRELATED existing tone-mask code manually manages its own offscreen
+  buffer instead of using this). If a rendered blend mode is ever reported
+  as visually wrong, start here.
 - **2026-09-15 — Draw a custom panel (backlog #7).** New `addCustomPanel`
   in `domain/panelOps.ts` (`add-custom-panel` command) — a rectangular
   panel dropped on top of a page at a given rect, reusing
@@ -268,7 +301,7 @@ rather than leaving this list to drift from reality.
 **Tier 3 — bigger, needs careful scoping**
 6. ~~Split/merge panels~~ — **done 2026-09-15**, see Timeline.
 7. ~~Draw a custom panel shape from scratch~~ — **done 2026-09-15**, see Timeline.
-8. Generic layer-effects system (blend modes/opacity stacking) — currently a fixed `EffectKind` enum; touches the render pipeline.
+8. ~~Generic layer-effects system (blend modes)~~ — **done 2026-09-15**, see Timeline. (Tier 3 fully done: #6, #7, #8 all shipped.)
 
 **Tier 4 — needs subsystem study before touching (flagged risky in an earlier session)**
 9. `create_interaction` Agent tool.

@@ -26,6 +26,7 @@ import { useEditorStore } from "@/editor/store";
 import { useUiStore } from "@/editor/uiStore";
 import { AlertIcon, ICON_STROKE, MaskIcon } from "../ui/icons";
 import { ToneSwatch } from "../library/ToneSwatch";
+import { BlendModeSelect } from "./BlendModeSelect";
 
 const PATTERN_TYPES: { id: ProceduralToneType; label: string }[] = [
   { id: "dot", label: "Dots" },
@@ -111,6 +112,7 @@ export function ToneControls({ item, doc }: { item: ToneItem; doc: ProjectDocume
           onChange={(event) => update({ opacity: Number(event.target.value) })}
         />
       </div>
+      <BlendModeSelect value={item.blendMode} onChange={(blendMode) => update({ blendMode })} />
 
       {procedural && (
         <>

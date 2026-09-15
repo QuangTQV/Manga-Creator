@@ -485,6 +485,29 @@ export interface PanelScene {
 
 export type CropMode = "fit" | "fill" | "upper-body" | "face" | "custom";
 
+/**
+ * A curated subset of standard canvas compositing operations — every value
+ * here (besides `"normal"`, this module's own sentinel) is a real
+ * `GlobalCompositeOperation` string, passed straight through to Konva/canvas
+ * with no translation layer. `"normal"` is what an absent `blendMode` also
+ * means; it maps to canvas's own `"source-over"` (see `blendModeToCanvas`
+ * in `render/blendMode.ts`) — kept as an explicit value here so the
+ * Inspector's dropdown has something to show as selected.
+ */
+export type BlendMode =
+  | "normal"
+  | "multiply"
+  | "screen"
+  | "overlay"
+  | "darken"
+  | "lighten"
+  | "color-dodge"
+  | "color-burn"
+  | "hard-light"
+  | "soft-light"
+  | "difference"
+  | "exclusion";
+
 interface PanelItemBase {
   id: ID;
   panelId: ID;
@@ -495,6 +518,11 @@ interface PanelItemBase {
   height: number;
   rotation: number;
   opacity: number;
+  /** How this layer composites with everything below it in the panel —
+   * absent/`"normal"` means today's default (plain alpha-over). Applies
+   * uniformly to every item kind (asset, bubble, effect, tone): this is a
+   * property of being a layer, not of what the layer contains. */
+  blendMode?: BlendMode;
   locked?: boolean;
   visible?: boolean;
   /**

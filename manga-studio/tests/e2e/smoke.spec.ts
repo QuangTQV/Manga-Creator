@@ -398,3 +398,20 @@ test("the Panel button draws a new custom panel and drops straight into reshape 
   await expect(page.getByRole("heading", { name: "Panel", exact: true })).toBeVisible();
   await expect(page.getByText("Split / merge")).toBeVisible();
 });
+
+test("blend mode is available and persists on a placed item, not just asset instances", async ({ page }) => {
+  await page.getByRole("combobox", { name: "Bubble" }).selectOption("speech");
+  await page.getByRole("button", { name: "Position", exact: true }).click();
+
+  const blendMode = page.getByRole("combobox", { name: "Blend mode" });
+  await expect(blendMode).toHaveValue("normal");
+
+  await blendMode.selectOption("multiply");
+  await expect(blendMode).toHaveValue("multiply");
+
+  // A real store round-trip: switch tabs away and back, same as the
+  // bold/italic persistence check.
+  await page.getByRole("button", { name: "Look", exact: true }).click();
+  await page.getByRole("button", { name: "Position", exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "Blend mode" })).toHaveValue("multiply");
+});

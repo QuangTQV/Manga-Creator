@@ -328,7 +328,7 @@ export function updateBubble(
 export function updateItemProps(
   doc: ProjectDocument,
   itemId: ID,
-  patch: Partial<Pick<AssetInstance, "opacity" | "flipX" | "visible" | "locked">> &
+  patch: Partial<Pick<AssetInstance, "opacity" | "flipX" | "visible" | "locked" | "blendMode">> &
     Partial<Pick<EffectItem, "params">>,
 ): ProjectDocument {
   const next = cloneDoc(doc);

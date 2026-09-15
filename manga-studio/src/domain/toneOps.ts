@@ -12,7 +12,7 @@ import { cloneDoc, panelPxRect, touch } from "./docHelpers";
 import { newId } from "./factory";
 import { insertItem } from "./itemOps";
 import { normalizeToneParams, type ProceduralToneParams, type ToneMask, type ToneRef, tonePreset } from "./tones";
-import type { ID, ProjectDocument, ToneItem } from "./types";
+import type { BlendMode, ID, ProjectDocument, ToneItem } from "./types";
 
 export interface AddToneInput {
   panelId: ID;
@@ -74,6 +74,7 @@ export function addTone(doc: ProjectDocument, input: AddToneInput): { doc: Proje
 export interface TonePatch {
   params?: Partial<ProceduralToneParams>;
   opacity?: number;
+  blendMode?: BlendMode;
   scale?: number;
   rotation?: number;
   invert?: boolean;
@@ -100,6 +101,7 @@ export function updateTone(doc: ProjectDocument, itemId: ID, patch: TonePatch): 
     item.tone = { ...item.tone, tileable: patch.tileable };
   }
   if (patch.opacity !== undefined) item.opacity = Math.min(1, Math.max(0, patch.opacity));
+  if (patch.blendMode !== undefined) item.blendMode = patch.blendMode;
   if (patch.scale !== undefined) item.scale = Math.min(8, Math.max(0.05, patch.scale));
   if (patch.rotation !== undefined) item.rotation = patch.rotation;
   if (patch.invert !== undefined) item.invert = patch.invert;

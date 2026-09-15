@@ -238,4 +238,17 @@ describe("masking is a stored region, not a change to the pixels", () => {
     });
     expect((cleared.doc.items[added.createdId!] as ToneItem).mask).toBeUndefined();
   });
+
+  it("blend mode round-trips through update-tone, same as any other item kind", () => {
+    const { doc, panelId } = page();
+    const added = applyDomainCommand(doc, { type: "add-tone", panelId, presetId: "dot-30" });
+    expect((added.doc.items[added.createdId!] as ToneItem).blendMode).toBeUndefined();
+
+    const patched = applyDomainCommand(added.doc, {
+      type: "update-tone",
+      itemId: added.createdId!,
+      patch: { blendMode: "multiply" },
+    });
+    expect((patched.doc.items[added.createdId!] as ToneItem).blendMode).toBe("multiply");
+  });
 });

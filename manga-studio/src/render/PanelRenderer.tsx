@@ -10,6 +10,7 @@ import { BubbleNode } from "./BubbleNode";
 import { EffectNode } from "./EffectNode";
 import { ToneNode } from "./ToneNode";
 import { useImageElement } from "./useImageElement";
+import { blendModeToCanvas } from "./blendMode";
 
 export interface PanelInteraction {
   selectedItemId?: ID;
@@ -123,7 +124,32 @@ function CameraRenderNode({ imageUrl, width, height }: { imageUrl: string; width
   return <KonvaImage image={image} width={width} height={height} listening={false} />;
 }
 
+/**
+ * Blend mode is a property of BEING a layer, not of what the layer
+ * contains, so it's applied here once for every item kind rather than
+ * threaded into each node component individually. The default
+ * (`"source-over"`, no `blendMode` set) skips the wrapping Group
+ * entirely — the overwhelmingly common case renders byte-identical to
+ * before this existed.
+ */
 function renderItem(
+  doc: ProjectDocument,
+  panelId: ID,
+  item: PanelItem,
+  interactive: boolean,
+  interaction: PanelInteraction,
+) {
+  const node = renderItemNode(doc, panelId, item, interactive, interaction);
+  const composite = blendModeToCanvas(item.blendMode);
+  if (composite === "source-over") return node;
+  return (
+    <Group key={`blend-${item.id}`} globalCompositeOperation={composite}>
+      {node}
+    </Group>
+  );
+}
+
+function renderItemNode(
   doc: ProjectDocument,
   panelId: ID,
   item: PanelItem,
