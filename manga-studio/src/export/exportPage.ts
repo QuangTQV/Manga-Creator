@@ -22,7 +22,7 @@ import { PAGE_STAGE_ID } from "@/render/constants";
  * showing (switch `currentPageId` and wait a frame first if it might not
  * be — see `exportBook.ts`, which walks every page this way).
  */
-export function capturePageDataUrl(doc: ProjectDocument, pageId: string, scale: 1 | 2): string {
+export function capturePageDataUrl(doc: ProjectDocument, pageId: string, scale: number): string {
   const stage = Konva.stages.find((s) => s.attrs.id === PAGE_STAGE_ID);
   if (!stage) throw new Error("Canvas is not ready");
 

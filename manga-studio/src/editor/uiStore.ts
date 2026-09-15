@@ -103,6 +103,8 @@ interface UiState {
   chaptersOpen: boolean;
   /** Page Overview: every page in the book at once, as real thumbnails. */
   pageOverviewOpen: boolean;
+  /** Print Export: DPI + physical page width + bleed, for sending pages to a physical printer. */
+  printExportOpen: boolean;
   /**
    * Advanced / Developer surface.
    *
@@ -148,6 +150,8 @@ interface UiState {
   closeChapters(): void;
   openPageOverview(): void;
   closePageOverview(): void;
+  openPrintExport(): void;
+  closePrintExport(): void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -172,6 +176,7 @@ export const useUiStore = create<UiState>((set) => ({
   historyOpen: false,
   chaptersOpen: false,
   pageOverviewOpen: false,
+  printExportOpen: false,
   advancedMode: false,
   openGenerator: (request) => set({ generator: request }),
   closeGenerator: () => set({ generator: null }),
@@ -210,4 +215,6 @@ export const useUiStore = create<UiState>((set) => ({
   closeChapters: () => set({ chaptersOpen: false }),
   openPageOverview: () => set({ pageOverviewOpen: true }),
   closePageOverview: () => set({ pageOverviewOpen: false }),
+  openPrintExport: () => set({ printExportOpen: true }),
+  closePrintExport: () => set({ printExportOpen: false }),
 }));

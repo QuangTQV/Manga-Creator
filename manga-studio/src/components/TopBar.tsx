@@ -25,6 +25,7 @@ import {
   NovelIcon,
   OverviewIcon,
   PlusIcon,
+  PrintIcon,
   RedoIcon,
   SettingsIcon,
   StyleIcon,
@@ -100,6 +101,7 @@ export function TopBar() {
   const openNovelImport = useUiStore((s) => s.openNovelImport);
   const openChapters = useUiStore((s) => s.openChapters);
   const openPageOverview = useUiStore((s) => s.openPageOverview);
+  const openPrintExport = useUiStore((s) => s.openPrintExport);
   const openHistory = useUiStore((s) => s.openHistory);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<string | null>(null);
@@ -273,6 +275,12 @@ export function TopBar() {
         title="See every page in the book at once, for reviewing pacing"
         onClick={openPageOverview}
         icon={<OverviewIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+      />
+      <IconButton
+        label="Print"
+        title="Export at a real print DPI, with bleed, for sending to a physical printer"
+        onClick={openPrintExport}
+        icon={<PrintIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
       />
       <Dropdown
         label="Bubble"

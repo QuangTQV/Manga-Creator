@@ -55,6 +55,7 @@ export {
   History as HistoryIcon,
   BookMarked as ChaptersIcon,
   LayoutGrid as OverviewIcon,
+  Printer as PrintIcon,
 } from "lucide-react";
 
 /** Toolbar and inline icon size. 16px reads cleanly on a 32px control. */

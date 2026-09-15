@@ -472,3 +472,25 @@ test("a custom font uploads and becomes selectable on a bubble", async ({ page }
   // must not crash the app — it just keeps the fallback glyphs on screen.
   expect(pageErrors).toEqual([]);
 });
+
+test("print export renders a real page at a DPI-derived size with bleed", async ({ page }) => {
+  // Runs the actual canvas pipeline (capture -> Image decode -> the
+  // edge-stretching bleed draw in printBleed.ts) in a real browser — the
+  // one thing a jsdom-based vitest run can't do (see the webtoon export
+  // test above for the same reasoning).
+  await expect(page.locator("canvas").first()).toBeVisible();
+
+  await page.getByRole("button", { name: "Print" }).click();
+  await expect(page.getByRole("heading", { name: "Print Export" })).toBeVisible();
+
+  // Defaults (6.625in wide, 300dpi, 0.125in bleed) against the project's
+  // default 1200x1800px page: scale = 6.625*300/1200 = 1.65625, giving a
+  // 1988x2981px page plus a 38px bleed margin (0.125*300, rounded) on
+  // every side.
+  await expect(page.getByText(/^Output: /)).toHaveText("Output: 2064×3057px (bleed included)");
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export current page (PNG)" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/-print@300dpi\.png$/);
+});

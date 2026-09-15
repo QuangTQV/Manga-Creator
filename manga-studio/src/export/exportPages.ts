@@ -39,7 +39,7 @@ function nextPaint(): Promise<void> {
  * `chapterOps.ts` — to scope the export to just those pages.
  */
 export async function captureAllPages(
-  scale: 1 | 2,
+  scale: number,
   onProgress?: (progress: ExportProgress) => void,
   pageIds?: string[],
 ): Promise<string[]> {

@@ -33,6 +33,53 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-15 — Print-ready export: DPI + synthetic bleed (backlog #16).**
+  New `export/exportPrint.ts` (`exportCurrentPagePrintPng`,
+  `exportBookPrintCbz`) and `export/printBleed.ts`, wired into a new
+  `PrintExportDialog.tsx` (opened from a new "Print" TopBar button).
+  Deliberately added ZERO new `ProjectSettings` fields — physical page
+  width (inches), target DPI, and bleed (inches) are asked FRESH at
+  export time and used only to compute
+  `scale = (physicalWidthInches * dpi) / doc.project.settings.pageWidth`,
+  fed into the existing `capturePageDataUrl`/`captureAllPages` capture
+  pipeline. Rejected persisting them on the project: page pixel
+  dimensions have no physical unit today, and per the #13/#14 precedent
+  a new persisted field means a schema migration for a value that, once
+  set, panels' normalized coordinates would implicitly depend on —
+  keeping it export-only avoids that risk entirely, at the cost of
+  re-entering the numbers each export (acceptable; they default
+  sensibly — 6.625in/300dpi/0.125in bleed — and are remembered for the
+  session in the dialog's own state).
+
+  `capturePageDataUrl`/`captureAllPages`'s `scale` parameter was widened
+  from the literal union `1 | 2` to `number` — that restriction was only
+  ever a UI convenience for the quick-export dropdown (`TopBar.tsx`
+  still passes just 1 or 2 there); the underlying math
+  (`pixelRatio: scale / stageScale`) already worked for any positive
+  scale, so DPI-derived fractional/large scales needed no changes below
+  the type signature.
+
+  Bleed is SYNTHETIC, not real: nothing in the domain model lets a
+  panel's art actually extend past the page edge (panels are hard-
+  clamped to normalized 0..1 page coordinates), so there is nothing to
+  "bleed" in the traditional print sense. `printBleed.ts` approximates
+  it the standard "poor man's bleed" way instead — after capture, draw
+  the page onto a larger canvas and stretch the outermost 1px edge
+  strips/corner pixels outward via `ctx.drawImage()` with a mismatched
+  source/destination rectangle size, no image-processing library
+  needed. This was explicitly flagged to the user as a real
+  architectural tradeoff (real bleed would require letting panels
+  overhang the page, a much bigger domain change) before implementing —
+  user approved proceeding with "whatever is optimal".
+
+  Pure math (`computePrintScale`, `computeBleedPx`) is unit tested;
+  the actual canvas drawing isn't (this codebase's vitest environment is
+  `"node"`, no real canvas — same reasoning `checkWebtoonCanvasLimit`
+  was already split out for). Verified instead by a new Playwright e2e
+  test that opens the dialog, checks the live pixel-dimension preview
+  matches the DPI math by hand, and exports a real page through the
+  actual bleed-drawing code in a real browser.
+
 - **2026-09-15 — Custom font upload for lettering (backlog #14).** New
   `FontAsset` (`domain/types.ts`, schema v14→v15) — deliberately its own
   `doc.fonts` collection, not shoehorned into `SourceAsset` (which is
@@ -371,10 +418,7 @@ rather than leaving this list to drift from reality.
 15. Furigana/ruby text on bubbles — confirmed fully absent (no field, no
     render support); genre-authentic for real Japanese-style manga, absent
     entirely today.
-16. Print-ready export (bleed margin + target DPI) — NOT the same question
-    as the already-settled "no PDF" decision (`export/exportBook.ts`); this
-    is about the existing PNG export gaining bleed/DPI options, format
-    unchanged.
+16. ~~Print-ready export (bleed margin + target DPI)~~ — **done 2026-09-15**, see Timeline.
 17. Character "model sheet" view — `CharactersTab.tsx` already shows a
     per-character rendered-states gallery (collapses multiple variants to
     a count label); a dedicated side-by-side model-sheet/export view and
