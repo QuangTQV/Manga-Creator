@@ -55,6 +55,7 @@ export function PagesBar() {
               dragOverId === page.id ? "border-2 border-[var(--accent)]" : ""
             }`}
             title={`${page.name} — drag to reorder`}
+            aria-current={page.id === currentPageId ? "page" : undefined}
           >
             {page.index + 1}
           </button>

@@ -23,6 +23,7 @@ import {
   ICON_STROKE,
   LiveIcon,
   NovelIcon,
+  OverviewIcon,
   PlusIcon,
   RedoIcon,
   SettingsIcon,
@@ -98,6 +99,7 @@ export function TopBar() {
   const openLiveAi = useUiStore((s) => s.openLiveAi);
   const openNovelImport = useUiStore((s) => s.openNovelImport);
   const openChapters = useUiStore((s) => s.openChapters);
+  const openPageOverview = useUiStore((s) => s.openPageOverview);
   const openHistory = useUiStore((s) => s.openHistory);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<string | null>(null);
@@ -265,6 +267,12 @@ export function TopBar() {
         title="Organize pages into named chapters; export any one on its own"
         onClick={openChapters}
         icon={<ChaptersIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+      />
+      <IconButton
+        label="Overview"
+        title="See every page in the book at once, for reviewing pacing"
+        onClick={openPageOverview}
+        icon={<OverviewIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
       />
       <Dropdown
         label="Bubble"

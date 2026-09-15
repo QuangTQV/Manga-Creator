@@ -424,3 +424,22 @@ test("blend mode is available and persists on a placed item, not just asset inst
   await page.getByRole("button", { name: "Position", exact: true }).click();
   await expect(page.getByRole("combobox", { name: "Blend mode" })).toHaveValue("multiply");
 });
+
+test("Page Overview renders a real thumbnail per page and jumps to the one you click", async ({ page }) => {
+  // Real Konva capture, same requirement as the webtoon export test.
+  await expect(page.locator("canvas").first()).toBeVisible();
+  await page.getByRole("button", { name: "Add page" }).click();
+
+  await page.getByRole("button", { name: "Overview" }).click();
+  await expect(page.getByRole("heading", { name: "Page Overview" })).toBeVisible();
+
+  const thumbnails = page.locator('img[alt^="Page "]');
+  await expect(thumbnails).toHaveCount(2);
+  // Real page content, not a placeholder: a genuine data URL.
+  expect(await thumbnails.first().getAttribute("src")).toMatch(/^data:image\/png;base64,/);
+
+  await thumbnails.nth(1).click();
+
+  await expect(page.getByRole("heading", { name: "Page Overview" })).not.toBeVisible();
+  await expect(page.locator('footer button[title^="Page 2"]')).toHaveAttribute("aria-current", "page");
+});

@@ -101,6 +101,8 @@ interface UiState {
   historyOpen: boolean;
   /** Chapters: organize pages into named, orderable sections; export any one on its own. */
   chaptersOpen: boolean;
+  /** Page Overview: every page in the book at once, as real thumbnails. */
+  pageOverviewOpen: boolean;
   /**
    * Advanced / Developer surface.
    *
@@ -144,6 +146,8 @@ interface UiState {
   closeHistory(): void;
   openChapters(): void;
   closeChapters(): void;
+  openPageOverview(): void;
+  closePageOverview(): void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -167,6 +171,7 @@ export const useUiStore = create<UiState>((set) => ({
   novelImportOpen: false,
   historyOpen: false,
   chaptersOpen: false,
+  pageOverviewOpen: false,
   advancedMode: false,
   openGenerator: (request) => set({ generator: request }),
   closeGenerator: () => set({ generator: null }),
@@ -203,4 +208,6 @@ export const useUiStore = create<UiState>((set) => ({
   closeHistory: () => set({ historyOpen: false }),
   openChapters: () => set({ chaptersOpen: true }),
   closeChapters: () => set({ chaptersOpen: false }),
+  openPageOverview: () => set({ pageOverviewOpen: true }),
+  closePageOverview: () => set({ pageOverviewOpen: false }),
 }));

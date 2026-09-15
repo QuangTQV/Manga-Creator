@@ -33,6 +33,18 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-15 — Page Overview / storyboard grid (backlog #13).** New
+  `PageOverviewDialog.tsx` (TopBar, "Overview") shows every page as a real
+  rendered thumbnail (not the 44px strip in `PagesBar.tsx`, which is for
+  navigation, not reviewing pacing) — click one to jump straight to that
+  page. Deliberately reuses `captureAllPages` (the same walk-every-page
+  capture the CBZ/webtoon exporters already use) instead of a second
+  rendering path, regenerated fresh every time the dialog opens rather
+  than cached — simpler than invalidation, and cheap enough for a
+  manually-opened dialog at the page counts a manga chapter actually has.
+  Added `aria-current="page"` to `PagesBar.tsx`'s page buttons as a side
+  effect of needing a reliable e2e signal for "which page is now open" —
+  a real accessibility improvement, not just a test hook.
 - **2026-09-15 — Blend modes: a generic layer-effects system (backlog
   #8).** New `blendMode?: BlendMode` on `PanelItemBase` (`domain/types.ts`)
   — applies uniformly to every item kind (asset, bubble, effect, tone)
@@ -310,6 +322,25 @@ rather than leaving this list to drift from reality.
 **Tier 5 — architecture-level, needs its own scoping conversation first**
 11. Multi-turn/autonomous Agent orchestration (beyond today's one-Creative-Director-call-per-run design).
 12. Mobile/tablet support — low priority for a canvas-precision editing tool.
+
+**Tier 6 — "professional manga tool" gaps (audited 2026-09-15, user-confirmed
+"do what you think is necessary" — working top-down same as before)**
+13. ~~Page Overview / storyboard grid~~ — **done 2026-09-15**, see Timeline.
+14. Custom font upload for bubble/SFX lettering — `BubbleStyle.fontFamily` is
+    a CSS name only today, resolved against whatever's already installed;
+    no font-FILE upload, no `AssetCategory` for it, no `@font-face`
+    injection.
+15. Furigana/ruby text on bubbles — confirmed fully absent (no field, no
+    render support); genre-authentic for real Japanese-style manga, absent
+    entirely today.
+16. Print-ready export (bleed margin + target DPI) — NOT the same question
+    as the already-settled "no PDF" decision (`export/exportBook.ts`); this
+    is about the existing PNG export gaining bleed/DPI options, format
+    unchanged.
+17. Character "model sheet" view — `CharactersTab.tsx` already shows a
+    per-character rendered-states gallery (collapses multiple variants to
+    a count label); a dedicated side-by-side model-sheet/export view and
+    any drift-detection between generations do not exist.
 
 **Not in the backlog — deliberate, don't re-add without the user explicitly overriding**
 - PDF export (rejected design decision, not a gap — see `export/exportBook.ts`).
