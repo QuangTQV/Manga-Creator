@@ -33,6 +33,46 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-15 — Multi-candidate generation (backlog #18, from the
+  MangaFlow feature audit).** `GeneratorDialog.tsx`'s `generate()` fires 1
+  (default, unchanged) to 4 independent `generateImage()` calls via
+  `Promise.allSettled` — no provider adapter batches multiple images in one
+  request, confirmed by tracing the full pipeline (`services/generation.ts`
+  → `ai/generate.ts` → every `ImageGenerationProvider` adapter) before
+  writing any code, so N sequential/parallel single-image calls from the
+  client was the only real option, not a smaller "just thread a `count`
+  param through" change. New `ai/candidateBatch.ts` (`summarizeCandidateOutcomes`,
+  unit tested) turns the settled outcomes into `{succeeded, partialFailureNote,
+  allFailed, firstFailureReason}` — one candidate's provider error never
+  hides the others that succeeded; only a 100%-failure batch surfaces the
+  old single hard-error UI.
+
+  Deliberately did NOT add a "favorite" flag or a batch/grouping id to
+  `SourceAsset` (no domain/schema change at all) after checking whether one
+  already existed — instead, when more than one candidate was requested,
+  each candidate card gets its OWN independent "Add to Library" button;
+  clicking one runs the exact same single-asset registration path
+  (`registerGeneratedAsset`) that a single-result generation always has,
+  marks that card "Added ✓", and leaves the dialog open so more can be kept.
+  Un-added candidates are simply never uploaded/registered — no orphaned
+  "rejected candidate" rows cluttering the library. When only 1 candidate
+  was requested (the default, unchanged path), "Add to Library" still
+  registers-and-closes immediately, byte-for-byte the old behavior — nobody
+  who never touches the new count selector can tell anything changed.
+
+  `replaceAssetId`/`targetInstanceId` requests (regenerate-one-asset,
+  fill-one-instance) force candidate count back to 1 (`singleTargetOnly`)
+  rather than trying to solve "which of N replaces the one target" — those
+  are inherently single-target operations, a real scope cut, not an
+  oversight.
+
+  Verified with a Playwright test that mocks `/api/provider/status` +
+  `/api/generate` (same boundary-isolation as the font-upload and Model
+  Sheet tests — this doesn't test AI providers, it tests Kumanga's own
+  batching/UI code) confirming 3 requested candidates fire 3 calls, adding
+  2 of 3 keeps the dialog open and registers exactly 2 independent Scene
+  assets, and the third candidate is never persisted.
+
 - **2026-09-15 — TopBar overflow fixed with a "More" menu, after an
   icon-only first attempt was explicitly rejected by the user.** User
   reported (MacBook Pro 14" screenshot, logical width 1512px) that
@@ -529,6 +569,25 @@ rather than leaving this list to drift from reality.
     when a generation visually diverges from the reference) was explicitly
     scoped OUT as a separate, bigger AI-vision feature — not done, not
     started, needs its own scoping conversation before picking up.
+
+**Tier 7 — audited against `coffe01-10/MangaFlow` (a comparable AI manga
+workbench, audited 2026-09-15) for feature ideas Kumanga was actually
+missing** — most of MangaFlow's feature set is either already covered
+(novel import, character/scene assets, storyboard editor, multi-provider
+routing, export) or a deliberate architectural difference not worth copying
+(its cost/usage-ledger dashboard contradicts BYOK's "never show a bill"
+rule; its FastAPI+Postgres+Redis multi-user backend contradicts local-first
+single-user; its CLI-executor integration doesn't fit a browser tool). Three
+items were genuine, verified gaps:
+18. ~~Multi-candidate generation + independent per-candidate keep~~ — **done
+    2026-09-15**, see Timeline.
+19. Real mask/inpaint local editing — NOT a MangaFlow lead to copy (their own
+    docs say no adapter implements it either); it's a note that Kumanga's
+    existing "generative local editing is provider-untested" known
+    limitation is worth hardening/testing, not a new feature to build.
+20. Character "model package" export/import (bundle canonical + all states
+    + version, reusable across projects) — not done, not started, lower
+    value than #18, fine to leave for later.
 
 **Not in the backlog — deliberate, don't re-add without the user explicitly overriding**
 - PDF export (rejected design decision, not a gap — see `export/exportBook.ts`).

@@ -557,3 +557,82 @@ test("a character's Model Sheet shows every generation and exports a composited 
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/-model-sheet\.png$/);
 });
+
+test("generating multiple candidates lets you keep several instead of losing the others", async ({ page }) => {
+  // Real generation needs a configured AI provider, which this smoke
+  // environment has none of — intercepting provider/status and /api/generate
+  // the way the server would respond to a healthy connected provider lets
+  // this test exercise the actual new code (candidate batching, the
+  // multi-candidate picker grid, independent per-card "Add to Library")
+  // without depending on that unrelated subsystem, the same boundary-
+  // isolation the font-upload and Model Sheet tests above draw.
+  await page.route("**/api/provider/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        configured: true,
+        capabilities: { referenceImage: false, supportsTransparentBackground: true },
+        storage: { configured: true },
+      }),
+    });
+  });
+
+  let generateCallCount = 0;
+  await page.route("**/api/generate", async (route) => {
+    generateCallCount += 1;
+    const dataUrl = `data:image/png;base64,${TINY_PNG.toString("base64")}`;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        url: dataUrl,
+        sourceUrl: dataUrl,
+        processedImageUrl: dataUrl,
+        mimeType: "image/png",
+        hasAlpha: true,
+        backgroundRemoved: false,
+        processingStatus: "ready",
+        provider: "mock",
+        model: "mock-model",
+        referenceUsed: false,
+      }),
+    });
+  });
+
+  await page.getByRole("combobox", { name: "Generate" }).selectOption("background");
+  await expect(page.getByRole("heading", { name: "AI Asset Generator" })).toBeVisible();
+
+  await page.getByRole("button", { name: "3 candidates" }).click();
+  await page
+    .getByPlaceholder("Empty Japanese high school classroom, afternoon sunlight")
+    .fill("Candidate batch test scene");
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+
+  await expect(page.getByText("3 candidates — add the ones you want to keep")).toBeVisible();
+  expect(generateCallCount).toBe(3);
+
+  const addButtons = page.getByRole("button", { name: "Add to Library" });
+  await expect(addButtons).toHaveCount(3);
+
+  // Add two of the three candidates — the dialog must stay open between
+  // adds (unlike the single-candidate flow, which closes immediately) so
+  // more than one can be kept.
+  await addButtons.nth(0).click();
+  await expect(page.getByText("Added ✓")).toHaveCount(1);
+  await expect(page.getByRole("heading", { name: "AI Asset Generator" })).toBeVisible();
+  await expect(addButtons).toHaveCount(2); // the added card's button is gone, replaced by the "Added ✓" label
+
+  await addButtons.nth(0).click();
+  await expect(page.getByText("Added ✓")).toHaveCount(2);
+  await expect(addButtons).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Done" }).click();
+  await expect(page.getByRole("heading", { name: "AI Asset Generator" })).not.toBeVisible();
+
+  // Both kept candidates became real, independent Scene assets — not one
+  // overwriting the other, and the un-added third candidate was never
+  // registered at all.
+  await page.getByRole("button", { name: "Scenes" }).click();
+  await expect(page.locator('div[title^="Candidate batch test scene"]')).toHaveCount(2);
+});

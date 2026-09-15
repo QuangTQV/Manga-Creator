@@ -18,6 +18,7 @@ import {
 import { registerMangaEffectAsset } from "@/services/language";
 import { generateTone, registerTone } from "@/services/tones";
 import { buildAssetPrompt, defaultAspect } from "@/ai/promptTemplates";
+import { summarizeCandidateOutcomes } from "@/ai/candidateBatch";
 import { DEFAULT_CHARACTER_STATE, characterIdentityDescription, characterReferenceId } from "@/characters/state";
 import { referenceOptions } from "@/characters/stateResolver";
 import type { CharacterState } from "@/domain/types";
@@ -57,6 +58,13 @@ const TONE_TYPES: { id: "texture" | "atmosphere" | "decorative" | "pattern"; lab
   { id: "pattern", label: "Pattern", hint: "A motif that repeats without a seam" },
 ];
 
+/** Generate up to this many independent candidates per click, so a creator
+ * can compare a few takes instead of regenerating one at a time and losing
+ * the previous attempt. Each candidate is its own full provider call — this
+ * is a real, separate cost under BYOK, which is why it defaults to 1
+ * (today's exact behavior) and is capped rather than open-ended. */
+const CANDIDATE_COUNTS = [1, 2, 3, 4] as const;
+
 
 export function GeneratorDialog() {
   const request = useUiStore((s) => s.generator);
@@ -77,7 +85,15 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
   const [phase, setPhase] = useState<"idle" | "generating" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<GenerationApiError | null>(null);
-  const [result, setResult] = useState<GenerateApiResult | null>(null);
+  const [results, setResults] = useState<GenerateApiResult[]>([]);
+  const [addedIndices, setAddedIndices] = useState<Set<number>>(new Set());
+  const [partialFailureNote, setPartialFailureNote] = useState<string | null>(null);
+  /** How many candidates the IN-FLIGHT or LAST-COMPLETED request actually
+   * asked for — kept separate from `results.length` so a request that asked
+   * for 3 and only got 1 back (partial provider failures) still renders as
+   * the multi-candidate picker, not the single-result fast path. */
+  const [requestedCount, setRequestedCount] = useState(1);
+  const [candidateCount, setCandidateCount] = useState(1);
   /** Empty = Auto (resolver's pick). Otherwise an explicit reference asset id. */
   const [referenceChoice, setReferenceChoice] = useState<string>("");
   /**
@@ -140,16 +156,21 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
     ],
   );
 
-  // Whether this result may become a library asset at all. Backgrounds always
-  // pass; characters and props must carry a validated transparent derivative.
-  // Tones are validated AS tones: texture/pattern tones are legitimately
-  // opaque fields — pretending a tone is a prop here would reject valid ones.
-  const contract = validateCharacterTransparency({
-    category: isCharacterType ? "character" : isLanguageType ? "prop" : (request.assetType as AssetCategory),
-    processingStatus: result?.processingStatus,
-    hasAlpha: result?.hasAlpha,
-    processedImageUrl: result?.processedImageUrl,
-  });
+  // Whether a given candidate may become a library asset at all. Backgrounds
+  // always pass; characters and props must carry a validated transparent
+  // derivative. Tones are validated AS tones: texture/pattern tones are
+  // legitimately opaque fields — pretending a tone is a prop here would
+  // reject valid ones. Pulled out as a function (rather than one `contract`
+  // computed from a single `result`) because a multi-candidate batch needs
+  // this check per candidate, independently — one candidate's cutout failing
+  // must not hide the others that succeeded.
+  const contractFor = (candidate: GenerateApiResult | undefined) =>
+    validateCharacterTransparency({
+      category: isCharacterType ? "character" : isLanguageType ? "prop" : (request.assetType as AssetCategory),
+      processingStatus: candidate?.processingStatus,
+      hasAlpha: candidate?.hasAlpha,
+      processedImageUrl: candidate?.processedImageUrl,
+    });
 
   /**
    * Reference options for the state being generated (§3). Built from the state
@@ -168,10 +189,21 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
   const references = doc && desiredState ? referenceOptions(doc, desiredState) : [];
   const activeReference = references.find((option) => (option.assetId ?? "") === referenceChoice) ?? references[0];
 
+  // A "regenerate this one asset" or "fill this one instance" request has an
+  // inherently single target — there is no such thing as replacing one asset
+  // with several, so those flows always request exactly one candidate,
+  // regardless of what the count selector last showed.
+  const singleTargetOnly = Boolean(request.replaceAssetId || request.targetInstanceId);
+  const effectiveCandidateCount = isToneType || singleTargetOnly ? 1 : candidateCount;
+
   const generate = async () => {
     setPhase("generating");
     setError(null);
     setErrorDetails(null);
+    setPartialFailureNote(null);
+    setResults([]);
+    setAddedIndices(new Set());
+    setRequestedCount(effectiveCandidateCount);
     try {
       // Whatever the selector shows is what reaches the provider — the UI does
       // not display one reference while sending another.
@@ -184,18 +216,42 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
             (asset, index, list) => Boolean(asset) && list.findIndex((candidate) => candidate?.id === asset?.id) === index,
           )
         : [];
-      const output = isToneType
-        ? // The shared Tone capability owns tone prompts and request shape.
-          (await generateTone(doc!, { description: description || "screentone", toneType, tileable })).result
-        : await generateImage({
-            assetType: request.assetType,
-            prompt,
-            negativePrompt: style?.profile.negativePrompt,
-            size: defaultAspect(request.assetType),
-            expectMonochrome: isMonochromeStyle(style?.profile),
-            referenceUrls: referenceAssets.length > 0 ? referenceAssets.map((asset) => assetRenderUrl(asset)!).filter(Boolean) : undefined,
-          });
-      setResult(output);
+
+      if (isToneType) {
+        // The shared Tone capability owns tone prompts and request shape —
+        // always exactly one candidate (see `effectiveCandidateCount`).
+        const output = (await generateTone(doc!, { description: description || "screentone", toneType, tileable })).result;
+        setResults([output]);
+        setPhase("done");
+        return;
+      }
+
+      const requestPayload = {
+        assetType: request.assetType,
+        prompt,
+        negativePrompt: style?.profile.negativePrompt,
+        size: defaultAspect(request.assetType),
+        expectMonochrome: isMonochromeStyle(style?.profile),
+        referenceUrls: referenceAssets.length > 0 ? referenceAssets.map((asset) => assetRenderUrl(asset)!).filter(Boolean) : undefined,
+      };
+      const outcomes = await Promise.allSettled(
+        Array.from({ length: effectiveCandidateCount }, () => generateImage(requestPayload)),
+      );
+      const summary = summarizeCandidateOutcomes(outcomes, effectiveCandidateCount);
+
+      if (summary.allFailed) {
+        // Every candidate failed — surface it exactly like a single-shot
+        // failure always has, using the first rejection's detail.
+        const message = summary.firstFailureReason instanceof Error ? summary.firstFailureReason.message : "Generation failed";
+        setError(message);
+        setErrorDetails(summary.firstFailureReason instanceof GenerationApiError ? summary.firstFailureReason : null);
+        setPhase("idle");
+        recordFailedGeneration(request.assetType, prompt, message);
+        return;
+      }
+
+      setResults(summary.succeeded);
+      setPartialFailureNote(summary.partialFailureNote);
       setPhase("done");
     } catch (e) {
       const message = e instanceof Error ? e.message : "Generation failed";
@@ -206,8 +262,23 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
     }
   };
 
-  const addToLibrary = async () => {
-    if (!result || !doc) return;
+  /**
+   * Registers ONE candidate as a real library asset. Called once per click,
+   * not once per batch — a multi-candidate request lets the creator add as
+   * many of the N results as they want (or all of them), each independently,
+   * rather than forcing a single up-front pick and silently discarding the
+   * rest.
+   *
+   * When this was the ONLY candidate requested (today's original, still most
+   * common, single-generation flow), behavior is byte-for-byte what it always
+   * was: register, then close the dialog immediately. Only when the creator
+   * deliberately asked for more than one does adding a candidate leave the
+   * dialog open — marking that card "Added" — so they can keep picking.
+   */
+  const addCandidateToLibrary = async (index: number) => {
+    const candidate = results[index];
+    if (!candidate || !doc) return;
+    const isOnlyCandidate = requestedCount <= 1;
 
     /**
      * A generated manga-language visual lands on TWO shelves: the underlying
@@ -218,25 +289,26 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
      */
     if (isLanguageType) {
       await registerMangaEffectAsset({
-        result,
+        result: candidate,
         prompt,
         description,
         category: languageCategory,
       });
-      onClose();
+      if (isOnlyCandidate) onClose();
+      else setAddedIndices((prev) => new Set(prev).add(index));
       return;
     }
 
     if (isToneType) {
       // Same boundary as generate(): ToneService registers on the Tones shelf.
-      await registerTone({ result, prompt, intent: { description: description || "screentone", toneType, tileable } });
+      await registerTone({ result: candidate, prompt, intent: { description: description || "screentone", toneType, tileable } });
       onClose();
       return;
     }
 
     const category: AssetCategory = isCharacterType ? "character" : (request.assetType as AssetCategory);
     const assetId = await registerGeneratedAsset({
-      result,
+      result: candidate,
       assetType: request.assetType,
       category,
       name: isCharacterType
@@ -253,7 +325,7 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
         toneType: isToneType ? toneType : undefined,
         tileable: isToneType ? tileable : undefined,
         canonicalReferenceAssetId: request.assetType === "character" ? undefined : referenceId,
-        referenceAssetIds: result.referenceUsed
+        referenceAssetIds: candidate.referenceUsed
           ? [isCharacterType ? referenceAsset?.id : undefined, style?.referenceAsset?.id].filter(
               (id): id is string => Boolean(id),
             )
@@ -262,7 +334,8 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
       },
     });
     // "Generate missing slot" flows started from a selected instance also
-    // swap that instance to the new asset — composition stays intact.
+    // swap that instance to the new asset — composition stays intact. Only
+    // reachable when isOnlyCandidate is true (see `singleTargetOnly` above).
     if (request.targetInstanceId) {
       const store = useEditorStore.getState();
       if (store.doc?.items[request.targetInstanceId]) {
@@ -272,7 +345,8 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
     if (request.replaceAssetId && useEditorStore.getState().doc?.assets[request.replaceAssetId]) {
       useEditorStore.getState().dispatch({ type: "replace-asset", oldAssetId: request.replaceAssetId, newAssetId: assetId });
     }
-    onClose();
+    if (isOnlyCandidate) onClose();
+    else setAddedIndices((prev) => new Set(prev).add(index));
   };
 
   return (
@@ -440,6 +514,35 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
               </p>
             )}
 
+            {!isToneType && !singleTargetOnly && (
+              <div className="mb-3">
+                <label className="mb-1 block text-xs text-zinc-400">Candidates</label>
+                <div className="flex items-center gap-1.5">
+                  {CANDIDATE_COUNTS.map((count) => (
+                    <button
+                      key={count}
+                      type="button"
+                      aria-label={`${count} candidate${count === 1 ? "" : "s"}`}
+                      aria-pressed={candidateCount === count}
+                      className={`h-7 w-7 rounded border text-xs ${
+                        candidateCount === count
+                          ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-text)]"
+                          : "border-[var(--border-subtle)] text-zinc-400 hover:border-zinc-600"
+                      }`}
+                      onClick={() => setCandidateCount(count)}
+                    >
+                      {count}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1 text-[10px] leading-4 text-zinc-500">
+                  {candidateCount > 1
+                    ? `Generates ${candidateCount} versions to pick from — each is a separate provider call.`
+                    : "Generate more than one at once to compare a few takes before picking."}
+                </p>
+              </div>
+            )}
+
             <details className="mb-3 text-[11px] text-zinc-500">
               <summary className="cursor-pointer">Prompt preview</summary>
               <p className="mt-1 rounded bg-zinc-950 p-2 leading-4">{prompt}</p>
@@ -477,33 +580,37 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
                 }
                 onClick={generate}
               >
-                {phase === "generating" ? `Generating${character ? ` ${character.name}` : " asset"}…` : "Generate"}
+                {phase === "generating"
+                  ? effectiveCandidateCount > 1
+                    ? `Generating ${effectiveCandidateCount} candidates…`
+                    : `Generating${character ? ` ${character.name}` : " asset"}…`
+                  : "Generate"}
               </button>
             </div>
           </>
         )}
 
-        {phase === "done" && result && (
+        {phase === "done" && results.length > 0 && requestedCount <= 1 && (
           <div>
-            {contract.valid ? (
+            {contractFor(results[0]).valid ? (
               <>
                 <p className="mb-2 text-xs text-zinc-400">Generated result</p>
                 {/* The checkerboard is a CSS backdrop BEHIND a transparent PNG.
-                    It is never part of the bitmap. `result.url` is the stored
-                    derivative, so this preview is byte-identical to what the
-                    library keeps and the canvas composites. */}
+                    It is never part of the bitmap. `results[0].url` is the
+                    stored derivative, so this preview is byte-identical to
+                    what the library keeps and the canvas composites. */}
                 <div className="mb-3 grid place-items-center rounded border border-zinc-700 bg-[repeating-conic-gradient(#3f3f46_0%_25%,#27272a_0%_50%)] bg-[length:16px_16px] p-2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={result.url} alt="Generated asset" className="max-h-[360px] rounded" />
+                  <img src={results[0].url} alt="Generated asset" className="max-h-[360px] rounded" />
                 </div>
-                {result.referenceUsed && (
+                {results[0].referenceUsed && (
                   <p className="mb-2 text-[11px] text-zinc-500">Generated with the character reference image.</p>
                 )}
                 <div className="flex justify-end gap-2 text-xs">
                   <button
                     className="rounded px-3 py-1.5 text-zinc-400 hover:text-zinc-200"
                     onClick={() => {
-                      setResult(null);
+                      setResults([]);
                       setPhase("idle");
                     }}
                   >
@@ -512,13 +619,16 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
                   <button
                     className="rounded border border-zinc-600 bg-zinc-800 px-3 py-1.5 hover:bg-zinc-700"
                     onClick={() => {
-                      setResult(null);
+                      setResults([]);
                       generate();
                     }}
                   >
                     Regenerate
                   </button>
-                  <button className="rounded-md bg-[var(--accent)] px-4 py-1.5 text-white hover:bg-[var(--accent-hover)]" onClick={addToLibrary}>
+                  <button
+                    className="rounded-md bg-[var(--accent)] px-4 py-1.5 text-white hover:bg-[var(--accent-hover)]"
+                    onClick={() => addCandidateToLibrary(0)}
+                  >
                     Add to Library
                   </button>
                 </div>
@@ -536,7 +646,7 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
                   <button
                     className="rounded px-3 py-1.5 text-zinc-400 hover:text-zinc-200"
                     onClick={() => {
-                      setResult(null);
+                      setResults([]);
                       setPhase("idle");
                     }}
                   >
@@ -545,7 +655,7 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
                   <button
                     className="rounded-md bg-[var(--accent)] px-4 py-1.5 text-white hover:bg-[var(--accent-hover)]"
                     onClick={() => {
-                      setResult(null);
+                      setResults([]);
                       generate();
                     }}
                   >
@@ -554,6 +664,72 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {phase === "done" && results.length > 0 && requestedCount > 1 && (
+          <div>
+            <p className="mb-2 text-xs text-zinc-400">
+              {results.length} candidate{results.length > 1 ? "s" : ""} — add the ones you want to keep
+            </p>
+            {partialFailureNote && (
+              <p className="mb-2 rounded border border-amber-900/60 bg-amber-950/30 p-2 text-[11px] text-amber-300">
+                {partialFailureNote}
+              </p>
+            )}
+            <div className="mb-3 grid grid-cols-2 gap-2">
+              {results.map((candidate, index) => {
+                const candidateContract = contractFor(candidate);
+                const added = addedIndices.has(index);
+                return (
+                  <div key={index} className="rounded border border-zinc-700 p-1.5">
+                    <div className="mb-1.5 grid place-items-center rounded bg-[repeating-conic-gradient(#3f3f46_0%_25%,#27272a_0%_50%)] bg-[length:16px_16px] p-1">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={candidate.url} alt={`Candidate ${index + 1}`} className="h-[160px] w-full rounded object-contain" />
+                    </div>
+                    {candidateContract.valid ? (
+                      <button
+                        className={`w-full rounded px-2 py-1 text-[11px] ${
+                          added
+                            ? "cursor-default bg-zinc-800 text-zinc-500"
+                            : "bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]"
+                        }`}
+                        disabled={added}
+                        onClick={() => addCandidateToLibrary(index)}
+                      >
+                        {added ? "Added ✓" : "Add to Library"}
+                      </button>
+                    ) : (
+                      <p className="text-center text-[10px] leading-3 text-amber-400">{BACKGROUND_REMOVAL_FAILED_MESSAGE}</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex justify-end gap-2 text-xs">
+              <button
+                className="rounded px-3 py-1.5 text-zinc-400 hover:text-zinc-200"
+                onClick={() => {
+                  setResults([]);
+                  setPartialFailureNote(null);
+                  setPhase("idle");
+                }}
+              >
+                Discard {addedIndices.size > 0 ? "the rest" : "all"}
+              </button>
+              <button
+                className="rounded border border-zinc-600 bg-zinc-800 px-3 py-1.5 hover:bg-zinc-700"
+                onClick={() => generate()}
+              >
+                Regenerate all
+              </button>
+              <button
+                className="rounded-md bg-[var(--accent)] px-4 py-1.5 text-white hover:bg-[var(--accent-hover)]"
+                onClick={onClose}
+              >
+                Done
+              </button>
+            </div>
           </div>
         )}
       </div>
