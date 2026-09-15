@@ -32,7 +32,7 @@ import {
   type NewLanguageAssetInput,
 } from "./languageOps";
 import { cloneDoc, panelPxRect, touch } from "./docHelpers";
-import { reshapePanel } from "./panelOps";
+import { mergePanels, reshapePanel, splitPanel } from "./panelOps";
 import { addSceneRelationship, setSceneCharacterSemantics, setSceneContinuity } from "./sceneOps";
 import { addCustomStyle, setProjectStyle } from "./styleOps";
 import { addWorkspaceItem, instanceToWorkspaceItem, removeWorkspaceItem, updateWorkspaceItem, workspaceItemToInstance } from "./workspaceOps";
@@ -154,6 +154,8 @@ export type DomainCommand =
   | { type: "detach-item"; itemId: ID }
   | { type: "apply-attachments"; panelId: ID }
   | { type: "reshape-panel"; panelId: ID; points: Point[] }
+  | { type: "split-panel"; panelId: ID; direction: "vertical" | "horizontal"; fraction?: number }
+  | { type: "merge-panels"; panelAId: ID; panelBId: ID }
   | { type: "set-page-layout"; pageId: ID; layout: LayoutPresetId }
   | { type: "reset-page-layout"; pageId: ID; layout: LayoutPresetId }
   | { type: "reorder-page"; pageId: ID; toIndex: number }
@@ -374,6 +376,12 @@ function applyCommandCore(doc: ProjectDocument, command: DomainCommand): Command
       return { doc: applyAttachments(doc, command.panelId) };
     case "reshape-panel":
       return { doc: reshapePanel(doc, command.panelId, command.points) };
+    case "split-panel": {
+      const result = splitPanel(doc, command.panelId, command.direction, command.fraction);
+      return { doc: result.doc, createdId: result.newPanelId };
+    }
+    case "merge-panels":
+      return { doc: mergePanels(doc, command.panelAId, command.panelBId) };
     case "set-page-layout":
       return { doc: setPageLayout(doc, command.pageId, command.layout) };
     case "reset-page-layout":

@@ -15,6 +15,7 @@ import {
 import { applyCharacterStateToInstance } from "@/characters/stateRuntime";
 import { SOCKET_DRAG_TYPE, encodeSocketDrag } from "@/characters/sockets";
 import { PanelStageControls } from "./PanelStageControls";
+import { PanelSplitMergeControls } from "./PanelSplitMergeControls";
 import { LayersPanel, PageLayersTree } from "./LayersPanel";
 import { RelationshipEditor } from "./RelationshipEditor";
 import { InteractionControls } from "./InteractionControls";
@@ -97,6 +98,7 @@ export function InspectorPanel() {
       <div className="space-y-4 p-3">
         <SectionTitle>Panel</SectionTitle>
         <PanelStageControls panelId={selection.panelId} />
+        <PanelSplitMergeControls panelId={selection.panelId} />
         <LayersPanel panelId={selection.panelId} />
         <p className="text-[10px] leading-4 text-zinc-600">
           Drag assets from the library into this panel, or use + Bubble / + Effect in the toolbar.

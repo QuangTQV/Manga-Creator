@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  clipPolygonHalfPlane,
+  convexHull,
   cropModeTransform,
   DEFAULT_UPPER_BODY_REGION,
   fillTransform,
@@ -7,6 +9,7 @@ import {
   frameRegionTransform,
   pointInPolygon,
   polygonBounds,
+  polygonToNormalized,
   polygonToPx,
   rectToPoints,
   supportsFaceFocus,
@@ -122,5 +125,79 @@ describe("panel polygons", () => {
     expect(pointInPolygon(10, 10, triangle)).toBe(true);
     expect(pointInPolygon(90, 90, triangle)).toBe(false); // inside bbox, outside polygon
     expect(pointInPolygon(150, 50, triangle)).toBe(false);
+  });
+
+  it("polygonToNormalized is the exact inverse of polygonToPx", () => {
+    const normalized = rectToPoints({ x: 0.1, y: 0.2, width: 0.3, height: 0.4 });
+    const roundTripped = polygonToNormalized(polygonToPx(normalized, 1200, 1800), 1200, 1800);
+    for (let i = 0; i < normalized.length; i++) {
+      expect(roundTripped[i].x).toBeCloseTo(normalized[i].x, 10);
+      expect(roundTripped[i].y).toBeCloseTo(normalized[i].y, 10);
+    }
+  });
+});
+
+describe("clipPolygonHalfPlane (splitPanel's cut)", () => {
+  const square = rectToPoints({ x: 0, y: 0, width: 100, height: 100 });
+
+  it("keeps only the left half when clipping x <= 50", () => {
+    const left = clipPolygonHalfPlane(square, (p) => p.x - 50);
+    expect(polygonBounds(left)).toEqual({ x: 0, y: 0, width: 50, height: 100 });
+  });
+
+  it("the two halves of a clip partition the original area", () => {
+    const left = clipPolygonHalfPlane(square, (p) => p.x - 50);
+    const right = clipPolygonHalfPlane(square, (p) => 50 - p.x);
+    const area = (points: typeof square) => {
+      let sum = 0;
+      for (let i = 0; i < points.length; i++) {
+        const a = points[i];
+        const b = points[(i + 1) % points.length];
+        sum += a.x * b.y - b.x * a.y;
+      }
+      return Math.abs(sum / 2);
+    };
+    expect(area(left) + area(right)).toBeCloseTo(area(square), 5);
+  });
+
+  it("clipping entirely outside the half-plane yields an empty polygon", () => {
+    expect(clipPolygonHalfPlane(square, () => 1)).toEqual([]);
+  });
+
+  it("works on a non-rectangular (diagonal) panel too", () => {
+    const triangle = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 0, y: 100 },
+    ];
+    const left = clipPolygonHalfPlane(triangle, (p) => p.x - 50);
+    // Cutting a right triangle at x=50 leaves a smaller polygon entirely
+    // within the left half, touching but not crossing the cut line.
+    expect(left.every((p) => p.x <= 50 + 1e-9)).toBe(true);
+    expect(left.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe("convexHull (mergePanels' shape)", () => {
+  it("returns the hull vertices only, dropping interior/collinear points", () => {
+    const points = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 100 },
+      { x: 0, y: 100 },
+      { x: 50, y: 50 }, // interior — must not survive
+      { x: 50, y: 0 }, // collinear on the bottom edge — must not survive
+    ];
+    const hull = convexHull(points);
+    expect(hull).toHaveLength(4);
+    expect(hull).not.toContainEqual({ x: 50, y: 50 });
+  });
+
+  it("covers two separate rectangles (the merge-two-panels case)", () => {
+    const a = rectToPoints({ x: 0, y: 0, width: 100, height: 100 });
+    const b = rectToPoints({ x: 200, y: 0, width: 100, height: 100 });
+    const hull = convexHull([...a, ...b]);
+    const bounds = polygonBounds(hull);
+    expect(bounds).toEqual({ x: 0, y: 0, width: 300, height: 100 });
   });
 });

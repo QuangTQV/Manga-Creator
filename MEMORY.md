@@ -33,6 +33,27 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-15 — Split/merge panels (backlog #6).** New `splitPanel`/
+  `mergePanels` in `domain/panelOps.ts`, working on ANY panel shape, not
+  just rectangles: split is a real polygon clip (`clipPolygonHalfPlane`,
+  Sutherland-Hodgman, new in `geometry.ts`) along a straight line, not a
+  bounding-box trick. Merge deliberately does NOT attempt true polygon
+  union (hard to get right for concave results) — it takes the convex
+  hull of both panels' points instead (`convexHull`, Andrew's monotone
+  chain, also new in `geometry.ts`), which can include a sliver of extra
+  area between two panels that weren't already touching; documented as a
+  tradeoff on `mergePanels` itself, not silently swept under the rug.
+  The one property that had to hold and is what the tests actually check:
+  an item's PAGE-SPACE (visual) position survives split/merge exactly,
+  even though its panel-local `cx`/`cy` numbers change underneath it —
+  every resulting panel gets its own new bounding box, so leaving
+  panel-local coordinates untouched would have meant items silently
+  jumping on screen. Both operations also re-run `applyAttachments` (§11
+  — "sweat drop follows Yuri") for every panel they touch, called directly
+  inside the ops functions rather than through `commands.ts`'s generic
+  single-panel `ATTACHMENT_AFFECTING` mechanism, which isn't shaped for an
+  operation that touches two panels at once. New Split/Merge controls in
+  the Inspector's Panel section (`PanelSplitMergeControls.tsx`).
 - **2026-09-15 — Chapters (backlog #5).** New `Chapter` entity
   (`domain/types.ts`), schema v13→v14. Deliberate design choice worth
   remembering: a chapter is a BOUNDARY MARKER (`{id, name, startPageId}`),
@@ -227,7 +248,7 @@ rather than leaving this list to drift from reality.
 5. ~~"Chapter" as a first-class domain concept~~ — **done 2026-09-15**, see Timeline. Per-chapter export landed with it; Agent chapter-targeting did NOT (see Timeline entry — separate, deliberately deferred). (Tier 2 fully done.)
 
 **Tier 3 — bigger, needs careful scoping**
-6. Split/merge panels — touches core panel/item domain model.
+6. ~~Split/merge panels~~ — **done 2026-09-15**, see Timeline.
 7. Draw a custom panel shape from scratch (not just reshaping a preset layout's panels) — new canvas interaction.
 8. Generic layer-effects system (blend modes/opacity stacking) — currently a fixed `EffectKind` enum; touches the render pipeline.
 

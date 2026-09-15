@@ -126,6 +126,63 @@ export function polygonToPx(points: Point[], pageW: number, pageH: number): Poin
   return points.map((p) => ({ x: p.x * pageW, y: p.y * pageH }));
 }
 
+/** Page-pixel polygon → normalized polygon — the inverse of `polygonToPx`. */
+export function polygonToNormalized(points: Point[], pageW: number, pageH: number): Point[] {
+  return points.map((p) => ({ x: p.x / pageW, y: p.y / pageH }));
+}
+
+/**
+ * Sutherland-Hodgman polygon clip against a half-plane: keeps only the part
+ * of `points` where `side(point) <= 0`, cutting new vertices in exactly at
+ * the boundary. Used to split a panel along a straight line — clip once
+ * with `side` and once with its negation to get both halves.
+ */
+export function clipPolygonHalfPlane(points: Point[], side: (p: Point) => number): Point[] {
+  if (points.length === 0) return [];
+  const result: Point[] = [];
+  for (let i = 0; i < points.length; i++) {
+    const current = points[i];
+    const previous = points[(i - 1 + points.length) % points.length];
+    const currentInside = side(current) <= 0;
+    const previousInside = side(previous) <= 0;
+    if (currentInside !== previousInside) {
+      const t = side(previous) / (side(previous) - side(current));
+      result.push({ x: previous.x + t * (current.x - previous.x), y: previous.y + t * (current.y - previous.y) });
+    }
+    if (currentInside) result.push(current);
+  }
+  return result;
+}
+
+/**
+ * Convex hull via Andrew's monotone chain — the smallest convex polygon
+ * containing every input point. Used to merge two panels into one shape
+ * that safely covers both, without needing full polygon-union math (which
+ * would also have to handle non-convex results); the tradeoff is that a
+ * merge can include a little extra area between two panels that weren't
+ * already touching.
+ */
+export function convexHull(points: Point[]): Point[] {
+  if (points.length < 3) return points;
+  const sorted = [...points].sort((p, q) => (p.x === q.x ? p.y - q.y : p.x - q.x));
+  const cross = (o: Point, a: Point, b: Point) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+
+  const lower: Point[] = [];
+  for (const p of sorted) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper: Point[] = [];
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const p = sorted[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  lower.pop();
+  upper.pop();
+  return [...lower, ...upper];
+}
+
 /** Axis-aligned bounding box of a pixel-space polygon. */
 export function polygonBounds(points: Point[]): Rect {
   const xs = points.map((p) => p.x);

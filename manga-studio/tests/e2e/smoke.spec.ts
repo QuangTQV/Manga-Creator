@@ -367,3 +367,21 @@ test("chapters organize pages into named, exportable sections", async ({ page })
   await page.getByRole("button", { name: "Delete" }).click();
   await expect(page.getByText("No chapters yet — Page 1 – Page 3 (3 pages)")).toBeVisible();
 });
+
+test("splitting and merging a panel round-trips the panel count", async ({ page }) => {
+  const panelButtons = page.getByRole("button", { name: /^Panel \d+$/ });
+  await expect(panelButtons).toHaveCount(4); // the default four-grid layout
+
+  await page.getByRole("button", { name: "Panel 1", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Panel", exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Split ↔ side by side" }).click();
+  await expect(panelButtons).toHaveCount(5);
+
+  // The split inserted the new panel right after the original, as "Panel 2".
+  await page.getByRole("button", { name: "Panel 2", exact: true }).click();
+  await page.getByRole("combobox", { name: "Merge with" }).selectOption({ label: "Panel 1" });
+  await page.getByRole("button", { name: "Merge", exact: true }).click();
+
+  await expect(panelButtons).toHaveCount(4);
+});
