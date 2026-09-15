@@ -342,6 +342,74 @@ describe("project lifecycle", () => {
   });
 });
 
+// ─── Project archive import/export ─────────────────────────────────────────
+
+describe("project archive import/export", () => {
+  it("imports a serialized project as a new, independent project", async () => {
+    await useProjectsStore.getState().bootstrap();
+    const original = seedProject("My Manga", "Yuri");
+    const json = serializeProject(original);
+
+    const importedId = await useProjectsStore.getState().importProject(json);
+
+    expect(importedId).not.toBe(original.project.id);
+    const imported = useProjectsStore.getState().projects.find((p) => p.id === importedId)!;
+    // Keeps the archive's own name — unlike duplicateProject, this is a
+    // restore, not a copy sitting next to the thing it came from.
+    expect(imported.name).toBe("My Manga");
+
+    const reloaded = (await fake.service.loadProject(importedId))!;
+    expect(Object.values(reloaded.characters).map((c) => c.name)).toEqual(["Yuri"]);
+    expect(referencedProjectIds(reloaded).has(original.project.id)).toBe(false);
+  });
+
+  it("importing the same archive twice creates two independent projects, not a collision", async () => {
+    await useProjectsStore.getState().bootstrap();
+    const json = serializeProject(seedProject("My Manga", "Yuri"));
+
+    const firstId = await useProjectsStore.getState().importProject(json);
+    const secondId = await useProjectsStore.getState().importProject(json);
+
+    expect(firstId).not.toBe(secondId);
+    expect(useProjectsStore.getState().projects.map((p) => p.id).sort()).toEqual([firstId, secondId].sort());
+  });
+
+  it("editing an imported project never touches the project it was imported from", async () => {
+    await useProjectsStore.getState().bootstrap();
+    const original = seedProject("My Manga", "Yuri");
+    await fake.service.saveProject(original);
+    const importedId = await useProjectsStore.getState().importProject(serializeProject(original));
+
+    const imported = (await fake.service.loadProject(importedId))!;
+    const panelId = imported.pages[Object.keys(imported.pages)[0]].panelIds[0];
+    await fake.service.saveProject(
+      applyDomainCommand(imported, { type: "add-bubble", panelId, bubbleType: "speech", text: "imported only" }).doc,
+    );
+
+    expect(Object.keys((await fake.service.loadProject(importedId))!.items)).toHaveLength(1);
+    expect(Object.keys((await fake.service.loadProject(original.project.id))!.items)).toHaveLength(0);
+  });
+
+  it("rejects corrupt JSON with a safe message, leaving the project list unchanged", async () => {
+    await useProjectsStore.getState().bootstrap();
+    await expect(useProjectsStore.getState().importProject("not json")).rejects.toThrow(/not valid JSON/);
+    expect(useProjectsStore.getState().projects).toEqual([]);
+  });
+
+  it("flushes unsaved work in the active project before importing another", async () => {
+    await fake.service.saveProject(seedProject("A", "Yuri"));
+    await useProjectsStore.getState().bootstrap();
+    const activeId = useProjectsStore.getState().activeProjectId!;
+    const panelId = useEditorStore.getState().doc!.pages[useEditorStore.getState().currentPageId!].panelIds[0];
+    useEditorStore.getState().dispatch({ type: "add-bubble", panelId, bubbleType: "speech", text: "unsaved" });
+
+    await useProjectsStore.getState().importProject(serializeProject(seedProject("B", "Mio")));
+
+    const reloadedActive = (await fake.service.loadProject(activeId))!;
+    expect(Object.keys(reloadedActive.items)).toHaveLength(1);
+  });
+});
+
 // ─── §8 / §11: asset and agent scoping ─────────────────────────────────────
 
 describe("project scoping", () => {

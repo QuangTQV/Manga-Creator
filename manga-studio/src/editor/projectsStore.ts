@@ -16,6 +16,7 @@
 import { create } from "zustand";
 import { createProjectDocument } from "@/domain/factory";
 import { duplicateProjectDocument } from "@/domain/projectOps";
+import { deserializeProject } from "@/domain/serialization";
 import type { LayoutPresetId, ProjectDocument } from "@/domain/types";
 import { indexedDbPersistence, type PersistenceService, type ProjectSummary } from "@/storage/projectStore";
 import { useEditorStore } from "./store";
@@ -38,6 +39,13 @@ interface ProjectsState {
   openProject(projectId: string): Promise<void>;
   renameProject(projectId: string, name: string): Promise<void>;
   duplicateProject(projectId: string): Promise<string>;
+  /** Restores a project from a file previously produced by `exportProjectArchive`
+   * (or any project JSON `projectStore.ts` itself would recognize) — full
+   * schema migration and shape validation, same as opening any project.
+   * Throws with a message safe to show the creator on invalid/corrupt/
+   * too-new JSON. Always creates a NEW project (fresh id), never overwrites
+   * an existing one, even if a project with the same name exists. */
+  importProject(json: string): Promise<string>;
   deleteProject(projectId: string): Promise<void>;
 }
 
@@ -139,6 +147,19 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
     await persistence.saveProject(copy);
     set({ projects: await persistence.listProjects() });
     return copy.project.id;
+  },
+
+  async importProject(json) {
+    const parsed = deserializeProject(json);
+    await saveActive();
+    // Reuses duplicateProjectDocument purely for its ID-reassignment
+    // machinery (fresh project id, every owned entity re-parented to it) —
+    // passing the document's own name keeps it as-is instead of appending
+    // "copy", which duplicateProjectDocument does when name is omitted.
+    const imported = duplicateProjectDocument(parsed, parsed.project.name);
+    await persistence.saveProject(imported);
+    set({ projects: await persistence.listProjects() });
+    return imported.project.id;
   },
 
   async deleteProject(projectId) {

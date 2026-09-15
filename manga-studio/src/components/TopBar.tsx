@@ -34,6 +34,7 @@ import { useUiStore, type GeneratorRequest } from "@/editor/uiStore";
 import { exportCurrentPagePng } from "@/export/exportPage";
 import { exportBookCbz } from "@/export/exportBook";
 import { exportWebtoonStrip } from "@/export/exportWebtoon";
+import { exportProjectArchive } from "@/export/exportProjectArchive";
 import { getActiveStyleProfile } from "@/styles/profiles";
 
 const BUBBLE_TYPES: { type: BubbleType; label: string }[] = [
@@ -136,6 +137,14 @@ export function TopBar() {
     } finally {
       setExporting(false);
       setExportProgress(null);
+    }
+  };
+
+  const onExportArchive = () => {
+    try {
+      exportProjectArchive(doc);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Project archive export failed");
     }
   };
 
@@ -308,8 +317,10 @@ export function TopBar() {
           { key: "book-2", label: `Export book (all pages) @2x — CBZ` },
           { key: "webtoon-1", label: `Export webtoon strip @1x — PNG` },
           { key: "webtoon-2", label: `Export webtoon strip @2x — PNG` },
+          { key: "archive", label: "Export project archive (.json) — full backup" },
         ]}
         onPick={(k) => {
+          if (k === "archive") return onExportArchive();
           const scale = k.endsWith("-1") ? 1 : 2;
           if (k.startsWith("webtoon-")) onExportWebtoon(scale);
           else if (k.startsWith("book-")) onExportBook(scale);

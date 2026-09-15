@@ -307,3 +307,32 @@ test("bold and italic toggle on a speech bubble and persist through the style pa
   await expect(page.getByRole("button", { name: "Bold" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: "Italic" })).toHaveAttribute("aria-pressed", "true");
 });
+
+test("a project archive exports and re-imports as a real, independent project", async ({ page }, testInfo) => {
+  // Give the project a distinctive name so it's unambiguous in the list
+  // after import — "Smoke Test Project" (from beforeEach) would otherwise
+  // match the original too.
+  await page.getByRole("button", { name: /Smoke Test Project/ }).hover();
+  await page.getByRole("button", { name: /Project options for/ }).click();
+  await page.getByRole("button", { name: "Rename" }).click();
+  await page.getByRole("textbox", { name: "New project name" }).fill("Archive Round Trip");
+  await page.getByRole("button", { name: "Save" }).click();
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("combobox", { name: "Export" }).selectOption("archive");
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/\.kumanga\.json$/);
+  const savedPath = testInfo.outputPath("archive-round-trip.kumanga.json");
+  await download.saveAs(savedPath);
+
+  // The real input is `display:none` (a styled label button triggers it) —
+  // setInputFiles works on a hidden file input directly, no picker dialog
+  // involved, so there's no visible "Import" element to target here.
+  await page.locator('input[type="file"][accept*="json"]').setInputFiles(savedPath);
+
+  // Two distinct list entries with the same name now — the archive's name
+  // is kept as-is (not "... copy"), since this is a restore, not a
+  // same-session duplicate sitting next to the thing it came from.
+  const entries = page.getByRole("button", { name: /^Archive Round Trip/ });
+  await expect(entries).toHaveCount(2);
+});

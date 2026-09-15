@@ -8,10 +8,13 @@
  * right inspector; this surface is navigation.
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { LAYOUT_PRESETS } from "@/domain/layouts";
 import type { LayoutPresetId } from "@/domain/types";
+import { useEditorStore } from "@/editor/store";
 import { useProjectsStore } from "@/editor/projectsStore";
+import { indexedDbPersistence } from "@/storage/projectStore";
+import { exportProjectArchive } from "@/export/exportProjectArchive";
 import { BUILTIN_STYLE_PROFILES } from "@/styles/profiles";
 
 export function ProjectsPanel() {
@@ -24,6 +27,7 @@ export function ProjectsPanel() {
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const run = async (action: () => Promise<unknown>) => {
     setBusy(true);
@@ -38,17 +42,57 @@ export function ProjectsPanel() {
     }
   };
 
+  const importFile = async (file?: File) => {
+    if (!file) return;
+    await run(async () => {
+      const text = await file.text();
+      const id = await useProjectsStore.getState().importProject(text);
+      await openProject(id);
+    });
+  };
+
+  const exportProject = async (project: { id: string; name: string }) => {
+    await run(async () => {
+      // The open project is the source of truth for its own id (unsaved
+      // edits included); any other project is read straight from storage.
+      const doc =
+        project.id === activeProjectId ? useEditorStore.getState().doc : await indexedDbPersistence.loadProject(project.id);
+      if (!doc) throw new Error("That project could not be read");
+      exportProjectArchive(doc);
+    });
+  };
+
   return (
     <section className="border-b p-2" style={{ borderColor: "var(--border-subtle)" }}>
       <div className="mb-1.5 flex items-center justify-between">
         <p className="text-[10px] uppercase tracking-wider text-zinc-500">Projects</p>
-        <button
-          className="rounded-md px-2 py-0.5 text-[10px] font-medium text-white transition-colors hover:bg-[var(--accent-hover)]" style={{ background: "var(--accent)" }}
-          onClick={() => setCreating(true)}
-          disabled={busy}
-        >
-          + New
-        </button>
+        <div className="flex gap-1">
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={(e) => {
+              void importFile(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+          <button
+            className="rounded-md px-2 py-0.5 text-[10px] font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+            onClick={() => importInputRef.current?.click()}
+            disabled={busy}
+            title="Restore a project archive (.json) exported from Kumanga"
+          >
+            Import
+          </button>
+          <button
+            className="rounded-md px-2 py-0.5 text-[10px] font-medium text-white transition-colors hover:bg-[var(--accent-hover)]" style={{ background: "var(--accent)" }}
+            onClick={() => setCreating(true)}
+            disabled={busy}
+          >
+            + New
+          </button>
+        </div>
       </div>
 
       {error && <p className="mb-1.5 text-[10px] text-red-400">{error}</p>}
@@ -101,6 +145,7 @@ export function ProjectsPanel() {
                   <MenuItem onClick={() => void run(() => useProjectsStore.getState().duplicateProject(project.id))}>
                     Duplicate
                   </MenuItem>
+                  <MenuItem onClick={() => void exportProject(project)}>Export archive</MenuItem>
                   <MenuItem
                     danger
                     onClick={() => {

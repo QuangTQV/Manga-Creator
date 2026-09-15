@@ -33,6 +33,25 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-15 — Project archive import/export.** A project only ever lived
+  in one browser's IndexedDB — clearing site data or losing the profile
+  loses it outright. Turned out to need almost no new machinery:
+  `domain/serialization.ts`'s `serializeProject`/`deserializeProject`
+  (already the exact JSON `projectStore.ts` writes to IndexedDB, full
+  schema migration and shape validation included) plus
+  `duplicateProjectDocument` (already does the "assign a fresh id, re-parent
+  every owned entity" work, reused here purely for that, passing the
+  archive's own name through so it doesn't get a "... copy" suffix) covered
+  the whole thing. New `useProjectsStore.importProject(json)`; export lives
+  in TopBar's Export menu (current project) and each project's "⋯" menu in
+  ProjectsPanel (any project, even one not open). Scope, stated in
+  `export/exportProjectArchive.ts`'s docstring: the document only, not
+  image bytes — asset URLs still point at this deployment's own object
+  storage (Vercel Blob in prod, local `.data/` in dev), matching exactly
+  how `duplicateProject` already behaves for a same-browser copy. A true
+  self-contained archive (embedded image bytes, re-uploaded on import)
+  would be a much bigger feature; this solves the actual stated risk
+  (losing the document to a wiped browser) without inventing that. Backlog #4.
 - **2026-09-15 — Bubble typography: bold/italic/letter spacing.** Added to
   `BubbleStyle` (`domain/types.ts`) and `normalizeBubbleStyle`
   (`bubbleStyles.ts` — that function reconstructs the object field-by-field,
@@ -177,7 +196,7 @@ rather than leaving this list to drift from reality.
 3. ~~Typography polish~~ — **done 2026-09-15**, see Timeline. (All 3 Tier-1 items now done.)
 
 **Tier 2 — moderate effort, clear value**
-4. Project archive import/export — a project only exists in one browser's IndexedDB today; real data-loss risk without this.
+4. ~~Project archive import/export~~ — **done 2026-09-15**, see Timeline.
 5. "Chapter" as a first-class domain concept (needs #2 first) — unlocks Agent targeting a whole chapter and per-chapter export; currently chapters exist only inside Novel Import's pre-generation outline.
 
 **Tier 3 — bigger, needs careful scoping**
