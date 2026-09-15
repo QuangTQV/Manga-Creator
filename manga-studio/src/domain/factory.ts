@@ -99,6 +99,7 @@ export function createProjectDocument(name: string, layout: LayoutPresetId = "fo
     assets: {},
     characters: {},
     pages: { [page.id]: page },
+    chapters: {},
     panels,
     scenes,
     characterStates: {},

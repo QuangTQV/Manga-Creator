@@ -15,6 +15,7 @@ import { KumangaMark } from "./brand/KumangaMark";
 import { Button, IconButton, ToolbarDivider } from "./ui/Button";
 import { ChevronDown } from "lucide-react";
 import {
+  ChaptersIcon,
   ExportIcon,
   GenerateIcon,
   HistoryIcon,
@@ -81,6 +82,7 @@ export function TopBar() {
   const openGenerator = useUiStore((s) => s.openGenerator);
   const openLiveAi = useUiStore((s) => s.openLiveAi);
   const openNovelImport = useUiStore((s) => s.openNovelImport);
+  const openChapters = useUiStore((s) => s.openChapters);
   const openHistory = useUiStore((s) => s.openHistory);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<string | null>(null);
@@ -222,6 +224,12 @@ export function TopBar() {
       >
         Novel Import
       </Button>
+      <IconButton
+        label="Chapters"
+        title="Organize pages into named chapters; export any one on its own"
+        onClick={openChapters}
+        icon={<ChaptersIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+      />
       <Dropdown
         label="Bubble"
         items={BUBBLE_TYPES.map((b) => ({ key: b.type, label: b.label }))}

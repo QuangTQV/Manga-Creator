@@ -99,6 +99,8 @@ interface UiState {
   novelImportOpen: boolean;
   /** History: jump directly to any earlier (or later) point, not just one Undo at a time. */
   historyOpen: boolean;
+  /** Chapters: organize pages into named, orderable sections; export any one on its own. */
+  chaptersOpen: boolean;
   /**
    * Advanced / Developer surface.
    *
@@ -140,6 +142,8 @@ interface UiState {
   closeNovelImport(): void;
   openHistory(): void;
   closeHistory(): void;
+  openChapters(): void;
+  closeChapters(): void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -162,6 +166,7 @@ export const useUiStore = create<UiState>((set) => ({
   liveAiOpen: false,
   novelImportOpen: false,
   historyOpen: false,
+  chaptersOpen: false,
   advancedMode: false,
   openGenerator: (request) => set({ generator: request }),
   closeGenerator: () => set({ generator: null }),
@@ -196,4 +201,6 @@ export const useUiStore = create<UiState>((set) => ({
   closeNovelImport: () => set({ novelImportOpen: false }),
   openHistory: () => set({ historyOpen: true }),
   closeHistory: () => set({ historyOpen: false }),
+  openChapters: () => set({ chaptersOpen: true }),
+  closeChapters: () => set({ chaptersOpen: false }),
 }));

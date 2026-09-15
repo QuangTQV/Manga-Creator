@@ -53,6 +53,7 @@ export {
   Activity as LiveIcon,
   BookOpen as NovelIcon,
   History as HistoryIcon,
+  BookMarked as ChaptersIcon,
 } from "lucide-react";
 
 /** Toolbar and inline icon size. 16px reads cleanly on a 32px control. */

@@ -5,6 +5,7 @@ import { createPanelFromRect, defaultPageWorkspacePosition, newId } from "./fact
 import { LAYOUT_PRESETS } from "./layouts";
 import type { ID, LayoutPresetId, Page, ProjectDocument } from "./types";
 import { createEmptyScene, syncPanelScene } from "./sceneOps";
+import { reassignChapterStartsAfterPageRemoval } from "./chapterOps";
 
 export function addPage(
   doc: ProjectDocument,
@@ -128,6 +129,7 @@ export function removePage(doc: ProjectDocument, pageId: ID): ProjectDocument {
     delete next.panels[panelId];
     delete next.scenes[panelId];
   }
+  reassignChapterStartsAfterPageRemoval(next, pageId);
   delete next.pages[pageId];
   Object.values(next.pages)
     .sort((a, b) => a.index - b.index)

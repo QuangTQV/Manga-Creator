@@ -18,6 +18,7 @@
 
 import { useEditorStore } from "@/editor/store";
 import { captureAllPages, downloadBlob, projectFileBasename, type ExportProgress } from "./exportPages";
+import type { ExportScope } from "./exportBook";
 
 export type ExportWebtoonProgress = ExportProgress;
 
@@ -55,11 +56,12 @@ function loadImage(dataUrl: string): Promise<HTMLImageElement> {
 export async function exportWebtoonStrip(
   scale: 1 | 2 = 2,
   onProgress?: (progress: ExportWebtoonProgress) => void,
+  scope?: ExportScope,
 ): Promise<void> {
   const doc = useEditorStore.getState().doc;
   if (!doc) throw new Error("No open project");
 
-  const dataUrls = await captureAllPages(scale, onProgress);
+  const dataUrls = await captureAllPages(scale, onProgress, scope?.pageIds);
   const images = await Promise.all(dataUrls.map(loadImage));
 
   const width = Math.max(...images.map((img) => img.width));
@@ -80,5 +82,8 @@ export async function exportWebtoonStrip(
 
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
   if (!blob) throw new Error("Could not encode the webtoon strip image");
-  downloadBlob(blob, `${projectFileBasename(doc.project.name)}-webtoon@${scale}x.png`);
+  const name = scope
+    ? `${projectFileBasename(doc.project.name)}-${projectFileBasename(scope.label)}-webtoon@${scale}x`
+    : `${projectFileBasename(doc.project.name)}-webtoon@${scale}x`;
+  downloadBlob(blob, `${name}.png`);
 }

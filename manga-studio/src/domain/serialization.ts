@@ -297,6 +297,16 @@ const MIGRATIONS: Record<number, Migration> = {
     ),
     schemaVersion: 13,
   }),
+  /**
+   * v13 → v14: chapters.
+   *
+   * Purely additive, and there is nothing to backfill — a chapter is a
+   * boundary a creator draws explicitly (see `Chapter`'s own docstring in
+   * types.ts); no existing page grouping is inferred from anything in an
+   * older document. An empty `chapters` map means "no chapters yet", the
+   * same as every project had before this existed.
+   */
+  13: (doc) => ({ ...doc, chapters: doc.chapters ?? {}, schemaVersion: 14 }),
 };
 
 function migrate(input: unknown): ProjectDocument {
@@ -323,6 +333,7 @@ function assertDocumentShape(doc: ProjectDocument): void {
   );
   if (missing.length > 0) throw new Error(`Corrupt project document: missing ${missing.join(", ")}`);
   if (!Array.isArray(doc.generationHistory)) doc.generationHistory = [];
+  if (typeof doc.chapters !== "object" || doc.chapters === null) doc.chapters = {};
   if (typeof doc.characterStates !== "object" || doc.characterStates === null) doc.characterStates = {};
   if (typeof doc.puppets !== "object" || doc.puppets === null) doc.puppets = {};
   if (typeof doc.workspaceItems !== "object" || doc.workspaceItems === null) doc.workspaceItems = {};

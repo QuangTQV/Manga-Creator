@@ -29,18 +29,28 @@ function nextPaint(): Promise<void> {
 }
 
 /**
- * Captures every page in reading order as a PNG data URL, restoring
- * whatever page the creator was actually looking at when it's done (success
- * or failure) — an export must never leave the editor on a different page.
+ * Captures pages as PNG data URLs, in the given order, restoring whatever
+ * page the creator was actually looking at when it's done (success or
+ * failure) — an export must never leave the editor on a different page.
+ *
+ * `pageIds` defaults to every page in reading order (the whole book); pass
+ * an explicit subset — e.g. one chapter's `ChapterRange.pageIds` from
+ * `chapterOps.ts` — to scope the export to just those pages.
  */
-export async function captureAllPages(scale: 1 | 2, onProgress?: (progress: ExportProgress) => void): Promise<string[]> {
+export async function captureAllPages(
+  scale: 1 | 2,
+  onProgress?: (progress: ExportProgress) => void,
+  pageIds?: string[],
+): Promise<string[]> {
   const state = useEditorStore.getState();
   const doc = state.doc;
   if (!doc) throw new Error("No open project");
-  const pageIds = Object.values(doc.pages)
-    .sort((a, b) => a.index - b.index)
-    .map((p) => p.id);
-  if (pageIds.length === 0) throw new Error("This project has no pages to export");
+  const ids =
+    pageIds ??
+    Object.values(doc.pages)
+      .sort((a, b) => a.index - b.index)
+      .map((p) => p.id);
+  if (ids.length === 0) throw new Error("This project has no pages to export");
 
   const urls = Object.values(doc.assets)
     .map(assetRenderUrl)
@@ -50,8 +60,8 @@ export async function captureAllPages(scale: 1 | 2, onProgress?: (progress: Expo
   const originalPageId = state.currentPageId;
   const dataUrls: string[] = [];
   try {
-    for (let i = 0; i < pageIds.length; i++) {
-      state.setCurrentPage(pageIds[i]);
+    for (let i = 0; i < ids.length; i++) {
+      state.setCurrentPage(ids[i]);
       await nextPaint();
       // Re-read the document each iteration: nothing here mutates it, but
       // reading through `useEditorStore.getState()` once per page (rather
@@ -59,8 +69,8 @@ export async function captureAllPages(scale: 1 | 2, onProgress?: (progress: Expo
       // stays consistent if that ever changes.
       const currentDoc = useEditorStore.getState().doc;
       if (!currentDoc) throw new Error("Project closed during export");
-      dataUrls.push(capturePageDataUrl(currentDoc, pageIds[i], scale));
-      onProgress?.({ done: i + 1, total: pageIds.length });
+      dataUrls.push(capturePageDataUrl(currentDoc, ids[i], scale));
+      onProgress?.({ done: i + 1, total: ids.length });
     }
   } finally {
     if (originalPageId) state.setCurrentPage(originalPageId);

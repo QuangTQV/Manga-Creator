@@ -9,6 +9,7 @@ import { addBubble, addEffect, duplicateItem, moveItemToIndex, placeAsset, remov
 import { addTone, updateTone, type TonePatch } from "./toneOps";
 import type { ProceduralToneParams, ToneMask } from "./tones";
 import { addPage, removePage, reorderPage, resetPageLayout, setPageLayout } from "./pageOps";
+import { addChapter, moveChapterStart, removeChapter, renameChapter } from "./chapterOps";
 import { renameProject, setDialogueLanguage } from "./projectOps";
 import { addRelationship, removeRelationship } from "./relationships";
 import {
@@ -156,6 +157,10 @@ export type DomainCommand =
   | { type: "set-page-layout"; pageId: ID; layout: LayoutPresetId }
   | { type: "reset-page-layout"; pageId: ID; layout: LayoutPresetId }
   | { type: "reorder-page"; pageId: ID; toIndex: number }
+  | { type: "add-chapter"; startPageId: ID; name?: string }
+  | { type: "rename-chapter"; chapterId: ID; name: string }
+  | { type: "remove-chapter"; chapterId: ID }
+  | { type: "move-chapter-start"; chapterId: ID; toPageId: ID }
   | { type: "add-page"; layout?: LayoutPresetId }
   | { type: "remove-page"; pageId: ID }
   | { type: "add-workspace-instance"; assetId: ID; at: Point }
@@ -375,6 +380,16 @@ function applyCommandCore(doc: ProjectDocument, command: DomainCommand): Command
       return { doc: resetPageLayout(doc, command.pageId, command.layout) };
     case "reorder-page":
       return { doc: reorderPage(doc, command.pageId, command.toIndex) };
+    case "add-chapter": {
+      const result = addChapter(doc, command.startPageId, command.name);
+      return { doc: result.doc, createdId: result.chapterId };
+    }
+    case "rename-chapter":
+      return { doc: renameChapter(doc, command.chapterId, command.name) };
+    case "remove-chapter":
+      return { doc: removeChapter(doc, command.chapterId) };
+    case "move-chapter-start":
+      return { doc: moveChapterStart(doc, command.chapterId, command.toPageId) };
     case "add-page": {
       const result = addPage(doc, command.layout);
       return { doc: result.doc, createdId: result.pageId };

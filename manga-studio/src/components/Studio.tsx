@@ -17,6 +17,7 @@ import { ArtStyleDialog } from "./dialogs/ArtStyleDialog";
 import { LiveAiPanel } from "./dialogs/LiveAiPanel";
 import { NovelImportDialog } from "./dialogs/NovelImportDialog";
 import { HistoryDialog } from "./dialogs/HistoryDialog";
+import { ChaptersDialog } from "./dialogs/ChaptersDialog";
 import { GeneratorDialog } from "./dialogs/GeneratorDialog";
 import { PuppetCapabilityDialog } from "./dialogs/PuppetCapabilityDialog";
 import { PuppetCompilerDialog } from "./dialogs/PuppetCompilerDialog";
@@ -178,6 +179,7 @@ export function Studio() {
       <LiveAiPanel />
       <NovelImportDialog />
       <HistoryDialog />
+      <ChaptersDialog />
       <ArtStyleDialog />
       <PuppetCapabilityDialog />
       <PuppetCompilerDialog />

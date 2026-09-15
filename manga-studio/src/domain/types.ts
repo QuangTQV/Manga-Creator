@@ -339,6 +339,25 @@ export interface Page {
   workspace: Point;
 }
 
+/**
+ * A chapter is a BOUNDARY, not a tag on every page: it names where a
+ * chapter starts, and its extent is derived — every page from `startPageId`
+ * up to (not including) the next chapter's start page, in page reading
+ * order (see `chaptersInOrder` in `chapterOps.ts`). Pages before the first
+ * chapter's start belong to no chapter (an implicit, unnamed prologue).
+ *
+ * This is deliberate: a page carries no `chapterId` field, so reordering
+ * pages (`reorderPage`) can never desync page order from chapter
+ * membership — there is nothing to desync, membership is always computed
+ * fresh from where the pages actually are.
+ */
+export interface Chapter {
+  id: ID;
+  projectId: ID;
+  name: string;
+  startPageId: ID;
+}
+
 export interface PanelBorder {
   visible: boolean;
   strokeWidthPx: number;
@@ -1004,6 +1023,8 @@ export interface ProjectDocument {
   assets: Record<ID, SourceAsset>;
   characters: Record<ID, Character>;
   pages: Record<ID, Page>;
+  /** See `Chapter`'s own docstring: a boundary marker, not a page tag. */
+  chapters: Record<ID, Chapter>;
   panels: Record<ID, Panel>;
   scenes: Record<ID, PanelScene>;
   /** The character state graph: semantic nodes with reference lineage. */
@@ -1028,4 +1049,4 @@ export interface ProjectDocument {
   generationHistory: GenerationRecord[];
 }
 
-export const SCHEMA_VERSION = 13;
+export const SCHEMA_VERSION = 14;

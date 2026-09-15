@@ -17,11 +17,23 @@ import { captureAllPages, downloadBlob, projectFileBasename, type ExportProgress
 
 export type ExportBookProgress = ExportProgress;
 
-export async function exportBookCbz(scale: 1 | 2 = 2, onProgress?: (progress: ExportBookProgress) => void): Promise<void> {
+/** Export just one chapter (or any other subset) instead of the whole book
+ * — `label` names the file, `pageIds` scopes the capture (see
+ * `captureAllPages`). Used by `ChaptersDialog.tsx`. */
+export interface ExportScope {
+  pageIds: string[];
+  label: string;
+}
+
+export async function exportBookCbz(
+  scale: 1 | 2 = 2,
+  onProgress?: (progress: ExportBookProgress) => void,
+  scope?: ExportScope,
+): Promise<void> {
   const doc = useEditorStore.getState().doc;
   if (!doc) throw new Error("No open project");
 
-  const dataUrls = await captureAllPages(scale, onProgress);
+  const dataUrls = await captureAllPages(scale, onProgress, scope?.pageIds);
 
   const zip = new JSZip();
   const digits = String(dataUrls.length).length;
@@ -31,5 +43,6 @@ export async function exportBookCbz(scale: 1 | 2 = 2, onProgress?: (progress: Ex
   });
 
   const blob = await zip.generateAsync({ type: "blob" });
-  downloadBlob(blob, `${projectFileBasename(doc.project.name)}.cbz`);
+  const name = scope ? `${projectFileBasename(doc.project.name)}-${projectFileBasename(scope.label)}` : projectFileBasename(doc.project.name);
+  downloadBlob(blob, `${name}.cbz`);
 }

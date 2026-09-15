@@ -336,3 +336,34 @@ test("a project archive exports and re-imports as a real, independent project", 
   const entries = page.getByRole("button", { name: /^Archive Round Trip/ });
   await expect(entries).toHaveCount(2);
 });
+
+test("chapters organize pages into named, exportable sections", async ({ page }) => {
+  await page.getByRole("button", { name: "Add page" }).click();
+  await page.getByRole("button", { name: "Add page" }).click();
+
+  await page.getByRole("button", { name: "Chapters" }).click();
+  await expect(page.getByRole("heading", { name: "Chapters" })).toBeVisible();
+  await expect(page.getByText("No chapters yet — Page 1 – Page 3 (3 pages)")).toBeVisible();
+
+  await page.getByRole("combobox", { name: "New chapter start page" }).selectOption({ label: "Page 2" });
+  await page.getByPlaceholder("Chapter name").fill("Act Two");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+
+  // The boundary split the book: page 1 is now "before the first chapter",
+  // pages 2-3 belong to the new chapter.
+  await expect(page.getByText("Before the first chapter: Page 1")).toBeVisible();
+  await expect(page.getByText("Page 2 – Page 3 (2 pages)")).toBeVisible();
+
+  const chapterName = page.getByRole("textbox", { name: "Chapter name for Act Two" });
+  await chapterName.fill("Renamed Chapter");
+  await chapterName.blur();
+  await expect(page.getByRole("textbox", { name: "Chapter name for Renamed Chapter" })).toHaveValue("Renamed Chapter");
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export CBZ" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/renamed-chapter\.cbz$/);
+
+  await page.getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByText("No chapters yet — Page 1 – Page 3 (3 pages)")).toBeVisible();
+});

@@ -33,6 +33,33 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-15 — Chapters (backlog #5).** New `Chapter` entity
+  (`domain/types.ts`), schema v13→v14. Deliberate design choice worth
+  remembering: a chapter is a BOUNDARY MARKER (`{id, name, startPageId}`),
+  not a `chapterId` tag on every page — its extent (`chaptersInOrder` in
+  `domain/chapterOps.ts`) is derived by walking pages in order and
+  bucketing between consecutive chapters' start pages, pages before the
+  first chapter being an implicit unnamed prologue. This means dragging a
+  page across a chapter boundary (backlog #2, done earlier today) just
+  works with zero sync code — there is nothing stored per-page that could
+  go stale. The one real edge case: deleting a chapter's start page. Fixed
+  in `reassignChapterStartsAfterPageRemoval`, wired into `pageOps.ts`'s
+  `removePage` — the chapter moves to the next surviving page still inside
+  its OWN original range (never steals a page already claimed by the next
+  chapter after it), or is deleted if nothing's left. New commands
+  (`add-chapter`, `rename-chapter`, `remove-chapter`, `move-chapter-start`),
+  new `ChaptersDialog.tsx` (TopBar), and `exportBookCbz`/`exportWebtoonStrip`
+  both gained an optional `scope: {pageIds, label}` param (threaded through
+  the shared `captureAllPages` in `exportPages.ts`) so a chapter can be
+  exported on its own.
+  **Deliberately NOT done in this pass**: Agent targeting a whole chapter
+  by name. The domain model and per-page picker (backlog item from
+  2026-09-14) now both exist, so this is genuinely just a wiring task next
+  time it's wanted — but it wasn't asked for here and picking a chapter
+  from the Agent's page-target dropdown needs its own small UI decision
+  (a chapter resolves to N pages, and the Agent still only targets one
+  page per run — see the 2026-09-14 agent-page-targeting entry's own
+  "did not add cross-page batch generation" note, which still holds).
 - **2026-09-15 — Project archive import/export.** A project only ever lived
   in one browser's IndexedDB — clearing site data or losing the profile
   loses it outright. Turned out to need almost no new machinery:
@@ -197,7 +224,7 @@ rather than leaving this list to drift from reality.
 
 **Tier 2 — moderate effort, clear value**
 4. ~~Project archive import/export~~ — **done 2026-09-15**, see Timeline.
-5. "Chapter" as a first-class domain concept (needs #2 first) — unlocks Agent targeting a whole chapter and per-chapter export; currently chapters exist only inside Novel Import's pre-generation outline.
+5. ~~"Chapter" as a first-class domain concept~~ — **done 2026-09-15**, see Timeline. Per-chapter export landed with it; Agent chapter-targeting did NOT (see Timeline entry — separate, deliberately deferred). (Tier 2 fully done.)
 
 **Tier 3 — bigger, needs careful scoping**
 6. Split/merge panels — touches core panel/item domain model.
