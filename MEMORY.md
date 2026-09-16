@@ -33,6 +33,73 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-16 — The Manga Agent can split, merge and add custom panels,
+  not just pick from 7 fixed layout presets or reshape one panel's
+  polygon.** From a `Barun-2005/manga-gen-ai-pipeline` research pass — its
+  "LLM picks from 15+ narrative-matched layout templates" claim turned out
+  to expose a REAL gap once checked against this codebase's actual agent
+  tool vocabulary: `agent-v2/process/panelProcess.ts` only wrapped
+  `set-page-layout` (7 presets) and `reshape-panel` (edit one existing
+  panel's polygon) as agent tools — `split-panel`/`merge-panels`/
+  `add-custom-panel` were already real, tested domain commands the MANUAL
+  UI could call (the "Panel" button, split/merge controls) but were never
+  exposed to the Director at all. (Its other two claimed capabilities —
+  "Character DNA" text-trait injection and face-detection-aware bubble
+  placement — were also checked: the first is a weaker, text-only
+  substitute for something Kumanga already does better with real
+  reference-image conditioning; the second is real and currently missing
+  here (`FocusRegion{kind:"face"}` exists in the schema but is written by
+  nothing, confirmed zero producers — bubble placement uses a fixed
+  `y = 18% of panel height` heuristic, not real face position) but was
+  correctly scoped as a separate, bigger, not-yet-approved item.)
+
+  Added three tool wrappers (`doSplitPanel`, `doMergePanels`,
+  `doAddCustomPanel` in `panelProcess.ts`) following the EXACT existing
+  `doSetPageLayout`/`doReshapePanel` pattern: resolve panel NUMBER → panel
+  ID via `ctx.panelIdByNumber`, dispatch the existing domain command
+  unchanged. Registered as `split_panel`/`merge_panels`/`add_custom_panel`
+  in `agent/tools/schemas.ts` (zod arg schemas, `TOOL_DOCS` entries,
+  `describeStep` cases in `orchestrator.ts`) — no new domain code at all,
+  purely wiring already-tested `panelOps.ts` functions into the Director's
+  vocabulary.
+
+  The one genuinely tricky part was `validateStepScope`'s scope-security
+  rules, which are keyed by tool name and had to be extended correctly for
+  three tools with three different argument shapes: `split_panel` (one
+  `panel` field) slotted into the existing generic `PANEL_TOOLS` check
+  exactly like `reshape_panel` already does; `add_custom_panel` (no panel
+  field — it ADDS one) got its own explicit rejection under
+  `selected-panel` scope, mirroring how `set_page_layout` is already
+  rejected there (a page-level change is never licensed by a scope that
+  only covers editing one existing panel); `merge_panels` (two panel
+  fields, `panelA`/`panelB`, neither privileged) needed a new rule —
+  allowed under `selected-panel` scope when EITHER side matches
+  `scope.panelNumber`, since unlike `reuse_scene_background` (which always
+  has one clear "target" side) a merge has no such asymmetry. All three
+  are also in `PANEL_LEVEL_TOOLS`, so a narrower `selected-object` scope
+  (one character/item selected, not a whole panel) rejects them outright —
+  selecting one thing never licenses restructuring the panel it lives in.
+
+  Documented in `TOOL_DOCS` that splitting/merging shifts every LATER
+  panel's number for the rest of the same plan (the new panel from a split
+  is inserted immediately after the source panel — confirmed directly in
+  `panelOps.ts`'s `splitPanel`, not assumed), since `panelIdByNumber`
+  resolves against the live, current document at each step — the model
+  needs to either do all structural steps before any panel-numbered
+  placement steps, or account for the shift explicitly.
+
+  Verified: full unit suite (1425/1425 — 13 new scope-validation cases in
+  `agent/scope.test.ts` covering all three tools under both scope kinds,
+  including the "either side of a merge" rule and an out-of-range panel
+  number, plus 4 new tests in a new `agent-v2/panelStructureTools.test.ts`
+  that execute real plans through `executePlan` against a real store — not
+  just schema validation — including one that actually places a bubble on
+  the SHIFTED panel number after a split to prove the renumbering claim in
+  the docs is true, not just asserted), clean typecheck/lint/build. No e2e
+  run for this one — nothing UI-visible changed; the new unit tests already
+  exercise real domain-command dispatch end to end, which is exactly what
+  CLAUDE.md's e2e guidance exists to cover for changes a unit test can't see.
+
 - **2026-09-16 — A brand-new character can start from a base/inspiration
   reference image plus a text prompt, not text alone.** Prompted by a
   `RemiPelloux/agent-mangaka-forge` research pass (a Codex-skill folder
@@ -1210,6 +1277,34 @@ were before being scoped, so treat the effort estimates as rough**
     AI-first, prose-driven flow. Would reuse the existing layout/Manga
     Agent pipeline as its backend; the new part is purely the manual
     authoring UI.
+
+**Tier from a `Barun-2005/manga-gen-ai-pipeline` competitive audit
+(2026-09-16), verified by reading the actual agent tool vocabulary rather
+than guessing**
+41. ~~Expose `split-panel`/`merge-panels`/`add-custom-panel` (already real,
+    tested domain commands the manual UI could call) to the Manga Agent's
+    own tool vocabulary~~ — **done 2026-09-16**, see Timeline. The Director
+    was limited to picking one of 7 layout presets or reshaping a single
+    existing panel, even though a human using the manual UI already had
+    all three of these.
+42. Face-position-aware bubble placement. Confirmed real and currently
+    missing (agent-placed bubbles use a fixed `y = 18%` heuristic; the
+    schema's `FocusRegion{kind:"face"}` slot exists but nothing writes it —
+    zero producers found). Two credible paths, increasing effort: (a) use
+    the character instance's already-known bounding box in the panel to
+    bias placement away from its upper portion — no new capability needed,
+    just a better heuristic; (b) real face detection (a CV step after
+    generation, closer to what `manga-gen-ai-pipeline` actually does) —
+    meaningfully bigger, a new dependency and a new pipeline stage. Not
+    started; needs the user to choose which path before implementation.
+43. "Character DNA" (an LLM pass that extracts structured visual traits
+    from a character's description and re-injects them into every
+    generation prompt) — considered and NOT recommended. Kumanga's
+    reference-image conditioning is already the stronger identity anchor,
+    and the prompt already includes both the raw appearance text and an
+    explicit "preserve this identity" instruction when a reference is
+    present (`ai/promptTemplates.ts`'s `buildCharacterStatePrompt`). An
+    extra LLM call per character for marginal, unclear benefit.
 
 **Not in the backlog — deliberate, don't re-add without the user explicitly overriding**
 - PDF export as the WHOLE-BOOK interchange format — CBZ remains that

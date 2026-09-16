@@ -153,6 +153,28 @@ export const toolSchemas = {
       .describe("Polygon in normalized page coordinates (0-1); diagonal cuts make action layouts"),
   }),
 
+  split_panel: z.object({
+    panel: panelIndex,
+    direction: z.enum(["vertical", "horizontal"]).describe("vertical = side by side, horizontal = stacked"),
+    fraction: z.number().min(0.1).max(0.9).optional().describe("Where the cut falls, 0.5 = the middle"),
+  }),
+
+  merge_panels: z.object({
+    panelA: panelIndex.describe("Kept identity — camera, perspective and border survive from this one"),
+    panelB: panelIndex.describe("Absorbed into panelA and removed"),
+  }),
+
+  add_custom_panel: z.object({
+    rect: z
+      .object({
+        x: z.number().min(0).max(1),
+        y: z.number().min(0).max(1),
+        width: z.number().min(0.02).max(1),
+        height: z.number().min(0.02).max(1),
+      })
+      .describe("Normalized page coordinates (0-1); added on top of the existing layout, not replacing it"),
+  }),
+
   set_crop_mode: z.object({
     panel: panelIndex,
     characterName: z.string().max(80).optional(),
@@ -437,6 +459,7 @@ const PANEL_TOOLS = new Set<ToolName>([
   "add_scene_relationship",
   "set_character_slot",
   "reshape_panel",
+  "split_panel",
   "set_crop_mode",
   "add_speech_bubble",
   "add_effect",
@@ -467,6 +490,9 @@ const PANEL_TOOLS = new Set<ToolName>([
 const PANEL_LEVEL_TOOLS = new Set<ToolName>([
   "set_page_layout",
   "reshape_panel",
+  "split_panel",
+  "merge_panels",
+  "add_custom_panel",
   "set_camera",
   "set_perspective",
   "remove_items",
@@ -509,6 +535,10 @@ export function validateStepScope(tool: ToolName, args: Record<string, unknown>,
   }
   if (scope.kind === "selected-panel") {
     if (tool === "set_page_layout") return `Scope violation: ${scope.label} cannot change the page layout`;
+    // Adding a whole new panel is a page-level change, same reasoning as
+    // set_page_layout above — a scoped panel licenses editing that panel,
+    // not growing the page's panel count.
+    if (tool === "add_custom_panel") return `Scope violation: ${scope.label} cannot add a new panel`;
     if (tool === "place_asset" && args.target === "workspace") {
       return `Scope violation: ${scope.label} cannot place assets outside the panel`;
     }
@@ -518,6 +548,14 @@ export function validateStepScope(tool: ToolName, args: Record<string, unknown>,
     if (tool === "reuse_scene_background" && args.targetPanel !== scope.panelNumber) {
       return `Scope violation: ${scope.label} allows only panel ${scope.panelNumber}`;
     }
+    // merge_panels touches two panels by definition; allowed only when the
+    // scoped panel is one of them (same "either side may be the scoped one"
+    // reasoning reuse_scene_background's targetPanel check does NOT need,
+    // since that tool always has a clear target — merge has no such
+    // asymmetry, so either field satisfies the scope).
+    if (tool === "merge_panels" && args.panelA !== scope.panelNumber && args.panelB !== scope.panelNumber) {
+      return `Scope violation: ${scope.label} allows only panel ${scope.panelNumber}`;
+    }
   }
   if (PANEL_TOOLS.has(tool) && typeof args.panel === "number" && args.panel > scope.panelCount) {
     return `Scope violation: panel ${args.panel} is outside ${scope.pageName}`;
@@ -525,6 +563,10 @@ export function validateStepScope(tool: ToolName, args: Record<string, unknown>,
   if (tool === "reuse_scene_background") {
     if (typeof args.sourcePanel === "number" && args.sourcePanel > scope.panelCount) return `Scope violation: source panel ${args.sourcePanel} is outside ${scope.pageName}`;
     if (typeof args.targetPanel === "number" && args.targetPanel > scope.panelCount) return `Scope violation: target panel ${args.targetPanel} is outside ${scope.pageName}`;
+  }
+  if (tool === "merge_panels") {
+    if (typeof args.panelA === "number" && args.panelA > scope.panelCount) return `Scope violation: panel ${args.panelA} is outside ${scope.pageName}`;
+    if (typeof args.panelB === "number" && args.panelB > scope.panelCount) return `Scope violation: panel ${args.panelB} is outside ${scope.pageName}`;
   }
   return null;
 }
@@ -548,6 +590,9 @@ Available tools (call only these, with exactly these argument shapes):
 - set_character_slot {panel?, characterName?, pose?, expression?, outfit?, view?, generateIfMissing?} — change the selected character's semantic state. Unspecified fields MUST remain unchanged ("make her cry" changes expression only; "run angrily" changes pose and expression). The shared resolver reuses an exact full-state cache hit or generates the missing combination, then swaps it without changing composition.
 - set_crop_mode {panel, characterName?, category?, mode: "fit"|"fill"|"upper-body"|"face"|"custom"} — reframe an already-placed instance. "upper-body" = medium shot, "fill" = full-bleed. Close-ups come from crop modes, never from regenerating.
 - reshape_panel {panel, points} — replace a panel's polygon (3-8 points, normalized 0-1 page coords). Use for dynamic/diagonal action layouts; keep shapes readable and non-overlapping.
+- split_panel {panel, direction: "vertical"|"horizontal", fraction?} — cut one panel into two, side by side (vertical) or stacked (horizontal). Existing content in the panel is kept, reassigned to whichever half it now falls in. IMPORTANT: the new panel is inserted immediately after the split one, shifting every later panel's number up by one for the rest of THIS plan — after splitting panel 2, what was panel 3 is now panel 4. Plan your later panel-numbered steps with that shift in mind, or do all structural steps (split/merge/add_custom_panel) before any placement/bubble/effect steps on the page.
+- merge_panels {panelA, panelB} — combine two panels into one (panelA's identity, camera and border survive; panelB is removed). Also shifts later panel numbers, same caution as split_panel.
+- add_custom_panel {rect: {x, y, width, height} normalized 0-1} — draw a brand-new panel directly onto the page on top of the existing layout (a breakout/bleeding panel), rather than replacing it the way set_page_layout does. Prefer set_page_layout for a whole new grid; use this for one extra panel layered over what's already there.
 - add_speech_bubble {panel, bubbleType: "speech"|"thought"|"shout"|"narration", text, position?} — add dialogue.
 - add_effect {panel, effectKind: "speed-lines"|"focus-lines"|"screentone"|"impact-burst"} — add a manga effect layer.
 - apply_tone {panel, presetId?, toneAssetName?, mood?, opacity?, maskToCharacterName?} — lay a SCREENTONE over a panel: shading, mood, texture, atmosphere. This is the right tool for "make this panel feel gloomy", "add screentone to her shirt", "darken the background". Prefer a built-in presetId when you know the pattern — dot-10/20/30/40/50, dot-fine, dot-coarse, lines-horizontal, lines-diagonal, lines-vertical, cross-hatch, gradient-light, gradient-dark, noise-light, noise-heavy, gloom, anxiety-hatch, darkness, speed-diagonal, impact-dense — otherwise pass the creator's mood words and the runtime picks. Name a character in maskToCharacterName to confine the tone to them rather than the whole panel. Tone is always a NON-DESTRUCTIVE layer: it never alters the artwork underneath, so it is safe to add and trivial to remove.

@@ -20,7 +20,7 @@ import {
   doSetCharacterPoseRig,
 } from "./process/characterProcess";
 import { doGenerateScenery, doPlaceAsset, doReuseSceneBackground, doAddSceneRelationship } from "./process/sceneProcess";
-import { doSetPageLayout, doReshapePanel, doSetCropMode, doRemoveItems } from "./process/panelProcess";
+import { doSetPageLayout, doReshapePanel, doSetCropMode, doRemoveItems, doSplitPanel, doMergePanels, doAddCustomPanel } from "./process/panelProcess";
 import { doAddBubble, doAttachBubble } from "./process/dialogueProcess";
 import { doAddEffect, doApplyTone, doPlaceMangaEffect, doGenerateMangaEffect } from "./process/toneProcess";
 import {
@@ -64,6 +64,12 @@ export function describeStep(step: AgentPlan["steps"][number]): string {
       return `Change ${args.characterName ?? "selected character"} to ${[args.pose, args.expression].filter(Boolean).join(" + ") || "new slot"}`;
     case "reshape_panel":
       return `Reshape panel ${args.panel}`;
+    case "split_panel":
+      return `Split panel ${args.panel} ${args.direction === "horizontal" ? "top/bottom" : "left/right"}`;
+    case "merge_panels":
+      return `Merge panels ${args.panelA} and ${args.panelB}`;
+    case "add_custom_panel":
+      return `Add a new panel to the page`;
     case "set_crop_mode":
       return `Set panel ${args.panel} framing to ${args.mode}`;
     case "add_speech_bubble":
@@ -305,6 +311,12 @@ export async function executeStep(ctx: RunContext, step: AgentPlan["steps"][numb
       return doSetCharacterSlot(ctx, args, scope);
     case "reshape_panel":
       return doReshapePanel(ctx, args);
+    case "split_panel":
+      return doSplitPanel(ctx, args);
+    case "merge_panels":
+      return doMergePanels(ctx, args);
+    case "add_custom_panel":
+      return doAddCustomPanel(ctx, args);
     case "set_crop_mode":
       return doSetCropMode(ctx, args);
     case "add_speech_bubble":
