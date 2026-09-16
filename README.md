@@ -15,14 +15,15 @@ API key (BYOK); there is no account, no cloud lock-in, and no bundled model.
 **[BotTony329](https://github.com/BotTony329)**.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.1%20freeze-8A2BE2)](docs/RELEASE_FREEZE_V0.1.md)
-[![Tests](https://img.shields.io/badge/tests-991%2F991%20pass-brightgreen)](docs/RELEASE_FREEZE_V0.1.md)
+[![Version](https://img.shields.io/badge/version-v0.3.0-8A2BE2)](https://github.com/QuangTQV/Manga-Creator/releases/tag/v0.3.0)
+[![Tests](https://img.shields.io/badge/tests-1425%2F1425%20pass-brightgreen)](https://github.com/QuangTQV/Manga-Creator/releases/tag/v0.3.0)
 [![Stack](https://img.shields.io/badge/Next.js%2015-TypeScript%205-black)](manga-studio/)
 
 **[🌐 Website](https://kumanga-website.vercel.app/)** ·
 **[🎬 Try the live studio](https://mangaharness.vercel.app)** ·
 **[📚 Studio docs](manga-studio/README.md)** ·
-**[🏛 Architecture](ARCHITECTURE.md)**
+**[🏛 Architecture](ARCHITECTURE.md)** ·
+**[🏷 Releases](https://github.com/QuangTQV/Manga-Creator/releases)**
 
 ---
 
@@ -35,9 +36,11 @@ composition are separate systems, and you are always the director. Think
 Manga Agent that operates the same editor through natural-language prompts.
 
 - **Stack**: Next.js 15 · React 19 · TypeScript 5 · npm workspaces
-- **Status**: v0.1 open-source preview, release-frozen 2026-08-22 —
-  991/991 tests, 98/98 security tests, `npm audit` clean
-  ([freeze report](docs/RELEASE_FREEZE_V0.1.md))
+- **Status**: actively developed —
+  [v0.3.0](https://github.com/QuangTQV/Manga-Creator/releases/tag/v0.3.0)
+  released 2026-09-16, 1425/1425 tests passing, `npm audit` clean
+  ([release notes](https://github.com/QuangTQV/Manga-Creator/releases/tag/v0.3.0) ·
+  [v0.1 baseline report](docs/RELEASE_FREEZE_V0.1.md) for the original freeze this fork started from)
 - **License**: MIT (keep [`NOTICE.md`](NOTICE.md) attribution on forks)
 
 ## Why not just prompt an image generator?
@@ -238,11 +241,15 @@ override any operator-default providers. A reference deployment runs at
 
 ### What is the current status of the project?
 
-v0.1 open-source preview, release-frozen on 2026-08-22 with a published
-baseline: 991/991 tests passing, 98/98 security tests, clean typecheck, lint
-and build, and zero `npm audit` vulnerabilities. Known-good baseline and
-architecture notes: [docs/RELEASE_FREEZE_V0.1.md](docs/RELEASE_FREEZE_V0.1.md)
-and [ARCHITECTURE.md](ARCHITECTURE.md).
+Actively developed. The latest release is
+[v0.3.0](https://github.com/QuangTQV/Manga-Creator/releases/tag/v0.3.0)
+(2026-09-16): 1425/1425 tests passing, clean typecheck, lint and build, and
+zero `npm audit` vulnerabilities. See the
+[release notes](https://github.com/QuangTQV/Manga-Creator/releases) for
+what shipped in each version, and [ARCHITECTURE.md](ARCHITECTURE.md) for
+module boundaries and the agent pipeline. The original v0.1 baseline this
+fork started from is preserved at
+[docs/RELEASE_FREEZE_V0.1.md](docs/RELEASE_FREEZE_V0.1.md) for reference.
 
 ## Repository layout
 
