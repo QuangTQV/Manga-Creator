@@ -132,6 +132,8 @@ provider.
 
 The current adapters are synchronous. The abstraction leaves room for job-based providers (`asyncGeneration` capability flag); a polling loop would live inside that adapter's `generateImage`, behind the same interface — no editor changes. A full job queue is deliberately not built (YAGNI until a provider requires it).
 
+Custom API's declarative polling (`src/server/customApi/config.ts`'s `pollingSchema`) already covers self-hosted local models that fit this shape — see `docs/HOW_TO_RUN.md` §5b for Ollama/LM Studio (agent, sync OpenAI-compatible) and Automatic1111 (image, sync base64 response) working today with zero new code, gated by `ALLOW_PRIVATE_NETWORKS=1` in `outboundFetch.ts`. **ComfyUI does not fit**: its `/history/{prompt_id}` response nests the result under a key equal to the submitted `prompt_id` itself — a dynamic path segment — while `pollingSchema.statusPath`/`resultPath` are fixed property paths with no `{{taskId}}` interpolation inside them (only `statusUrlTemplate` supports that placeholder). Supporting ComfyUI needs either extending path resolution to interpolate `{{taskId}}` inside `statusPath`/`resultPath`, or a dedicated `comfyui` adapter that builds/submits the workflow graph directly — backlogged, not started.
+
 ## Agent planning providers
 
 Agent adapters share a concise-plan contract rather than exposing vendor response shapes to the editor. OpenAI-compatible planning requests stream Chat Completions with JSON response mode and a 2,048-token ceiling. The SSE normalizer accumulates content and streamed function arguments, ignores provider reasoning text, preserves safe finish/status metadata, and converts a tool-call-only response into the canonical Manga Studio plan before schema and scope validation.

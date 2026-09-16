@@ -58,6 +58,29 @@ Mở trình duyệt tại: **http://localhost:3000**
 
 API key được mã hoá và lưu trong cookie HttpOnly phía server — không lưu vào dữ liệu project, không đọc được từ JavaScript phía trình duyệt.
 
+### 5b. Dùng model AI chạy local / self-host (không cần API cloud)
+
+Kumanga không bundle model nào, nhưng chuẩn **OpenAI-compatible** và **Custom API** trong AI Settings gọi được bất kỳ server local nào expose đúng chuẩn REST đó — không cần code thêm gì. Chỉ cần 2 bước:
+
+1. Thêm vào `.env.local`: `ALLOW_PRIVATE_NETWORKS=1` (chỉ dùng khi chạy `npm run dev` local, **không** bật khi deploy production — server hosted không với tới `localhost` của bạn nên bật ở đó vô nghĩa và mở lỗ SSRF).
+2. Trong AI Settings, cấu hình provider trỏ vào server local đang chạy trên máy bạn.
+
+**Manga Agent (LLM văn bản)** — dùng chuẩn **OpenAI-compatible**, đã chạy được ngay:
+
+| Server local | Base URL | Ghi chú |
+|---|---|---|
+| Ollama | `http://localhost:11434/v1` | Bật chế độ OpenAI-compat có sẵn của Ollama |
+| LM Studio | `http://localhost:1234/v1` | Bật "Local Server" trong LM Studio trước |
+
+**Sinh ảnh (Image generation)** — dùng **Custom API** (Gemini/generic-rest không map được các server này):
+
+| Server local | Cách cấu hình |
+|---|---|
+| Automatic1111 (webui) | Custom API, method `POST`, endpoint `http://localhost:7860/sdapi/v1/txt2img`, execution **sync**, response type `base64`, response path `images[0]` |
+| ComfyUI | **Chưa hỗ trợ đầy đủ** — xem ghi chú bên dưới |
+
+> **ComfyUI chưa có adapter riêng.** Cơ chế polling khai báo (`Custom API` → `execution: async`) giả định path kết quả là cố định, nhưng `/history/{prompt_id}` của ComfyUI lồng kết quả dưới một key **động** chính là `prompt_id` vừa submit — cơ chế path tĩnh hiện tại không diễn tả được việc này. Cần một adapter chuyên biệt (build workflow graph + poll đúng key động), đang nằm trong backlog, chưa triển khai.
+
 ### 6. Các lệnh khác
 
 Chạy từ thư mục gốc (đều tự proxy vào `manga-studio/`):
@@ -76,7 +99,7 @@ Trước khi coi một thay đổi là "xong", nên chạy đủ cả 4 lệnh: 
 
 - **Cổng 3000 đã bị chiếm** — kiểm tra xem có tiến trình `next dev` nào đang chạy sẵn không, hoặc đổi cổng: `PORT=3001 npm run dev`.
 - **Không sinh được ảnh** — vào AI Settings, bấm Test Connection để xem lỗi cụ thể (sai key, sai base URL, model không tồn tại...).
-- **Muốn dùng model AI chạy trên máy (Ollama/LM Studio)** — thêm `ALLOW_PRIVATE_NETWORKS=1` vào `.env.local`, chỉ dùng khi phát triển local, không dùng khi deploy thật.
+- **Muốn dùng model AI chạy trên máy (Ollama/LM Studio/Automatic1111)** — xem mục [5b](#5b-dùng-model-ai-chạy-local--self-host-không-cần-api-cloud) ở trên.
 - **Muốn deploy lên Vercel** — xem hướng dẫn chi tiết tại [`manga-studio/docs/DEPLOYMENT.md`](../manga-studio/docs/DEPLOYMENT.md).
 
 ### 8. Tài liệu liên quan
@@ -142,6 +165,29 @@ Open your browser at: **http://localhost:3000**
 
 Credentials are encrypted and stored in an HttpOnly server-side cookie — never written into project data, never readable from browser JavaScript.
 
+### 5b. Using a local/self-hosted AI model (no cloud API needed)
+
+Kumanga bundles no model, but the **OpenAI-compatible** and **Custom API** provider types in AI Settings can call any local server that speaks the matching REST shape — no new code required. Two steps:
+
+1. Add `ALLOW_PRIVATE_NETWORKS=1` to `.env.local` (local `npm run dev` only — **never** in production; a hosted deployment can't reach your `localhost` anyway, so enabling it there only opens an SSRF hole for no benefit).
+2. In AI Settings, point a provider at the local server running on your machine.
+
+**Manga Agent (text LLM)** — use **OpenAI-compatible**, works today:
+
+| Local server | Base URL | Note |
+|---|---|---|
+| Ollama | `http://localhost:11434/v1` | Enable Ollama's built-in OpenAI-compatible mode |
+| LM Studio | `http://localhost:1234/v1` | Start LM Studio's "Local Server" first |
+
+**Image generation** — use **Custom API** (Gemini/generic-rest can't map these):
+
+| Local server | Configuration |
+|---|---|
+| Automatic1111 (webui) | Custom API, method `POST`, endpoint `http://localhost:7860/sdapi/v1/txt2img`, execution **sync**, response type `base64`, response path `images[0]` |
+| ComfyUI | **Not fully supported yet** — see the note below |
+
+> **ComfyUI has no dedicated adapter yet.** The declarative polling mechanism (`Custom API` → `execution: async`) assumes a fixed result path, but ComfyUI's `/history/{prompt_id}` nests its result under a **dynamic** key — the `prompt_id` that was just submitted — which the current static-path polling schema can't express. A dedicated adapter (build the workflow graph, poll the correct dynamic key) is on the backlog, not yet built.
+
 ### 6. Other commands
 
 Run from the repository root (each proxies into `manga-studio/`):
@@ -161,7 +207,7 @@ Before treating a change as done, run all four:
 
 - **Port 3000 already in use** — check for an existing `next dev` process, or use a different port: `PORT=3001 npm run dev`.
 - **Image generation fails** — open AI Settings and click Test Connection to see the exact error (bad key, wrong base URL, unknown model...).
-- **Want to use a local model (Ollama/LM Studio)** — add `ALLOW_PRIVATE_NETWORKS=1` to `.env.local`; development only, never in a production deployment.
+- **Want to use a local model (Ollama/LM Studio/Automatic1111)** — see [section 5b](#5b-using-a-localself-hosted-ai-model-no-cloud-api-needed) above.
 - **Want to deploy to Vercel** — see [`manga-studio/docs/DEPLOYMENT.md`](../manga-studio/docs/DEPLOYMENT.md) for the full walkthrough.
 
 ### 8. Related documentation

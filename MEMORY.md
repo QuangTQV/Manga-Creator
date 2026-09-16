@@ -33,6 +33,35 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-16 — Documented self-hosted/local AI model usage (Ollama, LM
+  Studio, Automatic1111); confirmed ComfyUI needs a dedicated adapter, not
+  documented as supported.** Followed an audit of
+  `ahmet360/manga-studio` (a Python/FastAPI + local ComfyUI manga pipeline)
+  that found nothing else worth porting — architectures are too different
+  (local GPU orchestration vs. cloud BYOK SaaS) — after which the user
+  asked for Kumanga to also support a self-hosted local mode. Investigation
+  found the infrastructure already existed and just needed documenting:
+  `ALLOW_PRIVATE_NETWORKS=1` (`server/outboundFetch.ts`) plus the existing
+  OpenAI-compatible provider type already lets the Manga Agent point at
+  Ollama (`http://localhost:11434/v1`) or LM Studio
+  (`http://localhost:1234/v1`) with zero code changes, and the existing
+  Custom API provider (sync, base64 response) already lets image generation
+  point at Automatic1111's `/sdapi/v1/txt2img` the same way. Added a new
+  §5b to `docs/HOW_TO_RUN.md` (both VN and EN) with exact base
+  URLs/config per server, updated the troubleshooting bullet to point at
+  it, and added a technical note to `manga-studio/docs/
+  AI_PROVIDER_ARCHITECTURE.md`'s "Async providers" section. Checked
+  ComfyUI specifically and found it does NOT fit today's declarative
+  Custom API polling: `/history/{prompt_id}`'s result is nested under a
+  key equal to the submitted `prompt_id` itself (a dynamic path segment),
+  but `customApi/config.ts`'s `pollingSchema.statusPath`/`resultPath` are
+  fixed paths with no `{{taskId}}` interpolation support (only
+  `statusUrlTemplate` has that). Documented this limitation explicitly
+  rather than claiming ComfyUI works when it doesn't; added backlog #46
+  for the dedicated adapter this needs, deliberately not started this
+  session (user's own sequencing: docs first, then scope ComfyUI
+  separately).
+
 - **2026-09-16 — Rich per-key rotation management in AI Settings, Phase 1
   of 2 (weight, enable/disable, and per-key test/delete/reorder for the
   primary provider's backup keys).** Prompted by a screenshot of another
@@ -1415,6 +1444,29 @@ than guessing**
     materially bigger and riskier refactor of security-sensitive code than
     Phase 1's self-contained data-model change. Do not start without the
     user explicitly re-authorizing this specific phase.
+
+**Self-hosted local AI (2026-09-16, user asked "muốn kumanga cũng có chế độ
+self host local" after an ahmet360/manga-studio audit found nothing else
+worth porting)**
+46. ComfyUI adapter for local image generation — NOT started. Ollama/LM
+    Studio (agent) and Automatic1111 (image) already work today via the
+    existing OpenAI-compatible/Custom API provider types + `ALLOW_PRIVATE_
+    NETWORKS=1`, documented in `docs/HOW_TO_RUN.md` §5b — zero new code
+    needed for those. ComfyUI specifically does NOT fit today's declarative
+    Custom API polling (`server/customApi/config.ts`'s `pollingSchema`):
+    its `/history/{prompt_id}` response nests the result under a key that
+    IS the submitted `prompt_id` — a dynamic path segment — while
+    `statusPath`/`resultPath` are fixed paths with no `{{taskId}}`
+    interpolation (only `statusUrlTemplate` supports that placeholder).
+    Needs either extending path resolution to interpolate `{{taskId}}`
+    inside those two paths, or a dedicated `comfyui` adapter that builds/
+    submits the workflow graph directly. See
+    `manga-studio/docs/AI_PROVIDER_ARCHITECTURE.md`'s "Async providers"
+    section for the same technical note. User confirmed sequencing: ship
+    the documentation first (done), scope/build the ComfyUI adapter next —
+    but as its own plan-mode round given it likely touches
+    `customApi/config.ts` (shared, security-sensitive: SSRF guard +
+    request-template parsing), not a quick follow-on.
 
 **Not in the backlog — deliberate, don't re-add without the user explicitly overriding**
 - PDF export as the WHOLE-BOOK interchange format — CBZ remains that
