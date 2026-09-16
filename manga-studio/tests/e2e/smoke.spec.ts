@@ -1221,3 +1221,72 @@ test("AI Settings backup keys: add, edit weight/enabled, test, reorder and remov
   await agentCard.getByRole("button", { name: "Test all keys" }).click();
   await expect(agentCard.getByText("Connected")).toHaveCount(2); // card badge + the one remaining row
 });
+
+test("AI Settings: configure a local ComfyUI image provider (no API key needed)", async ({ page }) => {
+  // Real credential storage needs APP_ENCRYPTION_KEY, which this smoke
+  // environment's dev server doesn't set — mock the same three routes the
+  // real save/test/status flow uses, the same way the backup-keys test
+  // above does for an unrelated subsystem.
+  let imageConfig: { providerType: string; baseUrl: string; model: string } | null = null;
+
+  await page.route("**/api/provider/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        configured: Boolean(imageConfig),
+        agent: { configured: false },
+        image: imageConfig
+          ? { configured: true, source: "session", ...imageConfig }
+          : { configured: false },
+        background: { configured: false },
+      }),
+    });
+  });
+
+  await page.route("**/api/provider/config", async (route) => {
+    const body = route.request().postDataJSON() as { kind: string; providerType: string; baseUrl?: string; model: string };
+    if (body.kind === "image") {
+      imageConfig = { providerType: body.providerType, baseUrl: body.baseUrl || "http://127.0.0.1:8188", model: body.model };
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ configured: true, source: "session", ...imageConfig }),
+    });
+  });
+
+  await page.route("**/api/provider/test", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+
+  await page.getByRole("button", { name: "AI Settings" }).click();
+  const imageCard = page.locator("section").filter({ has: page.getByRole("heading", { name: "Image Generation" }) });
+
+  await imageCard.getByText("Advanced — API standard").click();
+  await imageCard.getByRole("combobox", { name: "API standard / protocol" }).selectOption("comfyui");
+
+  // The local-network reminder and the checkpoint-filename hint are the two
+  // small additive UI touches this protocol needed — confirm both render.
+  await expect(imageCard.getByText(/ALLOW_PRIVATE_NETWORKS=1/)).toBeVisible();
+
+  const saveButton = imageCard.getByRole("button", { name: "Save" });
+  await expect(saveButton).toBeDisabled(); // no model entered yet
+
+  await imageCard.getByRole("textbox", { name: "Model" }).fill("sd_xl_base_1.0.safetensors");
+  await expect(imageCard.getByText(/Checkpoint filename/)).toBeVisible();
+
+  // The actual bug this test caught: ComfyUI has no built-in auth, so Save
+  // must not require an API key — it stayed wrongly disabled before the fix.
+  await expect(imageCard.getByRole("textbox", { name: "API key" })).toHaveValue("");
+  await expect(saveButton).toBeEnabled();
+
+  await saveButton.click();
+  await expect(imageCard.getByText("Saved. Credentials are stored securely for this browser session.")).toBeVisible();
+  await expect(imageCard.getByText("Connected")).toHaveCount(1); // card badge only, no test run yet
+
+  const testButton = imageCard.getByRole("button", { name: "Test Connection" });
+  await expect(testButton).toBeEnabled();
+  await testButton.click();
+  await expect(imageCard.getByText("Connected")).toHaveCount(2); // card badge + test result message
+});

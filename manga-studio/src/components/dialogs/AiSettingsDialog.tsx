@@ -270,9 +270,11 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
 
   const typeInfo = protocols.find((t) => t.id === providerType) ?? protocols[0];
   const configured = summary?.configured ?? false;
+  // ComfyUI has no built-in auth (like Custom API's authMode "none") — an
+  // API key is never required to save it, configured or not.
   const canSave = isCustom
     ? Boolean(customForm.endpoint && customForm.model && (configured || customForm.apiKey || customForm.authMode === "none"))
-    : Boolean((kind === "background" || model) && (configured || apiKey));
+    : Boolean((kind === "background" || model) && (configured || apiKey || providerType === "comfyui"));
 
   const save = async () => {
     setBusy("save");
