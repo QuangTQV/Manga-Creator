@@ -59,7 +59,9 @@ export function classifyStatus(status: number): RotationFailure {
 function asCandidate(config: ProviderConfig, fields: Partial<ProviderConfig>): ProviderConfig {
   // A candidate is one concrete attempt — never carries the pool fields
   // that produced it, so nothing downstream mistakes it for a sub-pool.
-  return { ...config, backupApiKeys: undefined, fallbackProviders: undefined, ...fields };
+  // `weight` resets to the primary's implicit 1 (undefined) unless `fields`
+  // explicitly sets it from the backup entry that produced this candidate.
+  return { ...config, backupApiKeys: undefined, fallbackProviders: undefined, weight: undefined, ...fields };
 }
 
 function fallbackAsConfig(config: ProviderConfig, fallback: FallbackProviderConfig): ProviderConfig {
@@ -102,14 +104,17 @@ export function buildCandidates(config: ProviderConfig): ProviderConfig[] {
   }
 
   add(asCandidate(config, {}));
-  for (const key of config.backupApiKeys ?? []) {
-    if (key) add(asCandidate(config, { apiKey: key }));
+  for (const entry of config.backupApiKeys ?? []) {
+    // enabled: false pulls the key out of the pool entirely — not just
+    // deprioritized, never tried at all — so a creator can pause a key
+    // that's out of credit without deleting and re-typing it later.
+    if (entry.key && entry.enabled !== false) add(asCandidate(config, { apiKey: entry.key, weight: entry.weight }));
   }
   for (const fallback of config.fallbackProviders ?? []) {
     const base = fallbackAsConfig(config, fallback);
     add(base);
-    for (const key of fallback.backupApiKeys ?? []) {
-      if (key) add({ ...base, apiKey: key });
+    for (const entry of fallback.backupApiKeys ?? []) {
+      if (entry.key && entry.enabled !== false) add({ ...base, apiKey: entry.key, weight: entry.weight });
     }
   }
   return candidates;
@@ -208,12 +213,39 @@ export interface OrderedCandidates {
 }
 
 /**
+ * A weighted random permutation: repeatedly draw one remaining candidate
+ * proportional to its own `weight` (default 1), append it, remove it,
+ * repeat. When every candidate's weight is equal (today's default — no
+ * `BackupKeyEntry.weight` set anywhere) this reduces to a plain uniform
+ * shuffle, byte-for-byte equivalent in distribution to the Fisher-Yates it
+ * replaces — weight only changes behavior once a creator actually sets one.
+ */
+function weightedShuffle(items: ProviderConfig[]): ProviderConfig[] {
+  const remaining = [...items];
+  const result: ProviderConfig[] = [];
+  while (remaining.length > 0) {
+    const weights = remaining.map((item) => Math.max(0.0001, item.weight ?? 1));
+    const total = weights.reduce((sum, w) => sum + w, 0);
+    let draw = Math.random() * total;
+    let index = 0;
+    for (; index < weights.length - 1; index++) {
+      draw -= weights[index];
+      if (draw < 0) break;
+    }
+    result.push(remaining[index]);
+    remaining.splice(index, 1);
+  }
+  return result;
+}
+
+/**
  * Resolve which candidates to try and in what order. Rotation-on-failure
  * (in the caller's try loop) always walks whatever order results from
  * here — this only decides where to start:
  *
  *   sequential   — always the primary first (simplest, concentrates load).
- *   random       — uniform random order among the ready candidates.
+ *   random       — weighted random order among the ready candidates (see
+ *                  `weightedShuffle`); uniform when no weight is set.
  *   round_robin  — advances a per-pool cursor so consecutive requests fan
  *                  out evenly (the default).
  */
@@ -236,12 +268,7 @@ export function orderCandidates(config: ProviderConfig): OrderedCandidates {
 
   const strategy = config.rotationStrategy ?? DEFAULT_ROTATION_STRATEGY;
   if (strategy === "random") {
-    const shuffled = [...ready];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    return { ready: shuffled, coolingCount, soonestReadySeconds };
+    return { ready: weightedShuffle(ready), coolingCount, soonestReadySeconds };
   }
   if (strategy === "sequential") {
     return { ready, coolingCount, soonestReadySeconds };

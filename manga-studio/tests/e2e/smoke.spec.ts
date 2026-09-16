@@ -1114,3 +1114,110 @@ test("a brand-new character can start from a base/inspiration reference image pl
   // inspiration image itself, which was only ever sent as guidance.
   await expect(page.locator('img[alt="Nova reference"]')).toHaveCount(1);
 });
+
+test("AI Settings backup keys: add, edit weight/enabled, test, reorder and remove one at a time", async ({ page }) => {
+  // Real credential storage needs a configured server this smoke
+  // environment doesn't have — intercepting /api/provider/status and
+  // /api/provider/backup-keys the way the real server would respond lets
+  // this test exercise the actual new per-key list UI (not the old bulk
+  // textarea it replaced) without depending on that unrelated subsystem.
+  let backupKeys: { weight: number; enabled: boolean }[] = [];
+
+  await page.route("**/api/provider/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        configured: true,
+        agent: {
+          configured: true,
+          source: "session",
+          providerType: "openai-compatible",
+          baseUrl: "https://api.example.com/v1",
+          model: "some-model",
+          backupKeyCount: backupKeys.length,
+          backupKeys,
+          rotationStrategy: "round_robin",
+        },
+        image: { configured: false },
+        background: { configured: false },
+      }),
+    });
+  });
+
+  await page.route("**/api/provider/backup-keys", async (route) => {
+    const body = route.request().postDataJSON() as {
+      action: string;
+      index?: number;
+      weight?: number;
+      enabled?: boolean;
+      fromIndex?: number;
+      toIndex?: number;
+    };
+    if (body.action === "add") backupKeys = [...backupKeys, { weight: 1, enabled: true }];
+    else if (body.action === "update") {
+      backupKeys = backupKeys.map((entry, i) =>
+        i === body.index ? { weight: body.weight ?? entry.weight, enabled: body.enabled ?? entry.enabled } : entry,
+      );
+    } else if (body.action === "remove") {
+      backupKeys = backupKeys.filter((_, i) => i !== body.index);
+    } else if (body.action === "reorder") {
+      const next = [...backupKeys];
+      const [moved] = next.splice(body.fromIndex!, 1);
+      next.splice(body.toIndex!, 0, moved);
+      backupKeys = next;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ backupKeys }) });
+  });
+
+  await page.route("**/api/provider/test-key", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, status: "Connected" }),
+    });
+  });
+
+  await page.getByRole("button", { name: "AI Settings" }).click();
+  const agentCard = page.locator("section").filter({ has: page.getByRole("heading", { name: "Manga Agent (LLM)" }) });
+  await agentCard.getByText("Advanced — rotation & fallback").click();
+
+  await expect(agentCard.getByText("No backup keys yet")).toBeVisible();
+
+  // Add the first key.
+  await agentCard.getByRole("textbox", { name: "New backup key" }).fill("sk-backup-one-000000");
+  await agentCard.getByRole("button", { name: "+ Add key" }).click();
+  await expect(agentCard.getByRole("checkbox", { name: "Enable backup key 1" })).toBeVisible();
+  await expect(agentCard.getByRole("spinbutton", { name: "Weight for backup key 1" })).toHaveValue("1");
+
+  // Add a second key so reorder has somewhere to go.
+  await agentCard.getByRole("textbox", { name: "New backup key" }).fill("sk-backup-two-000000");
+  await agentCard.getByRole("button", { name: "+ Add key" }).click();
+  await expect(agentCard.getByRole("checkbox", { name: "Enable backup key 2" })).toBeVisible();
+
+  // Edit weight on the first key.
+  await agentCard.getByRole("spinbutton", { name: "Weight for backup key 1" }).fill("5");
+  await expect(agentCard.getByRole("spinbutton", { name: "Weight for backup key 1" })).toHaveValue("5");
+
+  // Disable the second key — a pause, not a delete.
+  await agentCard.getByRole("checkbox", { name: "Enable backup key 2" }).uncheck();
+  await expect(agentCard.getByRole("checkbox", { name: "Enable backup key 2" })).not.toBeChecked();
+
+  // Test one specific key.
+  await agentCard.getByRole("button", { name: "Test backup key 1" }).click();
+  await expect(agentCard.getByText("Connected")).toHaveCount(2); // card badge + row result
+
+  // Reorder: move key 1 down, swapping with key 2.
+  await agentCard.getByRole("button", { name: "Move backup key 1 down" }).click();
+  await expect(agentCard.getByRole("spinbutton", { name: "Weight for backup key 1" })).toHaveValue("1");
+  await expect(agentCard.getByRole("spinbutton", { name: "Weight for backup key 2" })).toHaveValue("5");
+
+  // Remove one key.
+  await agentCard.getByRole("button", { name: "Remove backup key 1" }).click();
+  await expect(agentCard.getByRole("checkbox", { name: "Enable backup key 2" })).toHaveCount(0);
+  await expect(agentCard.getByRole("spinbutton", { name: "Weight for backup key 1" })).toHaveValue("5");
+
+  // "Test all keys" round-trips through the same mocked endpoint.
+  await agentCard.getByRole("button", { name: "Test all keys" }).click();
+  await expect(agentCard.getByText("Connected")).toHaveCount(2); // card badge + the one remaining row
+});

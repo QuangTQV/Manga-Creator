@@ -70,7 +70,7 @@ describe("wrapImageProviderWithRotation", () => {
       "backup-1": async () => RESULT,
     });
     const provider = wrapImageProviderWithRotation(
-      config({ backupApiKeys: ["backup-1"], rotationStrategy: "sequential" }),
+      config({ backupApiKeys: [{ key: "backup-1" }], rotationStrategy: "sequential" }),
       buildAdapter,
     );
     const result = await provider.generateImage({ prompt: "x", assetType: "character" });
@@ -86,7 +86,7 @@ describe("wrapImageProviderWithRotation", () => {
       "backup-1": async () => RESULT,
     });
     const provider = wrapImageProviderWithRotation(
-      config({ backupApiKeys: ["backup-1"], rotationStrategy: "sequential" }),
+      config({ backupApiKeys: [{ key: "backup-1" }], rotationStrategy: "sequential" }),
       buildAdapter,
     );
     await expect(provider.generateImage({ prompt: "x", assetType: "character" })).resolves.toBe(RESULT);
@@ -101,7 +101,7 @@ describe("wrapImageProviderWithRotation", () => {
       "backup-1": async () => RESULT,
     });
     const provider = wrapImageProviderWithRotation(
-      config({ backupApiKeys: ["backup-1"], rotationStrategy: "sequential" }),
+      config({ backupApiKeys: [{ key: "backup-1" }], rotationStrategy: "sequential" }),
       buildAdapter,
     );
     await expect(provider.generateImage({ prompt: "x", assetType: "character" })).rejects.toThrow("bad prompt");
@@ -135,7 +135,7 @@ describe("wrapImageProviderWithRotation", () => {
     const provider = wrapImageProviderWithRotation(
       config({
         providerType: "gemini",
-        backupApiKeys: ["backup-1"],
+        backupApiKeys: [{ key: "backup-1" }],
         rotationStrategy: "sequential",
         fallbackProviders: [
           {
@@ -160,7 +160,7 @@ describe("wrapImageProviderWithRotation", () => {
       "primary-key": async () => RESULT,
       "backup-1": async () => RESULT,
     });
-    const cfg = config({ backupApiKeys: ["backup-1"], rotationStrategy: "sequential" });
+    const cfg = config({ backupApiKeys: [{ key: "backup-1" }], rotationStrategy: "sequential" });
     const provider = wrapImageProviderWithRotation(cfg, buildAdapter);
     // Exhaust both candidates with rate limits first so both are cooling.
     const failing = fakeAdapterFactory({
@@ -204,7 +204,7 @@ describe("wrapImageProviderWithRotation", () => {
       generateImage: async () => RESULT,
     });
     const provider = wrapImageProviderWithRotation(
-      config({ backupApiKeys: ["backup-1"] }),
+      config({ backupApiKeys: [{ key: "backup-1" }] }),
       buildAdapter,
     );
     const status = await provider.testConnection();

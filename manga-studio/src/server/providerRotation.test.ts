@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { FallbackProviderConfig, ProviderConfig } from "./providerSession";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { BackupKeyEntry, FallbackProviderConfig, ProviderConfig } from "./providerSession";
 import {
   allCoolingDownMessage,
   buildCandidates,
@@ -32,6 +32,11 @@ function config(overrides: Partial<ProviderConfig> = {}): ProviderConfig {
   };
 }
 
+/** One backup key entry — terse constructor for test call sites. */
+function bk(key: string, extra: Partial<BackupKeyEntry> = {}): BackupKeyEntry {
+  return { key, ...extra };
+}
+
 beforeEach(() => {
   resetRotationStateForTests();
 });
@@ -55,7 +60,7 @@ describe("buildCandidates", () => {
   });
 
   it("yields the primary then each backup key, in order", () => {
-    const candidates = buildCandidates(config({ backupApiKeys: ["backup-1", "backup-2"] }));
+    const candidates = buildCandidates(config({ backupApiKeys: [bk("backup-1"), bk("backup-2")] }));
     expect(candidates.map((c) => c.apiKey)).toEqual(["primary-key", "backup-1", "backup-2"]);
     // Every non-primary candidate carries no further backups of its own —
     // rotating past the primary must not re-expand the same list forever.
@@ -64,17 +69,31 @@ describe("buildCandidates", () => {
 
   it("skips a backup key identical to the primary or to an earlier backup", () => {
     const candidates = buildCandidates(
-      config({ backupApiKeys: ["primary-key", "backup-1", "backup-1", ""] }),
+      config({ backupApiKeys: [bk("primary-key"), bk("backup-1"), bk("backup-1"), bk("")] }),
     );
     expect(candidates.map((c) => c.apiKey)).toEqual(["primary-key", "backup-1"]);
+  });
+
+  it("excludes a disabled backup key from the pool entirely, not just deprioritizes it", () => {
+    const candidates = buildCandidates(
+      config({ backupApiKeys: [bk("backup-1", { enabled: false }), bk("backup-2")] }),
+    );
+    expect(candidates.map((c) => c.apiKey)).toEqual(["primary-key", "backup-2"]);
+  });
+
+  it("propagates each backup key's weight onto its candidate", () => {
+    const candidates = buildCandidates(
+      config({ backupApiKeys: [bk("backup-1", { weight: 4 }), bk("backup-2")] }),
+    );
+    expect(candidates.map((c) => c.weight)).toEqual([undefined, 4, undefined]);
   });
 
   it("appends each fallback provider after the primary and its backups, each with its own backups", () => {
     const candidates = buildCandidates(
       config({
-        backupApiKeys: ["backup-1"],
+        backupApiKeys: [bk("backup-1")],
         fallbackProviders: [
-          fallback({ providerType: "openai-compatible", apiKey: "fb1-primary", backupApiKeys: ["fb1-backup"] }),
+          fallback({ providerType: "openai-compatible", apiKey: "fb1-primary", backupApiKeys: [bk("fb1-backup")] }),
           fallback({ providerType: "gemini", model: "gemini-2.0-flash", apiKey: "fb2-primary" }),
         ],
       }),
@@ -193,7 +212,7 @@ describe("cooldown tracking", () => {
   });
 
   it("scopes cooldowns per key, not per provider — a different key on the same provider stays ready", () => {
-    const primary = config({ backupApiKeys: ["backup-1"] });
+    const primary = config({ backupApiKeys: [bk("backup-1")] });
     markCooldown(primary, "rate_limit");
     const backup = buildCandidates(primary)[1];
     expect(cooldownRemainingSeconds(primary)).toBeGreaterThan(0);
@@ -209,7 +228,7 @@ describe("cooldown tracking", () => {
 
 describe("orderCandidates", () => {
   it("skips candidates currently cooling down and reports how soon the soonest clears", () => {
-    const c = config({ backupApiKeys: ["backup-1", "backup-2"], cooldownSeconds: 30 });
+    const c = config({ backupApiKeys: [bk("backup-1"), bk("backup-2")], cooldownSeconds: 30 });
     const candidates = buildCandidates(c);
     markCooldown(candidates[0], "rate_limit"); // bench the primary only
     const { ready, coolingCount, soonestReadySeconds } = orderCandidates(c);
@@ -219,7 +238,7 @@ describe("orderCandidates", () => {
   });
 
   it("sequential strategy always starts at the primary", () => {
-    const c = config({ backupApiKeys: ["backup-1", "backup-2"], rotationStrategy: "sequential" });
+    const c = config({ backupApiKeys: [bk("backup-1"), bk("backup-2")], rotationStrategy: "sequential" });
     expect(orderCandidates(c).ready.map((r) => r.apiKey)).toEqual([
       "primary-key",
       "backup-1",
@@ -234,7 +253,7 @@ describe("orderCandidates", () => {
   });
 
   it("round_robin (default) advances a shared cursor across consecutive calls", () => {
-    const c = config({ backupApiKeys: ["backup-1", "backup-2"] });
+    const c = config({ backupApiKeys: [bk("backup-1"), bk("backup-2")] });
     const first = orderCandidates(c).ready.map((r) => r.apiKey);
     const second = orderCandidates(c).ready.map((r) => r.apiKey);
     const third = orderCandidates(c).ready.map((r) => r.apiKey);
@@ -245,7 +264,7 @@ describe("orderCandidates", () => {
   });
 
   it("random strategy only ever reorders the ready set, never drops or invents one", () => {
-    const c = config({ backupApiKeys: ["backup-1", "backup-2"], rotationStrategy: "random" });
+    const c = config({ backupApiKeys: [bk("backup-1"), bk("backup-2")], rotationStrategy: "random" });
     const { ready } = orderCandidates(c);
     expect(ready.map((r) => r.apiKey).sort()).toEqual(["backup-1", "backup-2", "primary-key"]);
   });
@@ -253,6 +272,23 @@ describe("orderCandidates", () => {
   it("does not reorder a single-candidate pool regardless of strategy", () => {
     const c = config({ rotationStrategy: "random" });
     expect(orderCandidates(c).ready.map((r) => r.apiKey)).toEqual(["primary-key"]);
+  });
+
+  it("a heavily-weighted key is picked first far more often under random", () => {
+    // Real randomness (not mocked) — statistical, not exact. weight 9 vs 1
+    // means ~90% expected; assert well clear of the 50% a uniform shuffle
+    // would give, so this cannot flake into a false pass on old behavior.
+    const c = config({
+      apiKey: "low-weight",
+      backupApiKeys: [bk("high-weight", { weight: 9 })],
+      rotationStrategy: "random",
+    });
+    let highFirst = 0;
+    const trials = 500;
+    for (let i = 0; i < trials; i++) {
+      if (orderCandidates(c).ready[0].apiKey === "high-weight") highFirst++;
+    }
+    expect(highFirst / trials).toBeGreaterThan(0.75);
   });
 });
 
@@ -266,16 +302,39 @@ describe("allCoolingDownMessage", () => {
 
 describe("Math.random determinism guard", () => {
   const spy = vi.spyOn(Math, "random");
-  afterEach(() => spy.mockRestore());
+  // mockReset (not mockRestore!) between tests: restore fully detaches the
+  // spy from Math.random, so a later test's mockReturnValue on the same
+  // spy handle silently becomes a no-op and real Math.random runs instead
+  // — caught the hard way when a second test in this block started
+  // "passing" against genuinely random, non-deterministic output. reset
+  // clears the configured value but keeps the spy actually installed.
+  afterEach(() => spy.mockReset());
+  afterAll(() => spy.mockRestore());
 
-  it("random strategy with a fixed draw is reproducible", () => {
-    // Fisher-Yates with random()=0 always swaps index i with index 0:
-    // [p, b1, b2] --i=2--> [b2, b1, p] --i=1--> [b1, b2, p]
+  it("random strategy with a fixed low draw always picks the first remaining candidate", () => {
+    // weightedShuffle draws `Math.random() * totalWeight`; with equal
+    // weights and random()=0 the draw is always 0, which never goes
+    // negative subtracting any positive weight until the very last
+    // candidate — so each round just takes whatever is first in what's
+    // left, i.e. the input order is preserved unchanged.
     spy.mockReturnValue(0);
-    const c = config({ backupApiKeys: ["backup-1", "backup-2"], rotationStrategy: "random" });
+    const c = config({ backupApiKeys: [bk("backup-1"), bk("backup-2")], rotationStrategy: "random" });
     expect(orderCandidates(c).ready.map((r) => r.apiKey)).toEqual([
+      "primary-key",
       "backup-1",
       "backup-2",
+    ]);
+  });
+
+  it("random strategy with a fixed high draw always picks the last remaining candidate", () => {
+    // random()=0.99 makes each draw land just past every weight but the
+    // last, so every round removes whatever is currently last — the
+    // result is the input order fully reversed.
+    spy.mockReturnValue(0.99);
+    const c = config({ backupApiKeys: [bk("backup-1"), bk("backup-2")], rotationStrategy: "random" });
+    expect(orderCandidates(c).ready.map((r) => r.apiKey)).toEqual([
+      "backup-2",
+      "backup-1",
       "primary-key",
     ]);
   });

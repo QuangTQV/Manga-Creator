@@ -9,9 +9,11 @@ import { NextRequest } from "next/server";
 import { openSecret, sealSecret } from "./secretBox";
 import {
   buildProviderConfig,
+  AGENT_COOKIE,
   BACKGROUND_COOKIE,
   IMAGE_COOKIE,
   envAgentConfig,
+  readSessionConfig,
   resolveProvider,
   summarize,
   type ProviderConfig,
@@ -226,7 +228,7 @@ describe("summaries never leak secrets", () => {
             baseUrl: "https://api.example.com/v1",
             apiKey: "fallback-secret",
             model: "fb-model",
-            backupApiKeys: ["fallback-backup-secret"],
+            backupApiKeys: [{ key: "fallback-backup-secret" }],
           },
         ],
       },
@@ -239,6 +241,66 @@ describe("summaries never leak secrets", () => {
     expect(summary.fallbackProviders).toEqual([
       { providerType: "openai-compatible", name: undefined, model: "fb-model", backupKeyCount: 1 },
     ]);
+  });
+});
+
+describe("backup key weight/enabled — rich rotation management", () => {
+  it("coerces a legacy plain-string backup key into the current shape on read", () => {
+    process.env.APP_ENCRYPTION_KEY = "operator-secret-for-test";
+    // A cookie written before weight/enabled existed — string, not object.
+    const legacy = {
+      kind: "agent",
+      providerType: "openai-compatible",
+      baseUrl: "https://api.example.com/v1",
+      apiKey: "primary-secret",
+      model: "some-model",
+      backupApiKeys: ["old-style-backup-1", "old-style-backup-2"],
+    };
+    const request = new NextRequest("https://manga.example/api/generate", {
+      headers: { cookie: `${AGENT_COOKIE}=${sealSecret(JSON.stringify(legacy))}` },
+    });
+    const config = readSessionConfig(request, "agent");
+    expect(config?.backupApiKeys).toEqual([
+      { key: "old-style-backup-1", weight: 1, enabled: true },
+      { key: "old-style-backup-2", weight: 1, enabled: true },
+    ]);
+  });
+
+  it("round-trips weight and enabled through buildProviderConfig", () => {
+    const config = buildProviderConfig(
+      {
+        kind: "agent",
+        providerType: "openai-compatible",
+        baseUrl: "https://api.example.com/v1",
+        apiKey: "primary-secret",
+        model: "some-model",
+        backupApiKeys: [{ key: "backup-1", weight: 3, enabled: false }],
+      },
+      null,
+    );
+    expect(config.backupApiKeys).toEqual([{ key: "backup-1", weight: 3, enabled: false }]);
+  });
+
+  it("keeps a realistic 8-key config well inside the cookie's size budget", () => {
+    const config = buildProviderConfig(
+      {
+        kind: "agent",
+        providerType: "openai-compatible",
+        baseUrl: "https://api.example.com/v1",
+        apiKey: "sk-primary-0000000000000000000000000000",
+        model: "some-agent-model-name",
+        backupApiKeys: Array.from({ length: 8 }, (_, i) => ({
+          key: `sk-backup-${i}-${"x".repeat(30)}`,
+          weight: i + 1,
+          enabled: i % 2 === 0,
+        })),
+      },
+      null,
+    );
+    // buildProviderConfig itself throws past 3500 chars — reaching this
+    // line at all proves the richer per-key shape still fits; this also
+    // pins the actual size so a future field addition trips visibly.
+    expect(JSON.stringify(config).length).toBeLessThan(3500);
   });
 });
 

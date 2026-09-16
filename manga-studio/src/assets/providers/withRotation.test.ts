@@ -62,7 +62,7 @@ describe("wrapBackgroundRemovalProviderWithRotation", () => {
       "backup-1": async () => RESULT,
     });
     const provider = wrapBackgroundRemovalProviderWithRotation(
-      config({ backupApiKeys: ["backup-1"], rotationStrategy: "sequential" }),
+      config({ backupApiKeys: [{ key: "backup-1" }], rotationStrategy: "sequential" }),
       buildAdapter,
     );
     await expect(provider.removeBackground({})).resolves.toBe(RESULT);
@@ -81,7 +81,7 @@ describe("wrapBackgroundRemovalProviderWithRotation", () => {
       },
       removeBackground: async () => RESULT,
     });
-    const provider = wrapBackgroundRemovalProviderWithRotation(config({ backupApiKeys: ["backup-1"] }), buildAdapter);
+    const provider = wrapBackgroundRemovalProviderWithRotation(config({ backupApiKeys: [{ key: "backup-1" }] }), buildAdapter);
     const status = await provider.testConnection?.();
     expect(status?.ok).toBe(true);
     expect(primaryChecked).toBe(1);

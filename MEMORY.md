@@ -33,6 +33,102 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-16 — Rich per-key rotation management in AI Settings, Phase 1
+  of 2 (weight, enable/disable, and per-key test/delete/reorder for the
+  primary provider's backup keys).** Prompted by a screenshot of another
+  app's provider panel (weight per key, per-key Test button, reorder/
+  delete, "Test all keys"). Went through `EnterPlanMode` given the size and
+  that it touches `server/providerSession.ts` (explicitly security-
+  sensitive per `CLAUDE.md`) — the approved plan split the ask into three
+  tiers the user picked all of, phased as: Phase 1 (tiers 1+2, shipped
+  here) now, Phase 2 (tier 3 — flattening the primary key and fallback
+  providers into one list of equal blocks) deferred as its own future
+  scoping pass, since it touches every adapter call site that reads
+  `config.apiKey` directly and is a materially different risk profile than
+  Phase 1's self-contained data-model change.
+
+  Root constraint that shaped the whole design, confirmed by reading the
+  actual storage: the ENTIRE provider config is one encrypted JSON blob in
+  ONE HttpOnly cookie (~3.5KB budget, no database), and a stored secret is
+  never sent back to the browser once saved. So "per-key test/delete/
+  reorder" could not mean "the client holds each key and acts on it" — it
+  had to mean new SERVER actions that resolve a key from the ALREADY-
+  DECRYPTED session config in memory, addressed by ARRAY INDEX, never by
+  value.
+
+  `server/providerSession.ts`: `backupApiKeys` changes from `string[]` to
+  `BackupKeyEntry[]` (`{key, weight?, enabled?}`) — a real breaking shape
+  change for cookies already in the wild, handled the same way
+  `domain/bubbleStyles.ts`'s `normalizeBubbleStyle` handles old/foreign
+  document data: `readSessionConfig` coerces a legacy plain-string entry
+  into `{key: entry, weight: 1, enabled: true}` on read, so an existing
+  session keeps working unchanged and the next save persists the richer
+  shape. `server/providerRotation.ts`: `buildCandidates` now excludes
+  `enabled: false` entries from the pool ENTIRELY (not just deprioritizes
+  them) and propagates each entry's `weight` onto its flattened candidate;
+  `orderCandidates`'s `"random"` strategy replaced a uniform Fisher-Yates
+  with a real weighted-random-without-replacement draw
+  (`weightedShuffle`) — mathematically equivalent to the old uniform
+  shuffle when every weight is equal (the untouched-by-a-creator default),
+  so nothing changes unless someone actually sets a weight.
+
+  Two new routes, both composition of already-existing pieces, no new
+  provider-adapter code: `POST /api/provider/backup-keys` (one route, four
+  actions — add/update/remove/reorder — via a zod discriminated union,
+  mirroring `config/route.ts`'s read → mutate → rebuild → write shape,
+  scoped to one array instead of the whole config) and
+  `POST /api/provider/test-key` (tests the primary or one backup key BY
+  INDEX, reusing the exact `createAgentProvider(...).testConnection()` /
+  `createImageProvider` / background-removal pattern
+  `app/api/provider/test/route.ts` already had, just resolving `apiKey`
+  from a specific slot in the session's own decrypted config instead of
+  always the primary).
+
+  `AiSettingsDialog.tsx`: the old "one per line" backup-keys textarea is
+  gone, replaced by a new `BackupKeysList` — live rows (masked placeholder,
+  weight, enabled checkbox, Test, reorder, delete) that each act
+  IMMEDIATELY through the two new routes rather than batching into the
+  dialog's big Save button, since none of these mutations need a secret
+  retyped.
+
+  **Two real bugs caught building this, both from real Playwright
+  failures, not code review:**
+  1. A shared `vi.spyOn(Math, "random")` + `afterEach(() => spy.mockRestore())`
+     pattern in `providerRotation.test.ts` silently broke the SECOND test
+     added to that describe block — `mockRestore()` fully detaches a spy,
+     so a later test's `.mockReturnValue()` on the same handle becomes a
+     no-op and real, non-deterministic `Math.random()` runs instead. A
+     "deterministic" test kept "passing" against genuine randomness until
+     a repeated-run check caught the actual value changing between runs.
+     Fixed with `mockReset()` between tests (clears the return value,
+     keeps the spy installed) and `afterAll(() => spy.mockRestore())` for
+     real cleanup. Worth remembering as a general vitest/tinyspy gotcha,
+     not a one-off.
+  2. `BackupKeysList`'s checkbox/weight inputs are fully controlled from
+     `summary.backupKeys`, which only updates once `onChanged()`'s GET
+     round-trips. Setting `busyIndex` (to disable the row mid-request)
+     forces an immediate re-render against the STILL-STALE summary —
+     React then syncs the controlled checkbox straight back to its old
+     value, undoing the click before the real update ever lands. Caught by
+     Playwright's `.uncheck()` literally failing with "did not change its
+     state". Fixed with a small local `overrides` map applied optimistically
+     at the same synchronous point `busyIndex` is set, cleared only after
+     `onChanged()` (now returning the real fetch promise, not fire-and-
+     forget) has actually resolved — the same general shape as this
+     session's earlier `TextStylePresetControls`/`ContinuesFromControl`
+     zustand-selector render-loop bug (2026-09-16, same day): a controlled
+     UI value must never be driven by data that hasn't caught up yet.
+
+  Verified: full unit suite (1447/1447 — new/extended cases in
+  `providerSession.test.ts` — legacy-string coercion, weight/enabled
+  round-trip, an 8-key cookie-size budget pin — and `providerRotation.test.ts`
+  — enabled=false exclusion, a 500-trial statistical weighted-selection
+  test, the two rewritten determinism-guard cases — plus full route tests
+  for both new endpoints proving no key value ever appears in a response),
+  clean typecheck/lint/build, and a new Playwright e2e test exercising the
+  complete row lifecycle (add, weight edit, enable/disable, per-key test,
+  reorder, remove, "Test all keys") against mocked endpoints.
+
 - **2026-09-16 — The Manga Agent can split, merge and add custom panels,
   not just pick from 7 fixed layout presets or reshape one panel's
   polygon.** From a `Barun-2005/manga-gen-ai-pipeline` research pass — its
@@ -1305,6 +1401,20 @@ than guessing**
     explicit "preserve this identity" instruction when a reference is
     present (`ai/promptTemplates.ts`'s `buildCharacterStatePrompt`). An
     extra LLM call per character for marginal, unclear benefit.
+
+**Rich rotation management (2026-09-16 plan, approved by the user)**
+44. ~~Phase 1: weight, enable/disable, and per-key test/delete/reorder for
+    the primary provider's backup keys~~ — **done 2026-09-16**, see
+    Timeline. See `/Users/quang/.claude/plans/luminous-sparking-wombat.md`
+    for the full approved plan (both phases).
+45. Phase 2: flatten the primary key and fallback providers into one flat
+    list of equal, repeatable provider blocks (each owning its own
+    Phase-1 `BackupKeysList`) — deliberately NOT started. Needs its own
+    scoping pass: touches every call site that reads `ProviderConfig.apiKey`
+    directly (every adapter, `buildCandidates`, the save/test routes), a
+    materially bigger and riskier refactor of security-sensitive code than
+    Phase 1's self-contained data-model change. Do not start without the
+    user explicitly re-authorizing this specific phase.
 
 **Not in the backlog — deliberate, don't re-add without the user explicitly overriding**
 - PDF export as the WHOLE-BOOK interchange format — CBZ remains that

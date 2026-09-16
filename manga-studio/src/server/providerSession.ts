@@ -44,6 +44,22 @@ export const MAX_BACKUP_API_KEYS = 8;
 export const MAX_FALLBACK_PROVIDERS = 3;
 
 /**
+ * One backup key, with its own rotation metadata (§Phase 1 rich rotation
+ * management). `weight` only matters under the `"random"` rotation
+ * strategy — it is the relative chance this key is picked first among the
+ * still-ready candidates; absent means 1 (the same as every other key,
+ * i.e. today's plain uniform-random behavior). `enabled: false` removes
+ * the key from the rotation pool entirely (not just deprioritizes it) —
+ * for pausing a key that's out of credit without deleting and re-typing it
+ * later, since a stored key value is never sent back to the browser.
+ */
+export interface BackupKeyEntry {
+  key: string;
+  weight?: number;
+  enabled?: boolean;
+}
+
+/**
  * A completely different provider to fall back to after the primary
  * provider (and all of ITS backup keys) are exhausted — not just another
  * key on the same account, a different vendor/endpoint entirely. Can carry
@@ -58,7 +74,7 @@ export interface FallbackProviderConfig {
   apiKey: string;
   model: string;
   custom?: CustomApiConfig;
-  backupApiKeys?: string[];
+  backupApiKeys?: BackupKeyEntry[];
 }
 
 export interface ProviderConfig {
@@ -79,7 +95,16 @@ export interface ProviderConfig {
    * (see "round_robin" below) rather than only reacting once the primary
    * key starts failing.
    */
-  backupApiKeys?: string[];
+  backupApiKeys?: BackupKeyEntry[];
+  /**
+   * Relative chance THIS candidate is picked first under the `"random"`
+   * rotation strategy, once `providerRotation.ts`'s `buildCandidates` has
+   * flattened the primary/backups/fallbacks into one list — set from the
+   * originating `BackupKeyEntry.weight` for a backup candidate; absent
+   * (= 1) for the primary and for anything without one, so an all-default
+   * pool behaves exactly like the old uniform-random shuffle.
+   */
+  weight?: number;
   /** Which candidate a request tries first; "round_robin" (default) spreads
    * load evenly across primary + backups instead of hammering the first
    * one until it fails. See providerRotation.ts. */
@@ -113,6 +138,16 @@ export const DEFAULT_BASE_URLS: Record<string, string> = {
 
 // ─── Save payload validation ────────────────────────────────────────────────
 
+/** One backup key as sent by the client — see `BackupKeyEntry`'s own
+ * docstring for what `weight`/`enabled` mean. `weight` is deliberately a
+ * loose range (not just small integers): a creator may reasonably want a
+ * 10:1 preference between two keys, not just 1..8-ish ratios. */
+const backupKeyEntrySchema = z.object({
+  key: z.string().min(4).max(4096),
+  weight: z.number().min(0.1).max(100).optional(),
+  enabled: z.boolean().optional(),
+});
+
 /** A fallback entry is always sent whole on save (no per-field "keep the
  * stored value" merge — the client holds the chain in memory for the
  * editing session, same limitation the primary key already has). */
@@ -123,7 +158,7 @@ const fallbackProviderPayloadSchema = z.object({
   apiKey: z.string().min(4).max(4096).optional(),
   model: z.string().max(200).default(""),
   custom: customApiSchema.optional(),
-  backupApiKeys: z.array(z.string().min(4).max(4096)).max(MAX_BACKUP_API_KEYS).optional(),
+  backupApiKeys: z.array(backupKeyEntrySchema).max(MAX_BACKUP_API_KEYS).optional(),
 });
 
 export type FallbackProviderPayload = z.infer<typeof fallbackProviderPayloadSchema>;
@@ -137,8 +172,11 @@ export const configPayloadSchema = z.object({
   apiKey: z.string().min(4).max(4096).optional(),
   model: z.string().max(200).default(""),
   custom: customApiSchema.optional(),
-  /** Omitted on save = keep the previously stored backups; `[]` clears them. */
-  backupApiKeys: z.array(z.string().min(4).max(4096)).max(MAX_BACKUP_API_KEYS).optional(),
+  /** Omitted on save = keep the previously stored backups; `[]` clears them.
+   * The main AI Settings save no longer sends this (backup keys are now
+   * managed live through `/api/provider/backup-keys`) — still accepted here
+   * for the fallback-provider editor, which keeps its own bulk textarea. */
+  backupApiKeys: z.array(backupKeyEntrySchema).max(MAX_BACKUP_API_KEYS).optional(),
   rotationStrategy: z.enum(rotationStrategies).optional(),
   cooldownSeconds: z.number().min(1).max(900).optional(),
   /** Omitted on save = keep the previously stored fallback chain; `[]` clears it. */
@@ -182,16 +220,22 @@ function resolveApiKey(
   return apiKey;
 }
 
-/** Drops blanks and anything identical to the primary key — a backup that
- * duplicates the primary would just retry the same rate-limited account. */
+/** Drops blanks and anything identical to the primary key or an earlier
+ * entry — a backup that duplicates the primary would just retry the same
+ * rate-limited account. Preserves each survivor's `weight`/`enabled`. */
 function dedupeBackupKeys(
-  rawBackups: string[] | undefined,
-  existingBackups: string[] | undefined,
+  rawBackups: BackupKeyEntry[] | undefined,
+  existingBackups: BackupKeyEntry[] | undefined,
   primaryKey: string,
-): string[] | undefined {
-  const backups = (rawBackups ?? existingBackups ?? [])
-    .map((key) => key.trim())
-    .filter((key, index, all) => key && key !== primaryKey && all.indexOf(key) === index);
+): BackupKeyEntry[] | undefined {
+  const seen = new Set<string>();
+  const backups: BackupKeyEntry[] = [];
+  for (const entry of rawBackups ?? existingBackups ?? []) {
+    const key = entry.key.trim();
+    if (!key || key === primaryKey || seen.has(key)) continue;
+    seen.add(key);
+    backups.push({ key, weight: entry.weight, enabled: entry.enabled });
+  }
   return backups.length > 0 ? backups : undefined;
 }
 
@@ -264,6 +308,21 @@ export function cookieNameFor(kind: ProviderKind): string {
   return kind === "agent" ? AGENT_COOKIE : kind === "image" ? IMAGE_COOKIE : BACKGROUND_COOKIE;
 }
 
+/**
+ * A cookie written before backup keys carried weight/enabled metadata
+ * stored a plain string per key. Coerce those into the current shape —
+ * same tolerant-old-data spirit as `domain/bubbleStyles.ts`'s
+ * `normalizeBubbleStyle` — so an existing session keeps working exactly as
+ * before (weight 1, enabled) with no forced re-entry; the next save
+ * persists the richer shape.
+ */
+function coerceBackupKeys(raw: unknown): BackupKeyEntry[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  return raw.map((entry) =>
+    typeof entry === "string" ? { key: entry, weight: 1, enabled: true } : (entry as BackupKeyEntry),
+  );
+}
+
 export function readSessionConfig(
   request: NextRequest,
   kind: ProviderKind,
@@ -284,6 +343,11 @@ export function readSessionConfig(
   trace?.("credential_decrypted", { kind });
   try {
     const parsed = JSON.parse(opened) as ProviderConfig;
+    parsed.backupApiKeys = coerceBackupKeys(parsed.backupApiKeys);
+    parsed.fallbackProviders = parsed.fallbackProviders?.map((fb) => ({
+      ...fb,
+      backupApiKeys: coerceBackupKeys(fb.backupApiKeys),
+    }));
     const hasCredential = Boolean(parsed.apiKey) || parsed.custom?.auth.mode === "none";
     const valid = Boolean(parsed.kind === kind && hasCredential && parsed.baseUrl && parsed.model);
     trace?.(valid ? "credential_deserialized" : "credential_validation_failed", {
@@ -392,6 +456,15 @@ export interface FallbackProviderSummary {
   backupKeyCount: number;
 }
 
+/** Safe (non-secret) description of one stored backup key, index-ordered
+ * to match the real `backupApiKeys` array — the index IS the handle the
+ * `/api/provider/backup-keys` actions address an entry by, since the key
+ * value itself is never in here to identify it by. */
+export interface BackupKeySummary {
+  weight: number;
+  enabled: boolean;
+}
+
 export interface ProviderSummary {
   configured: boolean;
   source?: "session" | "deployment";
@@ -403,6 +476,8 @@ export interface ProviderSummary {
   custom?: CustomApiConfig;
   /** How many backup keys are stored — never the keys themselves. */
   backupKeyCount?: number;
+  /** Per-key weight/enabled, index-ordered — see `BackupKeySummary`. */
+  backupKeys?: BackupKeySummary[];
   rotationStrategy?: RotationStrategy;
   cooldownSeconds?: number;
   /** Other providers configured to try once the primary is exhausted. */
@@ -425,6 +500,10 @@ export function summarize(resolved: ResolvedProvider | null): ProviderSummary {
     // lives only in ProviderConfig.apiKey, which never enters a summary.
     custom: config.custom,
     backupKeyCount: config.backupApiKeys?.length ?? 0,
+    backupKeys: config.backupApiKeys?.map((entry) => ({
+      weight: entry.weight ?? 1,
+      enabled: entry.enabled ?? true,
+    })),
     rotationStrategy: config.rotationStrategy ?? DEFAULT_ROTATION_STRATEGY,
     cooldownSeconds: config.cooldownSeconds ?? DEFAULT_COOLDOWN_SECONDS,
     fallbackProviders: config.fallbackProviders?.map((fb) => ({

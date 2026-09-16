@@ -94,8 +94,11 @@ export function AiSettingsDialog() {
   const close = useUiStore((s) => s.closeSettings);
   const [status, setStatus] = useState<ProviderStatusSnapshot | null>(null);
 
+  // Returns the fetch's own promise (not just fire-and-forget) so a caller
+  // that needs to know the round trip actually finished — BackupKeysList's
+  // optimistic checkbox/weight state — can await it.
   const refresh = useCallback(() => {
-    fetchProviderStatus()
+    return fetchProviderStatus()
       .then(setStatus)
       .catch(() => setStatus(null));
   }, []);
@@ -165,7 +168,7 @@ export function AiSettingsDialog() {
  * ever consulted when that fails — and only if the creator chose to connect
  * one here.
  */
-function BackgroundRemovalCard({ summary, onChanged }: { summary: ProviderSummary | null; onChanged: () => void }) {
+function BackgroundRemovalCard({ summary, onChanged }: { summary: ProviderSummary | null; onChanged: () => Promise<void> }) {
   const configured = summary?.configured ?? false;
   const [configuring, setConfiguring] = useState(false);
   return (
@@ -214,7 +217,7 @@ interface ProviderCardProps {
   title: string;
   protocols: { id: string; label: string; placeholder: string }[];
   summary: ProviderSummary | null;
-  onChanged: () => void;
+  onChanged: () => Promise<void>;
   supportsModelDiscovery?: boolean;
   footnote?: string;
 }
@@ -229,11 +232,6 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
   const [showKey, setShowKey] = useState(false);
   const [model, setModel] = useState(kind === "background" ? "background-removal" : "");
   const [models, setModels] = useState<string[]>([]);
-  // Backup keys are never sent back by the server (they're secrets) — the
-  // textarea starts empty and stays "keep existing" (omitted from the save
-  // payload) unless the user actually types something, mirroring how the
-  // primary API key field already works.
-  const [backupApiKeysText, setBackupApiKeysText] = useState("");
   const [rotationStrategy, setRotationStrategy] = useState<RotationStrategy>("round_robin");
   // Fallback providers are always resubmitted whole (their keys can never be
   // read back from the server either) — `fallbackTouched` distinguishes
@@ -279,11 +277,12 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
     setBusy("save");
     setMessage(null);
     try {
-      // Same "empty = keep what's stored" convention as the primary API key.
+      // Primary backup keys are managed live through BackupKeysList /
+      // /api/provider/backup-keys now, not resubmitted with the rest of
+      // this form — same "empty = keep what's stored" convention still
+      // applies to the fallback chain's own keys below, which keep the
+      // bulk textarea for now.
       const rotation = {
-        backupApiKeys: backupApiKeysText.trim()
-          ? backupApiKeysText.split("\n").map((k) => k.trim()).filter(Boolean)
-          : undefined,
         rotationStrategy,
         // Only sent once the user has actually opened the fallback
         // editor — otherwise omitted, which keeps whatever chain (if
@@ -296,7 +295,11 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
               apiKey: row.apiKey || undefined,
               model: kind === "background" ? "background-removal" : row.model,
               backupApiKeys: row.backupApiKeysText.trim()
-                ? row.backupApiKeysText.split("\n").map((k) => k.trim()).filter(Boolean)
+                ? row.backupApiKeysText
+                    .split("\n")
+                    .map((k) => k.trim())
+                    .filter(Boolean)
+                    .map((key) => ({ key }))
                 : undefined,
             }))
           : undefined,
@@ -330,7 +333,6 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Save failed");
       setApiKey("");
-      setBackupApiKeysText("");
       setFallbackRows((rows) => rows.map((r) => ({ ...r, apiKey: "", backupApiKeysText: "" })));
       setCustomForm((f) => ({ ...f, apiKey: "" }));
       setMessage({ ok: true, text: "Saved. Credentials are stored securely for this browser session." });
@@ -374,7 +376,6 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
     setModel("");
     setName("");
     setBaseUrl("");
-    setBackupApiKeysText("");
     setRotationStrategy("round_robin");
     setFallbackRows([]);
     setFallbackTouched(false);
@@ -556,19 +557,7 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
           Advanced — rotation &amp; fallback
         </summary>
           <div className="mt-2">
-            <Field label="Backup API keys (one per line, optional)">
-              <textarea
-                className="h-16 w-full resize-y rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1.5 font-mono text-xs"
-                value={backupApiKeysText}
-                onChange={(e) => setBackupApiKeysText(e.target.value)}
-                placeholder={
-                  summary?.backupKeyCount
-                    ? `${summary.backupKeyCount} backup key(s) stored — leave blank to keep them, or type new ones to replace`
-                    : "Extra keys for the same provider/model — tried automatically on rate limit"
-                }
-                autoComplete="off"
-              />
-            </Field>
+            {configured && <BackupKeysList kind={kind} summary={summary} onChanged={onChanged} />}
             <Field label="Which key/provider to try first">
               <select
                 className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1.5"
@@ -577,7 +566,7 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
               >
                 <option value="round_robin">Round robin — spread requests evenly (recommended)</option>
                 <option value="sequential">Sequential — always try the primary key first</option>
-                <option value="random">Random</option>
+                <option value="random">Random — weighted by each key&apos;s priority below</option>
               </select>
             </Field>
             <p className="mt-1 text-[10px] leading-4 text-zinc-600">
@@ -676,6 +665,277 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
  * from the safe (non-secret) summary with empty key fields the user must
  * retype, and the whole list is resubmitted together on Save.
  */
+/**
+ * Live-managed backup key rows for the PRIMARY provider — add, toggle
+ * enabled, edit weight, test, reorder, and remove one key at a time
+ * through `/api/provider/backup-keys` and `/api/provider/test-key`,
+ * instead of the old single textarea that required retyping the whole
+ * list for any change. Every action here is independent of the dialog's
+ * big Save button and applies immediately, because none of it involves a
+ * secret the client has to type fresh — a stored key's value is never
+ * rendered (there is nothing to render it FROM), only its `weight`/
+ * `enabled` metadata, which is safe to round-trip.
+ *
+ * Fallback providers' own backup keys are intentionally NOT covered here —
+ * see `FallbackProvidersEditor`'s docstring; they keep the bulk textarea
+ * until a later pass unifies the two.
+ */
+function BackupKeysList({
+  kind,
+  summary,
+  onChanged,
+}: {
+  kind: "agent" | "image" | "background";
+  summary: ProviderSummary | null;
+  onChanged: () => Promise<void>;
+}) {
+  const [newKey, setNewKey] = useState("");
+  const [busyIndex, setBusyIndex] = useState<number | "add" | "test-all" | null>(null);
+  const [results, setResults] = useState<Record<number, { ok: boolean; text: string }>>({});
+  const [error, setError] = useState<string | null>(null);
+  /**
+   * `checked`/`value` below are fully controlled from `summary.backupKeys`,
+   * which only updates once `onChanged()`'s refetch round-trips. Setting
+   * `busyIndex` (to disable the row mid-request) forces an immediate
+   * re-render on the STILL-STALE summary — without this, that render snaps
+   * a just-clicked checkbox straight back to its old value, since React
+   * always syncs a controlled input to its prop. The override merges the
+   * optimistic new value in for that gap; `onChanged()` is awaited before
+   * clearing it, so the clear never itself causes the same flicker back to
+   * a stale value the fetch hasn't overwritten yet. Caught by a real
+   * Playwright `.uncheck()` failing with "did not change its state".
+   */
+  const [overrides, setOverrides] = useState<Record<number, { weight?: number; enabled?: boolean }>>({});
+
+  const keys = (summary?.backupKeys ?? []).map((entry, index) => ({ ...entry, ...overrides[index] }));
+
+  const call = async (body: Record<string, unknown>) => {
+    const response = await fetch("/api/provider/backup-keys", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind, ...body }),
+    });
+    const json = await response.json();
+    if (!response.ok) throw new Error(json.error ?? "Action failed");
+    return json;
+  };
+
+  const add = async () => {
+    const key = newKey.trim();
+    if (!key) return;
+    setBusyIndex("add");
+    setError(null);
+    try {
+      await call({ action: "add", key });
+      setNewKey("");
+      await onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not add key");
+    } finally {
+      setBusyIndex(null);
+    }
+  };
+
+  const update = async (index: number, patch: { weight?: number; enabled?: boolean }) => {
+    setBusyIndex(index);
+    setError(null);
+    setOverrides((o) => ({ ...o, [index]: { ...o[index], ...patch } }));
+    try {
+      await call({ action: "update", index, ...patch });
+      await onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Update failed");
+    } finally {
+      setOverrides((o) => {
+        const rest = { ...o };
+        delete rest[index];
+        return rest;
+      });
+      setBusyIndex(null);
+    }
+  };
+
+  // remove/reorder change what row an index POINTS to, and test results are
+  // keyed by index — so any structural change (not a plain weight/enabled
+  // update, which never moves rows) drops every stored result rather than
+  // risk one lingering on the wrong row after the shift.
+  const remove = async (index: number) => {
+    setBusyIndex(index);
+    setError(null);
+    setResults({});
+    setOverrides({});
+    try {
+      await call({ action: "remove", index });
+      await onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not remove key");
+    } finally {
+      setBusyIndex(null);
+    }
+  };
+
+  const move = async (index: number, direction: -1 | 1) => {
+    const toIndex = index + direction;
+    if (toIndex < 0 || toIndex >= keys.length) return;
+    setBusyIndex(index);
+    setError(null);
+    setResults({});
+    setOverrides({});
+    try {
+      await call({ action: "reorder", fromIndex: index, toIndex });
+      await onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not reorder");
+    } finally {
+      setBusyIndex(null);
+    }
+  };
+
+  const testOne = async (index: number) => {
+    setBusyIndex(index);
+    try {
+      const response = await fetch("/api/provider/test-key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind, target: { backupIndex: index } }),
+      });
+      const json = await response.json();
+      setResults((r) => ({
+        ...r,
+        [index]: { ok: Boolean(json.ok), text: json.ok ? "Connected" : (json.error ?? "Failed") },
+      }));
+    } catch {
+      setResults((r) => ({ ...r, [index]: { ok: false, text: "Endpoint unreachable" } }));
+    } finally {
+      setBusyIndex(null);
+    }
+  };
+
+  const testAll = async () => {
+    setBusyIndex("test-all");
+    for (let i = 0; i < keys.length; i++) {
+      if (keys[i].enabled) await testOne(i);
+    }
+    setBusyIndex(null);
+  };
+
+  return (
+    <div className="mb-3">
+      <div className="mb-1 flex items-center justify-between">
+        <span className="text-[10px] uppercase tracking-wider text-zinc-500">Backup API keys</span>
+        {keys.length > 0 && (
+          <button
+            type="button"
+            className="text-[10px] text-emerald-400 hover:text-emerald-300 disabled:opacity-40"
+            disabled={busyIndex !== null}
+            onClick={testAll}
+          >
+            {busyIndex === "test-all" ? "Testing all…" : "Test all keys"}
+          </button>
+        )}
+      </div>
+
+      {keys.length === 0 && <p className="mb-1.5 text-[11px] text-zinc-500">No backup keys yet — add one below.</p>}
+
+      <div className="space-y-1.5">
+        {keys.map((entry, index) => (
+          <div key={index} className="rounded border border-zinc-800 bg-zinc-950/50 p-1.5">
+            <div className="flex items-center gap-1.5">
+              <input
+                type="checkbox"
+                aria-label={`Enable backup key ${index + 1}`}
+                title="Enabled"
+                checked={entry.enabled}
+                disabled={busyIndex !== null}
+                onChange={(e) => update(index, { enabled: e.target.checked })}
+              />
+              <span className="flex-1 truncate font-mono text-[11px] text-zinc-600">••••••••••••••</span>
+              <input
+                type="number"
+                aria-label={`Weight for backup key ${index + 1}`}
+                title="Priority when rotation strategy is Random"
+                min={0.1}
+                max={100}
+                step={0.5}
+                className="w-14 rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-[11px]"
+                value={entry.weight}
+                disabled={busyIndex !== null}
+                onChange={(e) => update(index, { weight: Number(e.target.value) || 1 })}
+              />
+              <button
+                type="button"
+                aria-label={`Test backup key ${index + 1}`}
+                className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[11px] hover:bg-zinc-700 disabled:opacity-40"
+                disabled={busyIndex !== null}
+                onClick={() => testOne(index)}
+              >
+                {busyIndex === index ? "…" : "Test"}
+              </button>
+              <button
+                type="button"
+                aria-label={`Move backup key ${index + 1} up`}
+                title="Move up"
+                className="text-zinc-400 hover:text-zinc-200 disabled:opacity-30"
+                disabled={index === 0 || busyIndex !== null}
+                onClick={() => move(index, -1)}
+              >
+                ▲
+              </button>
+              <button
+                type="button"
+                aria-label={`Move backup key ${index + 1} down`}
+                title="Move down"
+                className="text-zinc-400 hover:text-zinc-200 disabled:opacity-30"
+                disabled={index === keys.length - 1 || busyIndex !== null}
+                onClick={() => move(index, 1)}
+              >
+                ▼
+              </button>
+              <button
+                type="button"
+                aria-label={`Remove backup key ${index + 1}`}
+                title="Remove"
+                className="text-red-400 hover:text-red-300 disabled:opacity-40"
+                disabled={busyIndex !== null}
+                onClick={() => remove(index)}
+              >
+                ✕
+              </button>
+            </div>
+            {results[index] && (
+              <p className={`mt-1 text-[10px] ${results[index].ok ? "text-emerald-400" : "text-red-400"}`}>
+                {results[index].text}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-1.5 flex gap-1.5">
+        <input
+          type="password"
+          aria-label="New backup key"
+          className="min-w-0 flex-1 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1 font-mono text-xs"
+          value={newKey}
+          onChange={(e) => setNewKey(e.target.value)}
+          placeholder="Paste a key to add"
+          autoComplete="off"
+          disabled={busyIndex !== null}
+        />
+        <button
+          type="button"
+          className="shrink-0 rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs hover:bg-zinc-700 disabled:opacity-40"
+          disabled={busyIndex !== null || !newKey.trim()}
+          onClick={add}
+        >
+          {busyIndex === "add" ? "Adding…" : "+ Add key"}
+        </button>
+      </div>
+      {error && <p className="mt-1 text-[11px] text-red-400">{error}</p>}
+    </div>
+  );
+}
+
 function FallbackProvidersEditor({
   kind,
   simpleProtocols,
