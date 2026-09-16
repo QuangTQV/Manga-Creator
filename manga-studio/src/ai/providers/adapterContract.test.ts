@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { CustomApiConfig } from "@/server/customApi/config";
 import type { ProviderConfig } from "@/server/providerSession";
 import type { ImageGenerationProvider } from "../types";
+import { createComfyUiProvider } from "./comfyui";
 import { createCustomImageProvider } from "./customImage";
 import { createGeminiProvider } from "./gemini";
 import { createGenericRestProvider } from "./genericRest";
@@ -36,6 +37,7 @@ const factories: [string, () => ImageGenerationProvider][] = [
   ["openai-compatible", () => createGenericRestProvider(config("openai-compatible", "gpt-image-1"))],
   ["gemini", () => createGeminiProvider(config("gemini", "gemini-2.5-flash-image"))],
   ["custom", () => createCustomImageProvider(config("custom", "anything"))],
+  ["comfyui", () => createComfyUiProvider(config("comfyui", "sd_xl_base_1.0.safetensors"))],
 ];
 
 describe.each(factories)("%s adapter contract", (_name, make) => {

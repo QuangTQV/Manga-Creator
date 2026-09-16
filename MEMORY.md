@@ -33,6 +33,75 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-16 — ComfyUI adapter: local self-hosted image generation
+  (backlog #46, the follow-up to the doc-only local-model commit below).**
+  Went through `EnterPlanMode` given it touches `providerSession.ts`
+  (security-sensitive) and adds a new provider adapter — plan approved,
+  see `/Users/quang/.claude/plans/luminous-sparking-wombat.md`. New
+  `src/ai/providers/comfyui.ts`: a dedicated CODED adapter
+  (`providerType: "comfyui"`), not a `"custom"` declarative config —
+  confirmed by reading `customApi/{config,execute,jsonPath,template}.ts`
+  that Custom API genuinely can't express ComfyUI's protocol: (1)
+  `GET /history/{prompt_id}` nests its result under a key EQUAL TO the
+  submitted `prompt_id` (a hyphenated UUID), and `jsonPath.ts`'s
+  `getAtPath` path grammar only parses plain identifier keys + numeric
+  `[N]` indices — a hyphenated dynamic key cannot be expressed as a static
+  path at all; (2) a real ComfyUI workflow graph is several KB, too big
+  for the 6000-char request-template cap or the ~3500-char total cookie
+  budget. Fix: `pollHistory` reads the dynamic key via plain object
+  property access (`body[promptId]`), never `getAtPath`; the workflow
+  graph (standard checkpoint-only txt2img: CheckpointLoaderSimple →
+  CLIPTextEncode ×2 → EmptyLatentImage → KSampler → VAEDecode → SaveImage,
+  fixed node ids) is built server-side from typed fields
+  (`buildWorkflow`), never accepted as user-supplied JSON — sidesteps the
+  cookie-size problem entirely. v1 scope deliberately excludes LoRA and
+  reference-image/img2img support (`supportsReferenceImage: false`,
+  same honest-capability pattern as `genericRest.ts`) and UI-exposed
+  sampler tuning (fixed steps/cfg/sampler defaults) — flagged in the plan
+  as follow-ups, not started.
+  Three small additive changes to `server/providerSession.ts`: `"comfyui"`
+  added to `imageTypes` only (image-gen-only, no agent/background);
+  `DEFAULT_BASE_URLS.comfyui = "http://127.0.0.1:8188"`; `resolveApiKey`
+  now takes `providerType` (was `isCustom`) and also allows a missing key
+  when `providerType === "comfyui"` — ComfyUI has no built-in auth (an
+  optional key, if set, is sent as `Authorization: Bearer` for
+  reverse-proxied setups). `providerRegistry.ts` gained one switch case.
+  `AiSettingsDialog.tsx`: one new `IMAGE_PROTOCOLS` entry — confirmed by
+  reading the render logic that any non-`"custom"` `providerType` already
+  renders the shared simple Base URL/API key/Model/Test/Save form with no
+  protocol-specific JSX needed — plus two small hint lines (ALLOW_PRIVATE_
+  NETWORKS reminder under Base URL, "checkpoint filename" hint under
+  Model) copying the existing `openai-compatible` local-server note's
+  pattern.
+  **Test-writing gotcha hit and fixed**: the first draft of
+  `comfyui.test.ts` used `vi.useFakeTimers()` + `vi.advanceTimersByTimeAsync`
+  to skip the poll loop's real 2s/180s delays — 4 of 6 async tests hung
+  until vitest's own 5000ms wall-clock test timeout, and the 5th produced
+  the wrong error message (an `outboundFetch`-internal 90s abort timer
+  fired instead of `pollHistory`'s own 180s deadline) after a single large
+  `advanceTimersByTimeAsync(200_000)` jump. Root cause never fully pinned
+  down (suspected interaction between fake timers and `outboundFetch`'s
+  real `dns.promises.lookup()` SSRF check not draining cleanly through
+  `advanceTimersByTimeAsync`'s microtask-flush model) — rather than debug
+  the interaction further, added optional `pollIntervalMs`/`pollTimeoutMs`
+  overrides to the adapter's own (non-cookie, adapter-local) config type,
+  defaulting to the real 2s/180s in production, and rewrote all tests to
+  use tiny real values (5–200ms) with genuinely real timers instead of
+  fake ones — same precedent as `customApi`'s own already-configurable
+  `pollingSchema.intervalMs/timeoutMs`. Fixed the flaky/hanging behavior
+  completely; full suite (49 tests across the 3 touched files) now runs
+  in ~230ms instead of hanging.
+  Docs: `docs/HOW_TO_RUN.md` §5b (both VN/EN) — replaced the earlier "not
+  fully supported yet" ComfyUI row with real setup instructions;
+  `manga-studio/docs/AI_PROVIDER_ARCHITECTURE.md` — added a "ComfyUI"
+  subsection under "Implemented adapters" and rewrote the "Async
+  providers" section (added in the previous doc-only commit) to describe
+  the limitation as resolved via a dedicated coded adapter rather than an
+  open gap.
+  Verified: `npm test` → 1461/1461 (was 1447 before this feature);
+  `npm run typecheck && npm run lint && npm run build` → clean (same 4
+  pre-existing unrelated warnings as always).
+
 - **2026-09-16 — Documented self-hosted/local AI model usage (Ollama, LM
   Studio, Automatic1111); confirmed ComfyUI needs a dedicated adapter, not
   documented as supported.** Followed an audit of
@@ -1448,25 +1517,24 @@ than guessing**
 **Self-hosted local AI (2026-09-16, user asked "muốn kumanga cũng có chế độ
 self host local" after an ahmet360/manga-studio audit found nothing else
 worth porting)**
-46. ComfyUI adapter for local image generation — NOT started. Ollama/LM
-    Studio (agent) and Automatic1111 (image) already work today via the
-    existing OpenAI-compatible/Custom API provider types + `ALLOW_PRIVATE_
-    NETWORKS=1`, documented in `docs/HOW_TO_RUN.md` §5b — zero new code
-    needed for those. ComfyUI specifically does NOT fit today's declarative
-    Custom API polling (`server/customApi/config.ts`'s `pollingSchema`):
-    its `/history/{prompt_id}` response nests the result under a key that
-    IS the submitted `prompt_id` — a dynamic path segment — while
-    `statusPath`/`resultPath` are fixed paths with no `{{taskId}}`
-    interpolation (only `statusUrlTemplate` supports that placeholder).
-    Needs either extending path resolution to interpolate `{{taskId}}`
-    inside those two paths, or a dedicated `comfyui` adapter that builds/
-    submits the workflow graph directly. See
-    `manga-studio/docs/AI_PROVIDER_ARCHITECTURE.md`'s "Async providers"
-    section for the same technical note. User confirmed sequencing: ship
-    the documentation first (done), scope/build the ComfyUI adapter next —
-    but as its own plan-mode round given it likely touches
-    `customApi/config.ts` (shared, security-sensitive: SSRF guard +
-    request-template parsing), not a quick follow-on.
+46. ~~ComfyUI adapter for local image generation~~ — **done 2026-09-16**,
+    see Timeline. Ollama/LM Studio (agent) and Automatic1111 (image)
+    already worked via the existing OpenAI-compatible/Custom API provider
+    types + `ALLOW_PRIVATE_NETWORKS=1` (documented in `docs/HOW_TO_RUN.md`
+    §5b). ComfyUI specifically needed a dedicated coded adapter
+    (`src/ai/providers/comfyui.ts`, `providerType: "comfyui"`) rather than
+    a `"custom"` declarative config — Custom API's static path grammar
+    can't express ComfyUI's dynamic `prompt_id`-keyed history response,
+    and a real workflow graph doesn't fit the cookie-size budget. v1 is
+    checkpoint-only txt2img (no LoRA, no reference-image/img2img) —
+    those remain explicit future follow-ups, not started.
+47. ComfyUI adapter v2: LoRA chaining, reference-image/img2img support,
+    and UI-exposed sampler/steps/cfg tuning — deliberately deferred out of
+    #46's v1. Needs its own scoping pass (LoRA list storage? per-character
+    trigger tags? how much of `buildWorkflow`'s fixed graph needs to
+    become configurable without re-opening the cookie-size problem #46
+    was built specifically to avoid). Do not start without the user
+    explicitly asking for one of these three.
 
 **Not in the backlog — deliberate, don't re-add without the user explicitly overriding**
 - PDF export as the WHOLE-BOOK interchange format — CBZ remains that

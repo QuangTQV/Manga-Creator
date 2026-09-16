@@ -5,6 +5,7 @@
  */
 
 import type { ProviderConfig } from "@/server/providerSession";
+import { createComfyUiProvider } from "./providers/comfyui";
 import { createCustomImageProvider } from "./providers/customImage";
 import { createGeminiProvider } from "./providers/gemini";
 import { createGenericRestProvider } from "./providers/genericRest";
@@ -21,6 +22,8 @@ function buildAdapter(config: ProviderConfig): ImageGenerationProvider {
     case "openai-compatible":
     case "generic-rest":
       return createGenericRestProvider(config);
+    case "comfyui":
+      return createComfyUiProvider(config);
     default:
       throw new Error(`Unsupported image provider type: ${config.providerType}`);
   }

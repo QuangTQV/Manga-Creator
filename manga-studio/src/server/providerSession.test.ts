@@ -19,7 +19,7 @@ import {
   type ProviderConfig,
 } from "./providerSession";
 
-const ENV_KEYS = ["AGENT_API_KEY", "AGENT_API_BASE_URL", "AGENT_MODEL", "APP_ENCRYPTION_KEY", "NODE_ENV"];
+const ENV_KEYS = ["AGENT_API_KEY", "AGENT_API_BASE_URL", "AGENT_MODEL", "APP_ENCRYPTION_KEY", "NODE_ENV", "ALLOW_PRIVATE_NETWORKS"];
 const saved: Record<string, string | undefined> = {};
 
 beforeEach(() => {
@@ -80,6 +80,16 @@ describe("buildProviderConfig", () => {
   it("applies known default base URLs (gemini) when omitted", () => {
     const config = buildProviderConfig({ ...payload, providerType: "gemini", baseUrl: undefined }, null);
     expect(config.baseUrl).toContain("generativelanguage.googleapis.com");
+  });
+
+  it("comfyui: allows no API key (no built-in auth) and applies the default localhost base URL", () => {
+    process.env.ALLOW_PRIVATE_NETWORKS = "1";
+    const config = buildProviderConfig(
+      { kind: "image", providerType: "comfyui", baseUrl: undefined, apiKey: undefined, model: "sd_xl_base_1.0.safetensors" },
+      null,
+    );
+    expect(config.baseUrl).toBe("http://127.0.0.1:8188");
+    expect(config.apiKey).toBe("");
   });
 
   it("SSRF-guards user endpoints", () => {

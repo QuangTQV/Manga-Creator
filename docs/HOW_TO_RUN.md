@@ -72,14 +72,14 @@ Kumanga không bundle model nào, nhưng chuẩn **OpenAI-compatible** và **Cus
 | Ollama | `http://localhost:11434/v1` | Bật chế độ OpenAI-compat có sẵn của Ollama |
 | LM Studio | `http://localhost:1234/v1` | Bật "Local Server" trong LM Studio trước |
 
-**Sinh ảnh (Image generation)** — dùng **Custom API** (Gemini/generic-rest không map được các server này):
+**Sinh ảnh (Image generation)**:
 
 | Server local | Cách cấu hình |
 |---|---|
 | Automatic1111 (webui) | Custom API, method `POST`, endpoint `http://localhost:7860/sdapi/v1/txt2img`, execution **sync**, response type `base64`, response path `images[0]` |
-| ComfyUI | **Chưa hỗ trợ đầy đủ** — xem ghi chú bên dưới |
+| ComfyUI | Chuẩn riêng **"ComfyUI (local)"** trong danh sách provider — chỉ cần Base URL (mặc định `http://127.0.0.1:8188`) và Model = **tên file checkpoint** đúng như ComfyUI hiển thị (ví dụ `sd_xl_base_1.0.safetensors`). Không cần API key. |
 
-> **ComfyUI chưa có adapter riêng.** Cơ chế polling khai báo (`Custom API` → `execution: async`) giả định path kết quả là cố định, nhưng `/history/{prompt_id}` của ComfyUI lồng kết quả dưới một key **động** chính là `prompt_id` vừa submit — cơ chế path tĩnh hiện tại không diễn tả được việc này. Cần một adapter chuyên biệt (build workflow graph + poll đúng key động), đang nằm trong backlog, chưa triển khai.
+ComfyUI dùng một adapter riêng (không qua Custom API) vì API của nó không phải REST đơn giản: `/history/{prompt_id}` trả kết quả dưới một key **động** chính là `prompt_id` vừa submit, và workflow graph gửi lên quá lớn so với giới hạn cookie — adapter tự dựng workflow txt2img chuẩn (checkpoint + prompt + kích thước) ở phía server, chưa hỗ trợ LoRA hoặc ảnh tham chiếu (img2img) trong bản này.
 
 ### 6. Các lệnh khác
 
@@ -179,14 +179,14 @@ Kumanga bundles no model, but the **OpenAI-compatible** and **Custom API** provi
 | Ollama | `http://localhost:11434/v1` | Enable Ollama's built-in OpenAI-compatible mode |
 | LM Studio | `http://localhost:1234/v1` | Start LM Studio's "Local Server" first |
 
-**Image generation** — use **Custom API** (Gemini/generic-rest can't map these):
+**Image generation**:
 
 | Local server | Configuration |
 |---|---|
 | Automatic1111 (webui) | Custom API, method `POST`, endpoint `http://localhost:7860/sdapi/v1/txt2img`, execution **sync**, response type `base64`, response path `images[0]` |
-| ComfyUI | **Not fully supported yet** — see the note below |
+| ComfyUI | Its own **"ComfyUI (local)"** entry in the provider list — just set Base URL (defaults to `http://127.0.0.1:8188`) and Model to the **checkpoint filename** exactly as ComfyUI shows it (e.g. `sd_xl_base_1.0.safetensors`). No API key needed. |
 
-> **ComfyUI has no dedicated adapter yet.** The declarative polling mechanism (`Custom API` → `execution: async`) assumes a fixed result path, but ComfyUI's `/history/{prompt_id}` nests its result under a **dynamic** key — the `prompt_id` that was just submitted — which the current static-path polling schema can't express. A dedicated adapter (build the workflow graph, poll the correct dynamic key) is on the backlog, not yet built.
+ComfyUI gets a dedicated adapter rather than a Custom API mapping because its protocol isn't plain REST: `/history/{prompt_id}` nests its result under a **dynamic** key — the `prompt_id` that was just submitted — and a full workflow graph is too large for the cookie-based config budget. The adapter builds a standard txt2img workflow (checkpoint + prompt + size) server-side; LoRA and reference-image (img2img) support aren't included in this pass.
 
 ### 6. Other commands
 

@@ -47,6 +47,16 @@ Character/prop results then enter an independent capability cascade: validate na
 - Declares `referenceImage: false` — the UI adapts (no "preserve character" claims) instead of pretending.
 - Base URL passes the SSRF guard at construction time.
 
+### ComfyUI (`src/ai/providers/comfyui.ts`) — local self-hosted, coded not declarative
+
+A dedicated coded adapter for a local ComfyUI instance, not a `providerType: "custom"` configuration — `providerType: "comfyui"`, its own `imageTypes` entry and `DEFAULT_BASE_URLS` fallback (`http://127.0.0.1:8188`) in `providerSession.ts`, and its own `IMAGE_PROTOCOLS` entry in `AiSettingsDialog.tsx`.
+
+- **Why not Custom API**: ComfyUI's `GET /history/{prompt_id}` nests its result under a key equal to the submitted `prompt_id` — a hyphenated UUID. `customApi/jsonPath.ts`'s `getAtPath` only parses plain identifier keys and numeric `[N]` indices; a hyphenated dynamic key can't be expressed as a static declarative path at all. And a real ComfyUI workflow graph (several KB) doesn't reliably fit the 6000-char request-template cap or the ~3500-char total cookie budget. `comfyui.ts` reads the dynamic key with plain object property access (`body[promptId]`), never through `getAtPath`.
+- **Scope (v1)**: standard checkpoint-only txt2img — `buildWorkflow` builds the graph server-side from typed fields (prompt, negative prompt, width/height, checkpoint filename as `model`), fixed sampler defaults (steps 20, cfg 7, euler/normal). No LoRA, no reference-image/img2img (`supportsReferenceImage: false`, matching `genericRest.ts`'s honest-capability-declaration pattern), no UI-exposed sampler tuning yet.
+- **No built-in auth**: ComfyUI itself has none; `resolveApiKey` in `providerSession.ts` allows an empty key for `providerType === "comfyui"` the same way it already does for Custom API's `auth.mode === "none"`. An optional key, if set, is sent as `Authorization: Bearer` for setups behind an authenticating reverse proxy.
+- `testConnection()` pings ComfyUI's own `/system_stats` (cheap, real, side-effect-free) rather than performing a real generation.
+- Local-only in practice: `baseUrl` passes the same SSRF guard as every other adapter, so `http://127.0.0.1:8188` only resolves when `ALLOW_PRIVATE_NETWORKS=1` and `NODE_ENV !== "production"` — see `docs/HOW_TO_RUN.md` §5b.
+
 ## Capabilities drive the UI
 
 `/api/provider/status` returns safe Agent, Image Generation, and Background Removal summaries plus image capabilities (never keys). The generator and processing cascade use the canonical `supportsReferenceImage`, `supportsImageEditing`, and `supportsTransparentBackground` flags instead of inferring capabilities from prompt wording.
@@ -130,9 +140,11 @@ provider.
 
 ## Async providers
 
-The current adapters are synchronous. The abstraction leaves room for job-based providers (`asyncGeneration` capability flag); a polling loop would live inside that adapter's `generateImage`, behind the same interface — no editor changes. A full job queue is deliberately not built (YAGNI until a provider requires it).
+Most adapters are synchronous; the abstraction leaves room for job-based providers via the `asyncGeneration` capability flag, with a polling loop living inside that adapter's `generateImage`, behind the same interface — no editor changes. A full shared job queue is deliberately not built (YAGNI until more than one adapter needs it).
 
-Custom API's declarative polling (`src/server/customApi/config.ts`'s `pollingSchema`) already covers self-hosted local models that fit this shape — see `docs/HOW_TO_RUN.md` §5b for Ollama/LM Studio (agent, sync OpenAI-compatible) and Automatic1111 (image, sync base64 response) working today with zero new code, gated by `ALLOW_PRIVATE_NETWORKS=1` in `outboundFetch.ts`. **ComfyUI does not fit**: its `/history/{prompt_id}` response nests the result under a key equal to the submitted `prompt_id` itself — a dynamic path segment — while `pollingSchema.statusPath`/`resultPath` are fixed property paths with no `{{taskId}}` interpolation inside them (only `statusUrlTemplate` supports that placeholder). Supporting ComfyUI needs either extending path resolution to interpolate `{{taskId}}` inside `statusPath`/`resultPath`, or a dedicated `comfyui` adapter that builds/submits the workflow graph directly — backlogged, not started.
+Custom API's own declarative polling (`src/server/customApi/config.ts`'s `pollingSchema`) covers self-hosted local models that fit a plain "submit → fixed-path task id → poll a fixed-path status → fixed-path result" shape — see `docs/HOW_TO_RUN.md` §5b for Ollama/LM Studio (agent, sync OpenAI-compatible) and Automatic1111 (image, sync base64 response) working today with zero new code, gated by `ALLOW_PRIVATE_NETWORKS=1` in `outboundFetch.ts`.
+
+**ComfyUI doesn't fit that declarative shape** (see "Implemented adapters" above for the full reason: a dynamic history-lookup key, and an oversized workflow graph), which is why `comfyui.ts` is a real coded adapter with its own hand-written poll loop instead — the first adapter in this codebase where `asyncGeneration: true` is backed by genuinely async, non-declarative code rather than the shared `pollingSchema` mechanism.
 
 ## Agent planning providers
 

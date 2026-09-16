@@ -53,6 +53,7 @@ const IMAGE_PROTOCOLS = [
   { id: "gemini", label: "Gemini Native", placeholder: "https://generativelanguage.googleapis.com" },
   { id: "openai-compatible", label: "OpenAI-compatible", placeholder: "https://api.example.com/v1" },
   { id: "custom", label: "Custom JSON", placeholder: "https://example.com/v1/generate" },
+  { id: "comfyui", label: "ComfyUI (local)", placeholder: "http://127.0.0.1:8188" },
 ];
 
 const BACKGROUND_PROTOCOLS = [
@@ -464,6 +465,12 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
                 </span>
               </div>
             )}
+            {providerType === "comfyui" && (
+              <div className="mt-1.5 text-[10px] text-zinc-600">
+                Your local ComfyUI server&apos;s address — requires{" "}
+                <code className="font-mono">ALLOW_PRIVATE_NETWORKS=1</code> in dev; never enable in production.
+              </div>
+            )}
           </Field>
 
           <Field label="API key">
@@ -498,7 +505,7 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
                 className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1.5 font-mono text-xs"
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
-                placeholder="model-name"
+                placeholder={providerType === "comfyui" ? "sd_xl_base_1.0.safetensors" : "model-name"}
                 list={models.length > 0 ? `${kind}-models` : undefined}
               />
               {supportsModelDiscovery && providerType === "openai-compatible" && configured && (
@@ -512,6 +519,11 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
                 </button>
               )}
             </div>
+            {providerType === "comfyui" && (
+              <div className="mt-1.5 text-[10px] text-zinc-600">
+                Checkpoint filename as ComfyUI shows it (e.g. `sd_xl_base_1.0.safetensors`).
+              </div>
+            )}
             {models.length > 0 && (
               <datalist id={`${kind}-models`}>
                 {models.map((m) => (

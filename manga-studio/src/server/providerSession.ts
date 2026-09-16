@@ -28,7 +28,10 @@ export type ProviderKind = "agent" | "image" | "background";
 // conveniences layered on top, never the capability boundary.
 const agentTypes = ["custom", "openai-compatible", "anthropic-compatible", "gemini"] as const;
 // "generic-rest" is a legacy alias for openai-compatible image endpoints.
-const imageTypes = ["custom", "gemini", "openai-compatible", "generic-rest"] as const;
+// "comfyui" is a dedicated coded adapter (local self-hosted ComfyUI) — not
+// expressible via "custom" (dynamic prompt_id history key, oversized
+// workflow graph); see src/ai/providers/comfyui.ts.
+const imageTypes = ["custom", "gemini", "openai-compatible", "generic-rest", "comfyui"] as const;
 const backgroundTypes = ["custom", "remove-bg"] as const;
 
 export type AgentProviderType = (typeof agentTypes)[number];
@@ -134,6 +137,7 @@ export const DEFAULT_BASE_URLS: Record<string, string> = {
   gemini: "https://generativelanguage.googleapis.com",
   "anthropic-compatible": "https://api.anthropic.com",
   "remove-bg": "https://api.remove.bg/v1.0/removebg",
+  comfyui: "http://127.0.0.1:8188",
 };
 
 // ─── Save payload validation ────────────────────────────────────────────────
@@ -209,12 +213,14 @@ function resolveBaseUrl(providerType: string, rawBaseUrl: string | undefined): s
 function resolveApiKey(
   rawApiKey: string | undefined,
   existingApiKey: string | undefined,
-  isCustom: boolean,
+  providerType: string,
   custom: CustomApiConfig | undefined,
 ): string {
   const apiKey = rawApiKey ?? existingApiKey ?? "";
-  // Custom APIs with auth mode "none" legitimately have no key.
-  if (!apiKey && !(isCustom && custom?.auth.mode === "none")) {
+  // Custom APIs with auth mode "none" legitimately have no key, and ComfyUI
+  // has no built-in auth at all (see src/ai/providers/comfyui.ts).
+  const keyOptional = (providerType === "custom" && custom?.auth.mode === "none") || providerType === "comfyui";
+  if (!apiKey && !keyOptional) {
     throw new Error("API key is required");
   }
   return apiKey;
@@ -247,7 +253,7 @@ function buildFallbackProviderConfig(kind: ProviderKind, payload: FallbackProvid
     if (!payload.custom) throw new Error("Custom API configuration is required for a fallback provider");
     validateCustomApi(payload.custom, kind === "background" ? "image" : kind);
   }
-  const apiKey = resolveApiKey(payload.apiKey, undefined, isCustom, payload.custom);
+  const apiKey = resolveApiKey(payload.apiKey, undefined, providerType, payload.custom);
   return {
     providerType,
     name: payload.name?.trim() || undefined,
@@ -273,7 +279,7 @@ export function buildProviderConfig(payload: ConfigPayload, existing: ProviderCo
     validateCustomApi(payload.custom, payload.kind === "background" ? "image" : payload.kind);
   }
 
-  const apiKey = resolveApiKey(payload.apiKey, existing?.apiKey, isCustom, payload.custom);
+  const apiKey = resolveApiKey(payload.apiKey, existing?.apiKey, providerType, payload.custom);
   const backupApiKeys = dedupeBackupKeys(payload.backupApiKeys, existing?.backupApiKeys, apiKey);
   const fallbackProviders = (payload.fallbackProviders ?? existing?.fallbackProviders ?? []).map((fb) =>
     buildFallbackProviderConfig(payload.kind, fb),
