@@ -197,7 +197,8 @@ function renderItemNode(
         />
       );
     }
-    case "bubble":
+    case "bubble": {
+      const linkedFromItem = item.continuesFromItemId ? doc.items[item.continuesFromItemId] : undefined;
       return (
         <BubbleNode
           key={item.id}
@@ -205,12 +206,14 @@ function renderItemNode(
           interactive={interactive}
           selected={interaction.selectedItemId === item.id}
           editing={interaction.editingBubbleId === item.id}
+          linkedFrom={linkedFromItem?.kind === "bubble" ? linkedFromItem : undefined}
           onDragMove={(cx, cy) => interaction.onItemDragMove?.(item.id, cx, cy)}
           onDragEnd={(cx, cy) => interaction.onItemDragEnd?.(item.id, cx, cy)}
           onDoubleClick={() => interaction.onEditBubble?.(item.id)}
           onTailDragEnd={(x, y) => interaction.onTailMove?.(item.id, x, y)}
         />
       );
+    }
     case "tone": {
       /**
        * "Clip to panel" means the tone COVERS the panel and follows it: resize

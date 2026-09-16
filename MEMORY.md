@@ -33,6 +33,133 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-16 — Five features from a comfyui-comic-creator competitive
+  audit (Tier A, all approved by the user together): whole-project PDF/EPUB
+  export, linked/extended speech bubbles, reusable text style presets,
+  traditional Japanese tone patterns, and SVG panel-layout import.**
+  Researched `github.com/ketle-man/comfyui-comic-creator` (a ComfyUI-based
+  comic/manga production tool) and cross-checked every candidate gap
+  against the actual codebase before proposing anything — two of the five
+  originally-proposed items (bomb/cloud bubble shapes, "concentration
+  lines") turned out to be **already fully implemented**
+  (`BubbleStyle.shape` already has `spiky`/`cloud`/`wavy`/`jagged`/
+  `scalloped`, all rendered in `render/BubbleNode.tsx`; `EffectKind`
+  already has `focus-lines`/`impact-burst`, fully modeled in
+  `domain/effects.ts`) and were dropped before implementation rather than
+  duplicated — caught by reading `render/BubbleNode.tsx`'s and
+  `domain/effects.ts`'s actual switch cases, not by trusting the earlier
+  analysis pass's guess.
+
+  **PDF/EPUB export overrides an old "deliberately not built" note** — see
+  the "Known gotchas"/"Deliberately not built" sections below, updated in
+  the same edit as this entry. The old rejection was scoped to "PDF instead
+  of CBZ as the interchange format" (CBZ remains that, unchanged); this
+  adds PDF/EPUB as ADDITIONAL formats for a different, real need (print-shop
+  and portfolio/publisher submissions ask for PDF by name; digital
+  storefronts/e-readers want EPUB) that CBZ never served. `export/
+  exportBookPdf.ts` wraps `jspdf` (new dependency) around the exact same
+  `captureAllPages` pipeline every other multi-page exporter already uses,
+  computing page pixel size directly from `ProjectSettings.pageWidth/
+  pageHeight * scale` rather than decoding each captured image just to ask
+  its own dimensions back. `export/exportBookEpub.ts` hand-builds a
+  fixed-layout EPUB3 directly on `jszip` (already a dependency, used for
+  CBZ) rather than pulling in an EPUB-authoring library — the format is a
+  handful of small, well-specified XML/XHTML files, and a manga's structure
+  (a flat, ordered list of full-page images) needs none of a general
+  library's text-flow/footnote machinery. `dc:language` is best-effort
+  mapped from `ProjectSettings.dialogueLanguage`'s free-text name to a
+  BCP-47 code via a small lookup table (falls back to "en" for anything
+  unrecognized or unset) rather than writing the free-text name straight
+  into a field that expects a real language code.
+
+  **Linked/extended bubbles**: `SpeechBubbleItem.continuesFromItemId?: ID`
+  (a plain optional field — no schema bump, same as `warp` before it) names
+  another bubble in the SAME panel this one continues, for one line of
+  dialogue split across two balloons. Validated in `itemOps.ts`'s
+  `updateBubble` (target must exist, must be a bubble, must be in the same
+  panel, cannot be itself) but deliberately has NO cleanup on delete — a
+  dangling reference after the target is deleted just stops resolving,
+  exactly like every other cross-item reference already in this codebase
+  (`targetCharacterId`, `targetItemId`); confirmed `removeItem` never
+  cleaned up any of those either before adding this one, so this isn't a
+  new gap, it's the existing convention. `render/BubbleNode.tsx`'s new
+  `NeckConnector` draws a ribbon between the two bubbles' centers in the
+  CONTINUING bubble's own style — an approximation (ignores rotation, same
+  spirit as `TailShape`'s existing "0.75 factor" edge-point approximation)
+  computed from data `PanelRenderer.tsx`'s `renderItem` already has on hand
+  (the full `doc.items` map), so no new prop-drilling was needed beyond
+  passing the resolved sibling item down as `linkedFrom`.
+
+  **Text style presets**: new top-level `ProjectDocument.textStylePresets:
+  Record<ID, TextStylePreset>` collection — DOES need a schema bump (v15→16,
+  migration `doc.textStylePresets ?? {}`) because it's a brand new
+  top-level Record, not an optional field on an existing object (matches
+  the `chapters`/`fonts`/`puppets` precedent exactly, not the `warp`
+  precedent). A preset is an explicit snapshot copy applied via the
+  existing `update-bubble` command (`{fontSize, style: {...}}` in one
+  dispatch, same shape the auto-fit path already uses) — deliberately NOT
+  a live reference, so editing a preset later never silently changes
+  bubbles that already used it.
+
+  **Traditional Japanese tone patterns** (asanoha/ichimatsu/shippo/uroko):
+  extends `ProceduralToneType` (no schema bump — `normalizeToneParams`
+  already tolerates an unknown type by falling back to `"dot"`, same
+  forward-compat contract every other tone type gets) and `render/
+  tonePainter.ts`'s `paintTone` switch with four new draw functions,
+  filed under the `TONE_FAMILIES`' pre-existing but previously-EMPTY
+  `"decorative"` family. Deliberately simple stroke/fill approximations
+  (a six-spoke star per grid point for asanoha, alternating filled cells
+  for ichimatsu, stroked overlapping circles for shippo, alternating
+  triangles for uroko) rather than historically exact weaves — same
+  "parameters, not a bitmap" contract, same "close enough, simple code"
+  spirit as the existing `wavyPoints`/`starburstPoints` bubble-shape
+  approximations.
+
+  **SVG panel-layout import**: `domain/importLayoutSvg.ts`'s
+  `parseLayoutSvg` is a regex-based scan (deliberately not a real
+  DOMParser/XML parse — this file needs to run and be unit-tested in plain
+  Node, which has no DOM) that reads an SVG's `viewBox` (or `width`/
+  `height` as a fallback) and every `<rect>` element, normalizing each into
+  the same `{x,y,width,height}` shape `domain/layouts.ts`'s built-in
+  presets already produce. Wired into the existing `set-page-layout`/
+  `reset-page-layout` commands by widening their `layout` field from
+  `LayoutPresetId` to `LayoutPresetId | Rect[]` (`pageOps.ts`'s
+  `applyLayout` just branches on `Array.isArray`) — reuses ALL of the
+  existing content-preserving re-homing logic for free, rather than adding
+  a parallel "custom layout" command. Only `<rect>` shapes are read — a
+  layout drawn as polygons/paths is a disclosed limitation, not a bug.
+
+  **A real bug caught mid-session, not shipped**: the first draft of two
+  new Inspector controls (`TextStylePresetControls`, `ContinuesFromControl`
+  in `InspectorPanel.tsx`) used a zustand selector that built a FRESH array
+  every call (`(s) => Object.values(s.doc.textStylePresets)`, and similarly
+  a `.map().filter()` chain for bubble siblings). Since the returned
+  reference never `Object.is`-equals the previous one, this free-runs into
+  a render loop and froze the whole page — surfaced as 6 unrelated
+  Playwright tests suddenly timing out on completely different actions
+  ("Edit text" button never appearing, "Appearance" section never
+  clickable), which was initially confusing until the common thread (every
+  failure involved selecting a bubble, which mounts these two components)
+  pointed at the actual cause. Fixed by following the EXACT pattern already
+  used elsewhere in the same file (`BubbleStyleControls`'s `masks`): select
+  the STABLE underlying object/map via the zustand selector, then derive
+  arrays in the component body afterward, never inside the selector
+  callback itself. Worth remembering as a general zustand rule, not just a
+  one-off — see "Known gotchas" below.
+
+  Verified: `npm test` (1415/1415 — new unit tests added for
+  `textStylePresets.ts`'s commands, `updateBubble`'s `continuesFromItemId`
+  validation, `pageOps.ts`'s literal-`Rect[]` layout path, `parseLayoutSvg`,
+  the four new tone painters, and the EPUB helper functions), clean
+  typecheck/lint/build, and the full 30-test Playwright suite passing
+  reliably in isolation (a handful of full-sequential-run flakes were
+  chased down and confirmed pre-existing/environmental — a Next.js dev
+  overlay badge intermittently colliding with the "Add page" button's
+  screen position, and worker-concurrency timing — reproducing on
+  DIFFERENT, unrelated tests each run and vanishing every time in isolation
+  or on a clean single-worker pass, with zero diff to `next.config.ts`,
+  `playwright.config.ts`, or the affected components).
+
 - **2026-09-16 — Translate Project: AI-translate an already-lettered
   project's dialogue into another language (backlog #28).** From a fresh
   audit specifically for AI-powered (not general UI) gaps —
@@ -836,7 +963,12 @@ The marketing/crowdfunding site (`kumanga-website.vercel.app`) lists 7 items
 under "Next — funded by the campaign" (i.e. its author's claim of what's
 *not* built yet). Audited against this repo's actual code on 2026-09-15 —
 the site is stale in both directions (some items already done, effort
-levels vary a lot within a single bullet):
+levels vary a lot within a single bullet). **This table is a point-in-time
+snapshot, not live status** — several rows are already outdated by later
+Timeline entries (e.g. webtoon-strip export shipped 2026-09-15/16; PDF/EPUB
+export shipped 2026-09-16, see "Deliberately not built" below for the
+current, corrected framing of that decision). Check the Timeline for
+current status rather than trusting this table's wording on its own:
 
 | Roadmap item | Actual status |
 |---|---|
@@ -980,8 +1112,62 @@ absent, not partial**
     the SOURCE's own dimensions before compositing. Needs a new provider
     capability, higher effort/risk than #28.
 
+**Tier A — from a `ketle-man/comfyui-comic-creator` competitive audit
+(2026-09-16), all five approved by the user together as "Tier A"**
+30. ~~Whole-project PDF export~~ — **done 2026-09-16**, see Timeline.
+    Overrides the older "PDF export: rejected" note below — see that
+    note's own update for why this isn't a reversal of the same decision.
+31. ~~Whole-project EPUB export~~ — **done 2026-09-16**, see Timeline.
+32. ~~Linked/extended speech bubbles (`continuesFromItemId`) for dialogue
+    split across two balloons~~ — **done 2026-09-16**, see Timeline.
+33. ~~Reusable text style presets~~ — **done 2026-09-16**, see Timeline.
+34. ~~Traditional Japanese tone patterns (asanoha/ichimatsu/shippo/uroko)~~
+    — **done 2026-09-16**, see Timeline.
+35. ~~SVG panel-layout import~~ — **done 2026-09-16**, see Timeline.
+
+**Tier B — from the same audit, saved to the backlog (not implemented) per
+the user's explicit "ghi vào tier B vào memory" instruction — these are
+proposals only, not yet verified against the code the way Tier A's items
+were before being scoped, so treat the effort estimates as rough**
+36. Layer groups/folders within a panel (nested item organization). No
+    domain support exists today (confirmed absent — no `groupId`/folder
+    concept anywhere in `domain/` or `editor/`). Needs a domain model change
+    (a tree instead of a flat item list per panel) plus a Layers-panel UI
+    for it; bigger than any single Tier A item.
+37. Basic freehand brush/paint tool with a mask layer, for hand-correcting
+    AI-generated art. No freehand drawing capability exists today — this
+    would be a genuinely new kind of editor interaction (pointer-tracked
+    strokes), not an extension of the existing "compose pre-made assets"
+    model. Real value (fixing small AI-generation artifacts by hand without
+    leaving the app), but a materially different scope than a domain-model
+    addition.
+38. Basic vector shape tool (line/polygon) for custom panel borders or
+    hand-drawn speed lines. Would need a new `PanelItem` kind plus a Konva
+    renderer for it — moderate effort if scoped narrowly to a couple of
+    primitives, but worth confirming the actual creator need first rather
+    than building it speculatively.
+39. PSD import/export, for round-tripping a page through Photoshop for
+    finishing touches. Real value for pro workflows, but PSD is a complex
+    binary format to parse safely — should come after the above, and
+    probably as its own scoping conversation given the parsing risk.
+40. A manual, panel-by-panel script/screenplay editor (Work → Synopsis →
+    Plot → Page → Panel, writing scene/dialogue by hand and "flowing" it
+    into the existing layout system) as an alternative to Novel Import's
+    AI-first, prose-driven flow. Would reuse the existing layout/Manga
+    Agent pipeline as its backend; the new part is purely the manual
+    authoring UI.
+
 **Not in the backlog — deliberate, don't re-add without the user explicitly overriding**
-- PDF export (rejected design decision, not a gap — see `export/exportBook.ts`).
+- PDF export as the WHOLE-BOOK interchange format — CBZ remains that
+  choice, unchanged (see `export/exportBook.ts`'s docstring: comic-reader
+  apps expect CBZ, not PDF). **This does NOT cover PDF as an ADDITIONAL
+  export option for a different audience** (print shops and portfolio/
+  publisher submissions ask for PDF by name) — the user explicitly
+  approved that as part of Tier A on 2026-09-16, see the Timeline entry
+  and `export/exportBookPdf.ts`. If this note is read again, treat THIS
+  clarification as current, not the older blanket-sounding phrasing still
+  left in the "Known gotchas"/crowdfunding-audit sections below (kept
+  as-is there since they're dated historical snapshots, not live guidance).
 - Verifying "generative local editing" against a live paid provider (needs the user's own API credentials).
 - Collaboration/shared libraries, auth/accounts (contradict the local-first/no-accounts philosophy).
 
@@ -1008,13 +1194,36 @@ absent, not partial**
 - **Bash tool's cwd resets between calls** in this environment — don't
   assume a `cd` from a previous command persisted; use absolute paths or
   re-`cd` every time.
+- **A zustand selector must never return a freshly-built object/array.**
+  `(s) => Object.values(s.doc.foo)` or a `.map()/.filter()` chain INSIDE
+  the selector returns a new reference every call, which never
+  `Object.is`-equals the previous snapshot — React's
+  `useSyncExternalStore` (which zustand's hook is built on) then treats
+  every check as "the store changed" and free-runs into a render loop,
+  which in this app manifests as the whole page freezing/hanging rather
+  than an obvious error. The existing, correct pattern (`BubbleStyleControls`'s
+  `masks` in `InspectorPanel.tsx`, and every other selector in this
+  codebase already) is: select the STABLE underlying object/map/array
+  reference the store actually holds, then derive filtered/mapped results
+  in the component body AFTER the hook call, never inside the selector
+  callback. Caught 2026-09-16 the hard way — see that date's Timeline
+  entry for how confusing the symptom was (6 unrelated e2e tests all
+  timing out on completely different UI, with no error thrown anywhere).
 
 ## Deliberately not built (and why — don't re-litigate without new information)
 
 - **Auth / accounts.** Explicit design decision in Kumanga's own README
   ("no accounts, ever") — local-first, BYOK. Not an oversight.
-- **PDF export.** Considered and rejected in favor of CBZ — see
-  `export/exportBook.ts`'s docstring.
+- **PDF export AS THE WHOLE-BOOK INTERCHANGE FORMAT.** Considered and
+  rejected in favor of CBZ — see `export/exportBook.ts`'s docstring; CBZ
+  is still that choice, unchanged. This note originally read as a blanket
+  "no PDF export" and was corrected 2026-09-16: PDF (and EPUB) now exist as
+  ADDITIONAL export formats for a different audience — print-shop and
+  portfolio/publisher submissions that ask for PDF by name, and digital
+  storefronts/e-readers that want EPUB — neither of which the CBZ decision
+  above was ever about. See the Backlog section's Tier A entry and the
+  2026-09-16 Timeline entry for the full reasoning; `export/exportBookPdf.ts`
+  and `export/exportBookEpub.ts` are the actual code.
 - **"Chapter" as a first-class domain concept.** Only exists as transient
   planning state inside Novel Import's own outline, pre-generation. A real
   `Page.chapter` field, cross-page/chapter Agent targeting, and per-chapter

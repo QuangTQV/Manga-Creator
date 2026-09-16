@@ -3,13 +3,18 @@
 import { cloneDoc, touch } from "./docHelpers";
 import { createPanelFromRect, defaultPageWorkspacePosition, newId } from "./factory";
 import { LAYOUT_PRESETS } from "./layouts";
-import type { ID, LayoutPresetId, Page, ProjectDocument } from "./types";
+import type { ID, LayoutPresetId, Page, ProjectDocument, Rect } from "./types";
+
+/** A built-in preset, or a literal panel layout — e.g. from an SVG import
+ * (`services/importLayoutSvg.ts`). Both flow through the same
+ * content-preserving re-homing logic below. */
+export type PageLayout = LayoutPresetId | Rect[];
 import { createEmptyScene, syncPanelScene } from "./sceneOps";
 import { reassignChapterStartsAfterPageRemoval } from "./chapterOps";
 
 export function addPage(
   doc: ProjectDocument,
-  layout: LayoutPresetId = "four-grid",
+  layout: PageLayout = "four-grid",
 ): { doc: ProjectDocument; pageId: ID } {
   const next = cloneDoc(doc);
   const index = Object.keys(next.pages).length;
@@ -32,7 +37,7 @@ export function addPage(
  * existing panel item stacks are re-homed into the new panels by position
  * (panel 1 → panel 1, …); overflow stacks land in the last new panel.
  */
-export function setPageLayout(doc: ProjectDocument, pageId: ID, layout: LayoutPresetId): ProjectDocument {
+export function setPageLayout(doc: ProjectDocument, pageId: ID, layout: PageLayout): ProjectDocument {
   const next = cloneDoc(doc);
   const page = next.pages[pageId];
   if (!page) throw new Error(`Unknown page: ${pageId}`);
@@ -71,7 +76,7 @@ export function setPageLayout(doc: ProjectDocument, pageId: ID, layout: LayoutPr
  * regenerating a page), where carrying the old composition forward would
  * just leave stale content mixed in with the new run's output.
  */
-export function resetPageLayout(doc: ProjectDocument, pageId: ID, layout: LayoutPresetId): ProjectDocument {
+export function resetPageLayout(doc: ProjectDocument, pageId: ID, layout: PageLayout): ProjectDocument {
   const next = cloneDoc(doc);
   const page = next.pages[pageId];
   if (!page) throw new Error(`Unknown page: ${pageId}`);
@@ -140,9 +145,11 @@ export function removePage(doc: ProjectDocument, pageId: ID): ProjectDocument {
   return next;
 }
 
-function applyLayout(doc: ProjectDocument, page: Page, layout: LayoutPresetId): void {
+function applyLayout(doc: ProjectDocument, page: Page, layout: PageLayout): void {
   page.panelIds = [];
-  for (const rect of LAYOUT_PRESETS[layout].rects) {
+  const rects = Array.isArray(layout) ? layout : LAYOUT_PRESETS[layout].rects;
+  if (rects.length === 0) throw new Error("A layout needs at least one panel");
+  for (const rect of rects) {
     const panel = createPanelFromRect(page.id, rect);
     doc.panels[panel.id] = panel;
     doc.scenes[panel.id] = createEmptyScene(panel.id);

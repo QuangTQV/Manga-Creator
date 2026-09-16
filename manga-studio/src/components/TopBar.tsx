@@ -28,12 +28,15 @@ import {
   UndoIcon,
 } from "./ui/icons";
 import { LAYOUT_PRESETS } from "@/domain/layouts";
+import { parseLayoutSvg } from "@/domain/importLayoutSvg";
 import { LANGUAGE_NAME_PRESETS } from "@/domain/languagePresets";
 import type { BubbleType, EffectKind, LayoutPresetId } from "@/domain/types";
 import { useEditorStore } from "@/editor/store";
 import { useUiStore, type GeneratorRequest } from "@/editor/uiStore";
 import { exportCurrentPagePng } from "@/export/exportPage";
 import { exportBookCbz } from "@/export/exportBook";
+import { exportBookPdf } from "@/export/exportBookPdf";
+import { exportBookEpub } from "@/export/exportBookEpub";
 import { exportWebtoonStrip } from "@/export/exportWebtoon";
 import { exportProjectArchive } from "@/export/exportProjectArchive";
 import { exportFullBackup } from "@/export/projectBackup";
@@ -94,6 +97,7 @@ export function TopBar() {
   const [importingPages, setImportingPages] = useState(false);
   const [importPagesProgress, setImportPagesProgress] = useState<string | null>(null);
   const importPagesInputRef = useRef<HTMLInputElement>(null);
+  const importLayoutInputRef = useRef<HTMLInputElement>(null);
 
   if (!doc) return null;
 
@@ -137,6 +141,32 @@ export function TopBar() {
     }
   };
 
+  const onExportBookPdf = async (scale: 1 | 2) => {
+    setExporting(true);
+    setExportProgress("Preparing…");
+    try {
+      await exportBookPdf(scale, ({ done, total }) => setExportProgress(`Page ${done}/${total}…`));
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "PDF export failed");
+    } finally {
+      setExporting(false);
+      setExportProgress(null);
+    }
+  };
+
+  const onExportBookEpub = async (scale: 1 | 2) => {
+    setExporting(true);
+    setExportProgress("Preparing…");
+    try {
+      await exportBookEpub(scale, ({ done, total }) => setExportProgress(`Page ${done}/${total}…`));
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "EPUB export failed");
+    } finally {
+      setExporting(false);
+      setExportProgress(null);
+    }
+  };
+
   const onExportWebtoon = async (scale: 1 | 2) => {
     setExporting(true);
     setExportProgress("Preparing…");
@@ -166,6 +196,17 @@ export function TopBar() {
       alert(error instanceof Error ? error.message : "Full backup export failed");
     } finally {
       setExporting(false);
+    }
+  };
+
+  const onImportLayoutSvg = async (files: FileList | null) => {
+    const file = files?.[0];
+    if (!file || !page) return;
+    try {
+      const rects = parseLayoutSvg(await file.text());
+      useEditorStore.getState().dispatch({ type: "set-page-layout", pageId: page.id, layout: rects });
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Importing the SVG layout failed");
     }
   };
 
@@ -235,11 +276,27 @@ export function TopBar() {
 
       <ToolbarDivider />
 
+      <input
+        ref={importLayoutInputRef}
+        type="file"
+        aria-label="Import SVG layout"
+        accept=".svg,image/svg+xml"
+        className="hidden"
+        onChange={(e) => {
+          void onImportLayoutSvg(e.target.files);
+          e.target.value = "";
+        }}
+      />
       <Dropdown
         label="Layout"
-        items={Object.values(LAYOUT_PRESETS).map((preset) => ({ key: preset.id, label: preset.label }))}
+        items={[
+          ...Object.values(LAYOUT_PRESETS).map((preset) => ({ key: preset.id, label: preset.label })),
+          { key: "import-svg", label: "Import SVG layout…" },
+        ]}
         onPick={(key) => {
-          if (page) useEditorStore.getState().dispatch({ type: "set-page-layout", pageId: page.id, layout: key as LayoutPresetId });
+          if (!page) return;
+          if (key === "import-svg") importLayoutInputRef.current?.click();
+          else useEditorStore.getState().dispatch({ type: "set-page-layout", pageId: page.id, layout: key as LayoutPresetId });
         }}
       />
       <Button
@@ -400,6 +457,10 @@ export function TopBar() {
           { key: "page-2", label: "Export page @2x" },
           { key: "book-1", label: `Export book (all pages) @1x — CBZ` },
           { key: "book-2", label: `Export book (all pages) @2x — CBZ` },
+          { key: "book-pdf-1", label: `Export book (all pages) @1x — PDF` },
+          { key: "book-pdf-2", label: `Export book (all pages) @2x — PDF` },
+          { key: "book-epub-1", label: `Export book (all pages) @1x — EPUB` },
+          { key: "book-epub-2", label: `Export book (all pages) @2x — EPUB` },
           { key: "webtoon-1", label: `Export webtoon strip @1x — PNG` },
           { key: "webtoon-2", label: `Export webtoon strip @2x — PNG` },
           { key: "archive", label: "Export project archive (.json)" },
@@ -410,6 +471,8 @@ export function TopBar() {
           if (k === "full-backup") return void onExportFullBackup();
           const scale = k.endsWith("-1") ? 1 : 2;
           if (k.startsWith("webtoon-")) onExportWebtoon(scale);
+          else if (k.startsWith("book-pdf-")) onExportBookPdf(scale);
+          else if (k.startsWith("book-epub-")) onExportBookEpub(scale);
           else if (k.startsWith("book-")) onExportBook(scale);
           else onExport(scale);
         }}

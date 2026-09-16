@@ -15,6 +15,10 @@ const TYPE_LABELS: Record<ProceduralToneParams["type"], string> = {
   "cross-hatch": "Cross Hatch",
   gradient: "Gradient",
   noise: "Noise",
+  asanoha: "Hemp Leaf",
+  ichimatsu: "Checkerboard",
+  shippo: "Interlocking Circles",
+  uroko: "Fish Scale",
 };
 
 export function describeTone(doc: ProjectDocument, item: ToneItem): string {

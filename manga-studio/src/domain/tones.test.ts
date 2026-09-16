@@ -137,6 +137,20 @@ describe("procedural tones are real patterns, not labels", () => {
     expect(params.angle).toBeGreaterThanOrEqual(0);
     expect(params.angle).toBeLessThan(180);
   });
+
+  it("accepts the traditional Japanese pattern types", () => {
+    for (const type of ["asanoha", "ichimatsu", "shippo", "uroko"] as const) {
+      expect(normalizeToneParams({ type, density: 0.4, frequency: 20, angle: 0 }).type).toBe(type);
+    }
+  });
+
+  it("ships a preset for each traditional Japanese pattern, filed under Decorative", () => {
+    for (const id of ["asanoha", "ichimatsu", "shippo", "uroko"]) {
+      const preset = tonePreset(id);
+      expect(preset?.family).toBe("decorative");
+      expect(preset?.params.type).toBe(id);
+    }
+  });
 });
 
 describe("naming", () => {

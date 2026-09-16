@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@vercel/blob": "^2.8.0",
+    "jspdf": "^4.2.1",
     "jszip": "^3.10.2",
     "konva": "^10.3.1",
     "lucide-react": "^1.33.0",

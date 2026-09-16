@@ -27,8 +27,15 @@ import type { ID } from "./types";
 
 // ─── What a tone IS ─────────────────────────────────────────────────────────
 
-/** Patterns the renderer can draw from parameters alone. */
-export type ProceduralToneType = "dot" | "line" | "cross-hatch" | "gradient" | "noise";
+/**
+ * Patterns the renderer can draw from parameters alone.
+ *
+ * `asanoha`/`ichimatsu`/`shippo`/`uroko` are the traditional Japanese
+ * geometric motifs (hemp-leaf, checkerboard, interlocking circles, fish
+ * scale) — decorative background texture, same "parameters, not a bitmap"
+ * contract as every other procedural tone (see this file's own header).
+ */
+export type ProceduralToneType = "dot" | "line" | "cross-hatch" | "gradient" | "noise" | "asanoha" | "ichimatsu" | "shippo" | "uroko";
 
 /** Every tone kind, including the ones that can only be images. */
 export type ToneType = ProceduralToneType | "texture" | "decorative";
@@ -182,6 +189,11 @@ export const TONE_PRESETS: TonePreset[] = [
 
   { id: "speed-diagonal", name: "Speed Lines", family: "speed", use: "Motion across the panel", params: { type: "line", density: 0.22, frequency: 34, angle: 22 } },
   { id: "impact-dense", name: "Impact Hatch", family: "impact", use: "The frame of a hit landing", params: { type: "cross-hatch", density: 0.55, frequency: 34, angle: 30 } },
+
+  { id: "asanoha", name: "Asanoha (Hemp Leaf)", family: "decorative", use: "Traditional hexagonal weave — kimono fabric and formal backgrounds", params: { type: "asanoha", density: 0.35, frequency: 20, angle: 0 } },
+  { id: "ichimatsu", name: "Ichimatsu (Checkerboard)", family: "decorative", use: "Traditional checkerboard — graphic, formal backgrounds", params: { type: "ichimatsu", density: 0.5, frequency: 16, angle: 0 } },
+  { id: "shippo", name: "Shippo (Seven Treasures)", family: "decorative", use: "Interlocking circles — ornamental and ceremonial scenes", params: { type: "shippo", density: 0.4, frequency: 18, angle: 0 } },
+  { id: "uroko", name: "Uroko (Fish Scale)", family: "decorative", use: "Scale motif — armor, yokai and protective symbolism", params: { type: "uroko", density: 0.45, frequency: 18, angle: 0 } },
 ];
 
 export function tonePreset(id: string): TonePreset | undefined {
@@ -207,7 +219,7 @@ function clamp(value: unknown, min: number, max: number, fallback: number): numb
  */
 export function normalizeToneParams(params: unknown): ProceduralToneParams {
   const raw = (params ?? {}) as Record<string, unknown>;
-  const types: ProceduralToneType[] = ["dot", "line", "cross-hatch", "gradient", "noise"];
+  const types: ProceduralToneType[] = ["dot", "line", "cross-hatch", "gradient", "noise", "asanoha", "ichimatsu", "shippo", "uroko"];
   const type = types.includes(raw.type as ProceduralToneType) ? (raw.type as ProceduralToneType) : DEFAULT_PROCEDURAL.type;
   return {
     type,

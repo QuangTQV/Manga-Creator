@@ -314,6 +314,14 @@ const MIGRATIONS: Record<number, Migration> = {
    * explicitly uploads, never inferred from an existing document.
    */
   14: (doc) => ({ ...doc, fonts: doc.fonts ?? {}, schemaVersion: 15 }),
+  /**
+   * v15 → v16: reusable text style presets.
+   *
+   * Purely additive, nothing to backfill — a preset is something a creator
+   * explicitly saves from a bubble's current appearance, never inferred from
+   * an existing document.
+   */
+  15: (doc) => ({ ...doc, textStylePresets: doc.textStylePresets ?? {}, schemaVersion: 16 }),
 };
 
 function migrate(input: unknown): ProjectDocument {
@@ -342,6 +350,7 @@ function assertDocumentShape(doc: ProjectDocument): void {
   if (!Array.isArray(doc.generationHistory)) doc.generationHistory = [];
   if (typeof doc.chapters !== "object" || doc.chapters === null) doc.chapters = {};
   if (typeof doc.fonts !== "object" || doc.fonts === null) doc.fonts = {};
+  if (typeof doc.textStylePresets !== "object" || doc.textStylePresets === null) doc.textStylePresets = {};
   if (typeof doc.characterStates !== "object" || doc.characterStates === null) doc.characterStates = {};
   if (typeof doc.puppets !== "object" || doc.puppets === null) doc.puppets = {};
   if (typeof doc.workspaceItems !== "object" || doc.workspaceItems === null) doc.workspaceItems = {};

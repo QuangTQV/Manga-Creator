@@ -683,6 +683,17 @@ export interface SpeechBubbleItem extends PanelItemBase {
   targetCharacterId?: ID;
   /** Instance the tail tracks; resolved from targetCharacterId when absent. */
   targetInstanceId?: ID;
+  /**
+   * Another bubble in the SAME panel this one continues, for dialogue split
+   * across two or more balloons (a long line lettered as a linked chain
+   * rather than one oversized bubble). Purely visual: the renderer draws a
+   * connecting neck between the two boxes (`render/BubbleNode.tsx`); there is
+   * no reading-order or text-concatenation implication. A dangling reference
+   * (the target bubble was deleted) is tolerated exactly like every other
+   * cross-item reference in this document — it simply stops resolving to
+   * anything, so the neck stops drawing.
+   */
+  continuesFromItemId?: ID;
 }
 
 export type EffectKind = "speed-lines" | "focus-lines" | "screentone" | "impact-burst" | "emotion";
@@ -1064,6 +1075,29 @@ export interface FontAsset {
   format: "ttf" | "otf" | "woff" | "woff2";
 }
 
+/**
+ * A named bundle of text appearance, reusable across bubbles (§27).
+ *
+ * Deliberately a snapshot, not a live reference: applying a preset copies its
+ * fields onto the target bubble's own `fontSize`/`style` once, exactly like
+ * picking a color from a swatch. Editing the preset afterward never reaches
+ * back and changes bubbles that already used it — the alternative (bubbles
+ * that silently redraw when someone edits an unrelated preset) would make a
+ * bubble's own appearance controls lie about what is actually applied.
+ */
+export interface TextStylePreset {
+  id: ID;
+  name: string;
+  fontFamily?: string;
+  fontSize?: number;
+  bold?: boolean;
+  italic?: boolean;
+  letterSpacing?: number;
+  textColor?: string;
+  outlineWidth?: number;
+  outlineColor?: string;
+}
+
 export interface ProjectDocument {
   schemaVersion: number;
   project: Project;
@@ -1074,6 +1108,8 @@ export interface ProjectDocument {
   chapters: Record<ID, Chapter>;
   /** Creator-uploaded lettering fonts — see `FontAsset`'s own docstring. */
   fonts: Record<ID, FontAsset>;
+  /** Reusable text-appearance presets — see `TextStylePreset`'s own docstring. */
+  textStylePresets: Record<ID, TextStylePreset>;
   panels: Record<ID, Panel>;
   scenes: Record<ID, PanelScene>;
   /** The character state graph: semantic nodes with reference lineage. */
@@ -1098,4 +1134,4 @@ export interface ProjectDocument {
   generationHistory: GenerationRecord[];
 }
 
-export const SCHEMA_VERSION = 15;
+export const SCHEMA_VERSION = 16;

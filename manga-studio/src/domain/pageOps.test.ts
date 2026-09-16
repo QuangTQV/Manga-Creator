@@ -66,6 +66,28 @@ describe("resetPageLayout", () => {
   });
 });
 
+describe("set-page-layout with a literal custom layout (SVG import, §27)", () => {
+  it("applies literal rects the same way it applies a preset id, carrying old content forward", () => {
+    const { doc, pageId } = pageWithContent();
+    const customRects = [
+      { x: 0, y: 0, width: 1, height: 0.5 },
+      { x: 0, y: 0.5, width: 0.5, height: 0.5 },
+      { x: 0.5, y: 0.5, width: 0.5, height: 0.5 },
+    ];
+    const after = applyDomainCommand(doc, { type: "set-page-layout", pageId, layout: customRects }).doc;
+    const page = after.pages[pageId];
+    expect(page.panelIds).toHaveLength(3);
+    // The instance that lived in the old panel 1 followed it into the new panel 1.
+    expect(Object.keys(after.items)).toHaveLength(1);
+    expect(after.items[Object.keys(after.items)[0]].panelId).toBe(page.panelIds[0]);
+  });
+
+  it("rejects an empty rect list", () => {
+    const { doc, pageId } = pageWithContent();
+    expect(() => applyDomainCommand(doc, { type: "set-page-layout", pageId, layout: [] })).toThrow(/at least one panel/);
+  });
+});
+
 function threePages(): { doc: ProjectDocument; ids: [ID, ID, ID] } {
   let doc = createProjectDocument("Reorder page test");
   const first = Object.values(doc.pages)[0].id;

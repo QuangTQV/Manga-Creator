@@ -93,3 +93,73 @@ describe("update-bubble height patch (auto-fit)", () => {
     expect((patched.doc.items[itemId] as SpeechBubbleItem).height).toBe(originalHeight);
   });
 });
+
+describe("update-bubble continuesFromItemId (linked/extended bubbles, §27)", () => {
+  it("links to another bubble in the same panel", () => {
+    const { doc, panelId } = seededPanel();
+    const a = applyDomainCommand(doc, { type: "add-bubble", panelId, bubbleType: "speech", text: "First part…" });
+    const b = applyDomainCommand(a.doc, { type: "add-bubble", panelId, bubbleType: "speech", text: "…second part." });
+    const bId = b.createdId!;
+
+    const linked = applyDomainCommand(b.doc, {
+      type: "update-bubble",
+      itemId: bId,
+      patch: { continuesFromItemId: a.createdId! },
+    });
+    expect((linked.doc.items[bId] as SpeechBubbleItem).continuesFromItemId).toBe(a.createdId);
+  });
+
+  it("clears an existing link with null", () => {
+    const { doc, panelId } = seededPanel();
+    const a = applyDomainCommand(doc, { type: "add-bubble", panelId, bubbleType: "speech", text: "A" });
+    const b = applyDomainCommand(a.doc, { type: "add-bubble", panelId, bubbleType: "speech", text: "B" });
+    const bId = b.createdId!;
+    const linked = applyDomainCommand(b.doc, { type: "update-bubble", itemId: bId, patch: { continuesFromItemId: a.createdId! } });
+
+    const cleared = applyDomainCommand(linked.doc, { type: "update-bubble", itemId: bId, patch: { continuesFromItemId: null } });
+    expect((cleared.doc.items[bId] as SpeechBubbleItem).continuesFromItemId).toBeUndefined();
+  });
+
+  it("leaves an existing link untouched when the patch omits the field entirely", () => {
+    const { doc, panelId } = seededPanel();
+    const a = applyDomainCommand(doc, { type: "add-bubble", panelId, bubbleType: "speech", text: "A" });
+    const b = applyDomainCommand(a.doc, { type: "add-bubble", panelId, bubbleType: "speech", text: "B" });
+    const bId = b.createdId!;
+    const linked = applyDomainCommand(b.doc, { type: "update-bubble", itemId: bId, patch: { continuesFromItemId: a.createdId! } });
+
+    const patched = applyDomainCommand(linked.doc, { type: "update-bubble", itemId: bId, patch: { text: "B, edited" } });
+    expect((patched.doc.items[bId] as SpeechBubbleItem).continuesFromItemId).toBe(a.createdId);
+  });
+
+  it("rejects a bubble continuing itself", () => {
+    const { doc, panelId } = seededPanel();
+    const a = applyDomainCommand(doc, { type: "add-bubble", panelId, bubbleType: "speech", text: "A" });
+    expect(() =>
+      applyDomainCommand(a.doc, { type: "update-bubble", itemId: a.createdId!, patch: { continuesFromItemId: a.createdId! } }),
+    ).toThrow(/cannot continue itself/);
+  });
+
+  it("rejects an unknown target", () => {
+    const { doc, panelId } = seededPanel();
+    const a = applyDomainCommand(doc, { type: "add-bubble", panelId, bubbleType: "speech", text: "A" });
+    expect(() =>
+      applyDomainCommand(a.doc, { type: "update-bubble", itemId: a.createdId!, patch: { continuesFromItemId: "does-not-exist" } }),
+    ).toThrow(/Unknown bubble/);
+  });
+
+  it("rejects linking to a bubble in a different panel", () => {
+    const doc = createProjectDocument("Cross panel link test");
+    const withLayout = applyDomainCommand(doc, {
+      type: "set-page-layout",
+      pageId: Object.values(doc.pages)[0].id,
+      layout: "two-vertical",
+    });
+    const [panelA, panelB] = withLayout.doc.pages[Object.values(withLayout.doc.pages)[0].id].panelIds;
+    const a = applyDomainCommand(withLayout.doc, { type: "add-bubble", panelId: panelA, bubbleType: "speech", text: "A" });
+    const b = applyDomainCommand(a.doc, { type: "add-bubble", panelId: panelB, bubbleType: "speech", text: "B" });
+
+    expect(() =>
+      applyDomainCommand(b.doc, { type: "update-bubble", itemId: b.createdId!, patch: { continuesFromItemId: a.createdId! } }),
+    ).toThrow(/same panel/);
+  });
+});

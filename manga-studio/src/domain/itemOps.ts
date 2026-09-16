@@ -302,12 +302,14 @@ export function updateBubble(
   itemId: ID,
   patch: Partial<Pick<SpeechBubbleItem, "text" | "fontSize" | "bubbleType" | "tail" | "height">> & {
     style?: Partial<BubbleStyle>;
+    /** `null` clears the link; `undefined` leaves it alone. */
+    continuesFromItemId?: ID | null;
   },
 ): ProjectDocument {
   const next = cloneDoc(doc);
   const item = requireItem(next, itemId);
   if (item.kind !== "bubble") throw new Error("Not a bubble");
-  const { style, ...rest } = patch;
+  const { style, continuesFromItemId, ...rest } = patch;
   Object.assign(item, rest);
   /**
    * Changing the semantic type re-bases appearance on that type's default,
@@ -321,6 +323,17 @@ export function updateBubble(
     item.style = updateBubbleStyle(item.bubbleType, item.style, style);
   }
   if (!bubbleHasTail(item.bubbleType, resolvedBubbleStyle(item))) item.tail = undefined;
+  if (continuesFromItemId !== undefined) {
+    if (continuesFromItemId === null) {
+      item.continuesFromItemId = undefined;
+    } else {
+      if (continuesFromItemId === itemId) throw new Error("A bubble cannot continue itself");
+      const target = next.items[continuesFromItemId];
+      if (!target || target.kind !== "bubble") throw new Error(`Unknown bubble: ${continuesFromItemId}`);
+      if (target.panelId !== item.panelId) throw new Error("A bubble can only continue another bubble in the same panel");
+      item.continuesFromItemId = continuesFromItemId;
+    }
+  }
   touch(next);
   return next;
 }

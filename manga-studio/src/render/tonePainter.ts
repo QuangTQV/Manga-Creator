@@ -118,6 +118,18 @@ export function paintTone(ctx: ToneContext, w: number, h: number, params: Proced
       ctx.rotate(Math.PI / 2);
       paintLineField(ctx, reach, spacing, params.density / 2);
       break;
+    case "asanoha":
+      paintAsanohaField(ctx, reach, spacing, params.density);
+      break;
+    case "ichimatsu":
+      paintIchimatsuField(ctx, reach, spacing);
+      break;
+    case "shippo":
+      paintShippoField(ctx, reach, spacing, params.density);
+      break;
+    case "uroko":
+      paintUrokoField(ctx, reach, spacing);
+      break;
   }
 
   ctx.restore();
@@ -177,6 +189,79 @@ function paintLineField(ctx: ToneContext, reach: number, spacing: number, densit
     // Drawn as filled rects rather than strokes: a stroke centres on the path
     // and its width is affected by line joins, so coverage would drift.
     ctx.fillRect(-reach, y - width / 2, reach * 2, width);
+  }
+}
+
+/**
+ * A six-spoke star at every grid point — a simplified "asanoha" (hemp leaf)
+ * weave. `density` controls line weight rather than coverage, since the
+ * motif is drawn as strokes, not filled cells.
+ */
+function paintAsanohaField(ctx: ToneContext, reach: number, spacing: number, density: number): void {
+  const lineWidth = spacing * 0.08 * Math.min(1, Math.max(0, density) * 3);
+  if (lineWidth <= 0.05) return;
+  ctx.lineWidth = lineWidth;
+  const armLength = spacing * 0.55;
+  for (let y = -reach; y <= reach; y += spacing) {
+    for (let x = -reach; x <= reach; x += spacing) {
+      for (let arm = 0; arm < 3; arm++) {
+        const angle = (Math.PI / 3) * arm;
+        const dx = Math.cos(angle) * armLength;
+        const dy = Math.sin(angle) * armLength;
+        ctx.beginPath();
+        ctx.moveTo(x - dx, y - dy);
+        ctx.lineTo(x + dx, y + dy);
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+/** Checkerboard — the "ichimatsu" motif: alternating filled grid cells. */
+function paintIchimatsuField(ctx: ToneContext, reach: number, spacing: number): void {
+  let row = 0;
+  for (let y = -reach; y <= reach; y += spacing) {
+    let col = 0;
+    for (let x = -reach; x <= reach; x += spacing) {
+      if ((row + col) % 2 === 0) ctx.fillRect(x, y, spacing, spacing);
+      col += 1;
+    }
+    row += 1;
+  }
+}
+
+/**
+ * Interlocking circles — the "shippo" (seven treasures) motif. Stroked, not
+ * filled: the pattern reads from where neighboring circles overlap.
+ */
+function paintShippoField(ctx: ToneContext, reach: number, spacing: number, density: number): void {
+  const lineWidth = spacing * 0.06 * Math.min(1, Math.max(0, density) * 3);
+  if (lineWidth <= 0.05) return;
+  ctx.lineWidth = lineWidth;
+  const radius = spacing * 0.5;
+  for (let y = -reach; y <= reach; y += spacing) {
+    for (let x = -reach; x <= reach; x += spacing) {
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+}
+
+/** Rows of alternating triangles — the "uroko" (fish scale) motif. */
+function paintUrokoField(ctx: ToneContext, reach: number, spacing: number): void {
+  let row = 0;
+  for (let y = -reach; y <= reach; y += spacing) {
+    const offset = (row % 2) * (spacing / 2);
+    for (let x = -reach; x <= reach; x += spacing) {
+      ctx.beginPath();
+      ctx.moveTo(x + offset, y);
+      ctx.lineTo(x + offset + spacing / 2, y + spacing);
+      ctx.lineTo(x + offset - spacing / 2, y + spacing);
+      ctx.closePath();
+      ctx.fill();
+    }
+    row += 1;
   }
 }
 

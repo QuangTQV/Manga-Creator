@@ -11,6 +11,7 @@ import type { ProceduralToneParams, ToneMask } from "./tones";
 import { addPage, removePage, reorderPage, resetPageLayout, setPageLayout } from "./pageOps";
 import { addChapter, moveChapterStart, removeChapter, renameChapter } from "./chapterOps";
 import { addFontAsset, removeFontAsset } from "./fontOps";
+import { addTextStylePreset, removeTextStylePreset, renameTextStylePreset, type TextStyleFields } from "./textStylePresets";
 import { renameProject, setDialogueLanguage } from "./projectOps";
 import { addRelationship, removeRelationship } from "./relationships";
 import {
@@ -156,6 +157,9 @@ export type DomainCommand =
          * which goes through `update-instance-transform` instead. */
         height?: number;
         style?: Partial<BubbleStyle>;
+        /** See `SpeechBubbleItem.continuesFromItemId`'s own docstring.
+         * `null` clears an existing link; `undefined` leaves it alone. */
+        continuesFromItemId?: ID | null;
       };
     }
   | { type: "add-effect"; panelId: ID; effectKind: EffectKind }
@@ -175,8 +179,12 @@ export type DomainCommand =
   | { type: "split-panel"; panelId: ID; direction: "vertical" | "horizontal"; fraction?: number }
   | { type: "merge-panels"; panelAId: ID; panelBId: ID }
   | { type: "add-custom-panel"; pageId: ID; rect: Rect }
-  | { type: "set-page-layout"; pageId: ID; layout: LayoutPresetId }
-  | { type: "reset-page-layout"; pageId: ID; layout: LayoutPresetId }
+  /** `layout` is either a built-in preset id or, for an SVG-imported custom
+   * layout (`services/importLayoutSvg.ts`), a literal list of normalized
+   * panel rects — both go through the exact same content-preserving
+   * re-homing logic in `setPageLayout`. */
+  | { type: "set-page-layout"; pageId: ID; layout: LayoutPresetId | Rect[] }
+  | { type: "reset-page-layout"; pageId: ID; layout: LayoutPresetId | Rect[] }
   | { type: "reorder-page"; pageId: ID; toIndex: number }
   | { type: "add-chapter"; startPageId: ID; name?: string }
   | { type: "rename-chapter"; chapterId: ID; name: string }
@@ -184,6 +192,9 @@ export type DomainCommand =
   | { type: "move-chapter-start"; chapterId: ID; toPageId: ID }
   | { type: "add-font-asset"; name: string; storageUrl: string; format: FontAsset["format"] }
   | { type: "remove-font-asset"; fontId: ID }
+  | { type: "save-text-style-preset"; name: string; fields: TextStyleFields }
+  | { type: "rename-text-style-preset"; presetId: ID; name: string }
+  | { type: "remove-text-style-preset"; presetId: ID }
   | { type: "add-page"; layout?: LayoutPresetId }
   | { type: "remove-page"; pageId: ID }
   | { type: "add-workspace-instance"; assetId: ID; at: Point }
@@ -429,6 +440,14 @@ function applyCommandCore(doc: ProjectDocument, command: DomainCommand): Command
     }
     case "remove-font-asset":
       return { doc: removeFontAsset(doc, command.fontId) };
+    case "save-text-style-preset": {
+      const result = addTextStylePreset(doc, command.name, command.fields);
+      return { doc: result.doc, createdId: result.presetId };
+    }
+    case "rename-text-style-preset":
+      return { doc: renameTextStylePreset(doc, command.presetId, command.name) };
+    case "remove-text-style-preset":
+      return { doc: removeTextStylePreset(doc, command.presetId) };
     case "add-page": {
       const result = addPage(doc, command.layout);
       return { doc: result.doc, createdId: result.pageId };

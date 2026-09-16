@@ -1114,7 +1114,132 @@ function BubbleStyleControls({ item }: { item: SpeechBubbleItem }) {
           />
         </div>
       )}
+
+      <TextStylePresetControls item={item} style={style} />
+      <ContinuesFromControl item={item} />
     </details>
+  );
+}
+
+/**
+ * Reusable text style presets (§27): save the current bubble's font/color/
+ * outline as a named preset, or apply one saved earlier. `fontSize` lives on
+ * the item itself (not `BubbleStyle`), so applying a preset is one
+ * `update-bubble` dispatch carrying both — the same shape the auto-fit path
+ * already uses for `{fontSize, height}` together.
+ */
+function TextStylePresetControls({ item, style }: { item: SpeechBubbleItem; style: BubbleStyle }) {
+  const dispatch = useEditorStore((s) => s.dispatch);
+  // Select the stable map itself, not a freshly-built array — a zustand
+  // selector that returns a new array reference every call reads as "the
+  // store changed" on every render and free-runs into a render loop.
+  const textStylePresets = useEditorStore((s) => s.doc?.textStylePresets);
+  const presets = textStylePresets ? Object.values(textStylePresets) : [];
+
+  const applyPreset = (presetId: string) => {
+    const preset = presets.find((p) => p.id === presetId);
+    if (!preset) return;
+    dispatch({
+      type: "update-bubble",
+      itemId: item.id,
+      patch: {
+        fontSize: preset.fontSize,
+        style: {
+          fontFamily: preset.fontFamily,
+          bold: preset.bold,
+          italic: preset.italic,
+          letterSpacing: preset.letterSpacing,
+          textColor: preset.textColor,
+          outlineWidth: preset.outlineWidth,
+          outlineColor: preset.outlineColor,
+        },
+      },
+    });
+  };
+
+  const saveCurrentAsPreset = () => {
+    const name = window.prompt("Save this bubble's text style as…");
+    if (!name) return;
+    dispatch({
+      type: "save-text-style-preset",
+      name,
+      fields: {
+        fontFamily: style.fontFamily,
+        fontSize: item.fontSize,
+        bold: style.bold,
+        italic: style.italic,
+        letterSpacing: style.letterSpacing,
+        textColor: style.textColor,
+        outlineWidth: style.outlineWidth,
+        outlineColor: style.outlineColor,
+      },
+    });
+  };
+
+  return (
+    <div className="mt-2 border-t border-zinc-800 pt-2">
+      <Label>Text style preset</Label>
+      <div className="flex gap-1">
+        <select
+          className="w-full rounded border border-zinc-700 bg-zinc-800 px-1 py-1.5"
+          value=""
+          onChange={(e) => e.target.value && applyPreset(e.target.value)}
+        >
+          <option value="">Apply a saved preset…</option>
+          {presets.map((preset) => (
+            <option key={preset.id} value={preset.id}>
+              {preset.name}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="shrink-0 rounded border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-zinc-300 hover:border-zinc-500"
+          onClick={saveCurrentAsPreset}
+          title="Save this bubble's font, size, color and outline as a reusable preset"
+        >
+          Save as…
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Links this bubble to another one in the SAME panel as a continuation, for
+ * dialogue split across two balloons — see `SpeechBubbleItem.continuesFromItemId`.
+ */
+function ContinuesFromControl({ item }: { item: SpeechBubbleItem }) {
+  const dispatch = useEditorStore((s) => s.dispatch);
+  // Select the stable panel object, not a freshly-built array of siblings —
+  // see `TextStylePresetControls`'s comment on why that would render-loop.
+  const panel = useEditorStore((s) => s.doc?.panels[item.panelId]);
+  const items = useEditorStore((s) => s.doc?.items);
+  const siblings = (panel?.itemIds ?? [])
+    .map((id) => items?.[id])
+    .filter((sibling): sibling is SpeechBubbleItem => Boolean(sibling && sibling.kind === "bubble" && sibling.id !== item.id));
+
+  if (siblings.length === 0) return null;
+
+  return (
+    <div className="mt-2">
+      <Label>Continues from</Label>
+      <select
+        className="w-full rounded border border-zinc-700 bg-zinc-800 px-1 py-1.5"
+        value={item.continuesFromItemId ?? ""}
+        onChange={(e) =>
+          dispatch({ type: "update-bubble", itemId: item.id, patch: { continuesFromItemId: e.target.value || null } })
+        }
+      >
+        <option value="">Not linked</option>
+        {siblings.map((sibling) => (
+          <option key={sibling.id} value={sibling.id}>
+            {sibling.text.slice(0, 24) || "(empty bubble)"}
+          </option>
+        ))}
+      </select>
+      <Hint>Draws a connecting neck to the chosen bubble, for one line of dialogue split across two balloons.</Hint>
+    </div>
   );
 }
 

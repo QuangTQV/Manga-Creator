@@ -18,6 +18,9 @@ interface BubbleNodeProps {
   onDoubleClick?: () => void;
   onTailDragEnd?: (x: number, y: number) => void;
   selected?: boolean;
+  /** The bubble `item.continuesFromItemId` points to, already resolved by the
+   * caller (which has the panel's item map) — see `NeckConnector` below. */
+  linkedFrom?: SpeechBubbleItem;
 }
 
 /**
@@ -29,7 +32,7 @@ interface BubbleNodeProps {
  * text layer on top, which is why an uploaded bubble shape stays editable
  * instead of baking words into an image (§8).
  */
-export function BubbleNode({ item, interactive, onDragMove, onDragEnd, onDoubleClick, onTailDragEnd, selected, editing }: BubbleNodeProps) {
+export function BubbleNode({ item, interactive, onDragMove, onDragEnd, onDoubleClick, onTailDragEnd, selected, editing, linkedFrom }: BubbleNodeProps) {
   const halfW = item.width / 2;
   const halfH = item.height / 2;
   const style = resolvedBubbleStyle(item);
@@ -42,6 +45,7 @@ export function BubbleNode({ item, interactive, onDragMove, onDragEnd, onDoubleC
 
   return (
     <>
+      {linkedFrom && <NeckConnector a={item} b={linkedFrom} style={style} />}
       {hasTail && <TailShape item={item} style={style} />}
       <Group
         id={`item-${item.id}`}
@@ -290,6 +294,46 @@ function TailShape({ item, style }: { item: SpeechBubbleItem; style: BubbleStyle
         edgeY - ny * baseWidth,
         tail.x,
         tail.y,
+      ]}
+      closed
+      {...paint}
+    />
+  );
+}
+
+/**
+ * The connecting "neck" between two linked balloons (§27) — a short ribbon
+ * between their centers, painted in the CONTINUING bubble's own style so it
+ * reads as one balloon split across two boxes rather than two separate
+ * balloons that happen to touch. An approximation, same spirit as
+ * `TailShape`'s edge factor: it does not account for either bubble being
+ * rotated, which stays fine for the common case (both upright) and simply
+ * looks a little off in the rare one, rather than needing real polygon math.
+ */
+function NeckConnector({ a, b, style }: { a: SpeechBubbleItem; b: SpeechBubbleItem; style: BubbleStyle }) {
+  const dx = b.cx - a.cx;
+  const dy = b.cy - a.cy;
+  const distance = Math.hypot(dx, dy) || 1;
+  const nx = -dy / distance;
+  const ny = dx / distance;
+  const halfWidth = Math.min(a.width, a.height, b.width, b.height) * 0.18;
+  const paint = {
+    fill: style.fill === "transparent" ? "#ffffff" : style.fill,
+    stroke: style.stroke,
+    strokeWidth: Math.max(1, style.borderWeight),
+    listening: false,
+  };
+  return (
+    <Line
+      points={[
+        a.cx + nx * halfWidth,
+        a.cy + ny * halfWidth,
+        b.cx + nx * halfWidth,
+        b.cy + ny * halfWidth,
+        b.cx - nx * halfWidth,
+        b.cy - ny * halfWidth,
+        a.cx - nx * halfWidth,
+        a.cy - ny * halfWidth,
       ]}
       closed
       {...paint}
