@@ -33,6 +33,67 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-16 — ComfyUI adapter v3 PR2: real, provider-side masked
+  inpainting.** Second of the three planned v3 PRs (see PR1's entry below
+  for the full plan/context — same session, same backlog request).
+  `ImageEditRequest` (`ai/types.ts`) gained an optional `mask?: {mimeType,
+  data}` field — purely additive, confirmed Gemini/customImage's existing
+  `editImage` never reads unknown fields, so no behavior change there.
+  `/api/assets/edit/route.ts` already decoded the creator's painted mask
+  into raw RGBA for its OWN local compositing step (this has existed since
+  before this session — the mask/paint UI already worked for every
+  provider, correctness enforced client/server-side regardless of provider
+  masking support); it now ALSO re-encodes those same already-computed
+  bytes back to PNG and forwards them to `provider.editImage(...)` as
+  `mask`, reusing bytes rather than a second decode.
+  `comfyui.ts` gained `buildEditWorkflow` (kept deliberately separate from
+  v2's `buildWorkflow` — editing always has a source image and no target
+  width/height, generation has neither guarantee) and `editImage()`,
+  flipping `capabilities.supportsImageEditing: true`. LoRA-chaining logic
+  was factored out of `buildWorkflow` into a shared `addLoraChain` helper
+  both functions now call, rather than duplicated.
+  **Two real, would-have-shipped-silently-wrong bugs caught by a
+  Plan-agent design-validation pass BEFORE any of this PR's code was
+  written** (not by a test afterward — there is no live ComfyUI instance
+  in this environment to have caught either empirically):
+  1. `LoadImageMask`'s `channel` parameter: my first draft used
+     `channel: "alpha"`. `AssetDetailEditor.tsx` (the existing paint UI)
+     paints opaque white strokes on an initially-transparent canvas, so
+     editable pixels are alpha=255 — but ComfyUI's `"alpha"` channel mode
+     computes `mask = 1 - alpha`, a legacy cutout-mask convention. That
+     would have inverted polarity: ComfyUI would protect exactly the
+     region the creator selected to change, and freely repaint everything
+     else. Fixed to `channel: "red"` (pure pass-through, R=255→mask=1.0).
+     Notably, even with this bug, the existing local compositor would
+     still have clipped the output to the CREATOR's own drawn mask
+     (decoded independently in the route) — so a real user would have
+     seen "inpainting did nothing useful," not leaked pixels outside the
+     selected region. Worth remembering as a case where the existing
+     defense-in-depth (compositor never trusts the provider) turned a
+     silent-wrong-output bug into a silent-no-effect one instead — better,
+     but "no effect" is still a real, confusing bug for whoever hits it.
+  2. Denoise value: first draft used `0.95` for the masked path by
+     instinct ("close to full, but not quite"). Corrected to `1.0` to
+     match ComfyUI's own official inpainting example — `SetLatentNoiseMask`
+     already fully protects everything outside the mask, so the masked
+     region should be discarded and resampled entirely from the
+     instruction, not biased toward the original content.
+  New tests: `buildEditWorkflow` unit tests (mask/no-mask graph shape,
+  `channel: "red"` asserted explicitly, denoise 1.0 vs 0.6, LoRA-chain
+  reuse, sampler-override reuse), an `editImage` end-to-end mocked-fetch
+  test (source + mask uploaded as two SEPARATE `/upload/image` calls, each
+  used by its own server-returned name), and — since `/api/assets/edit`
+  had NO existing test file at all before this change, a real pre-existing
+  gap, not one introduced here — a new `route.test.ts` using real `sharp`
+  PNG encode/decode (not mocked) to verify the mask that reaches
+  `provider.editImage(...)` actually decodes back to the same
+  editable/protected shape the creator painted, at the source image's own
+  pixel dimensions.
+  Verified: `npm test` → 1485/1485; typecheck/lint/build clean; full
+  Playwright suite passing (one unrelated pre-existing flaky drag-reorder
+  test failed on the full run, passed cleanly in isolation — not
+  investigated further, not something this change touched).
+
 - **2026-09-16 — ComfyUI adapter v3 PR1: LoRA/ControlNet-model dropdown
   discovery, plus a real credential-readback bug found and fixed.** User
   asked for ControlNet, real mask/inpainting, and LoRA-from-a-list — I

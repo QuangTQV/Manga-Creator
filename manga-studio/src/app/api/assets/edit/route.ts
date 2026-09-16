@@ -92,11 +92,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (maskIsEmpty(mask)) {
       return NextResponse.json({ error: "Select an area to change first.", requestId }, { status: 400 });
     }
+    // Re-encode the SAME already-decoded/resized bytes back to PNG for
+    // adapters that can do real provider-side masking (ComfyUI) — no second
+    // decode pass. Adapters that ignore `mask` (Gemini, customImage) are
+    // unaffected; locality for them still comes entirely from the
+    // compositing step below, same as before this field existed.
+    const maskPngForProvider = await sharp(maskRaw, { raw: { width, height, channels: 4 } }).png().toBuffer();
 
     trace("provider_edit_start", { width, height, provider: provider.id });
     const edited = await provider.editImage({
       instruction: parsed.data.instruction,
       image: { mimeType: source.mimeType, data: source.data, url: parsed.data.sourceUrl },
+      mask: { mimeType: "image/png", data: maskPngForProvider },
       trace,
     });
 

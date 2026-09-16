@@ -16,9 +16,13 @@
  * reverse-engineer the scheme from several separate changes):
  *   3-9   core txt2img (v1) — KSampler/CheckpointLoaderSimple/
  *         EmptyLatentImage/CLIPTextEncode x2/VAEDecode/SaveImage.
- *   20-23 LoRA chain (v2, up to MAX_COMFYUI_LORAS entries).
- *   30-32 img2img (v2) — LoadImage/VAEEncode/ImageScale.
- *   40+   reserved for any future stage (ControlNet, mask, upscale...).
+ *   20-23 LoRA chain (v2, up to MAX_COMFYUI_LORAS entries) — shared by
+ *         both buildWorkflow (generation) and buildEditWorkflow (edit).
+ *   30-32 img2img (v2, generation path) — LoadImage/VAEEncode/ImageScale.
+ *   30,31,33,34 edit path (v3 PR2) — LoadImage/VAEEncode/LoadImageMask/
+ *         SetLatentNoiseMask. Never both graphs at once, so the 30/31
+ *         reuse across the two functions is not a real collision.
+ *   40+   reserved for ControlNet/upscale (v3 PR3+).
  */
 
 import type { ComfyUiExtraConfig } from "@/server/comfyui/config";
@@ -27,6 +31,7 @@ import { outboundFetch, readBodyBytes, readBodyText, UnsafeOutboundUrlError } fr
 import { detectImageType } from "@/storage/imageValidation";
 import {
   ProviderError,
+  type ImageEditRequest,
   type ImageGenerationProvider,
   type ImageGenerationRequest,
   type ImageGenerationResult,
@@ -70,34 +75,22 @@ interface UploadedImageRef {
   type?: string;
 }
 
-/**
- * Pure, testable without network: the ComfyUI API-format graph for this
- * request. Base shape (no LoRA, no reference image) is the same standard
- * txt2img graph ComfyUI itself ships as its default example workflow —
- * byte-identical to v1 when `extra`/`uploadedImage` are both absent.
- */
-export function buildWorkflow(
-  request: Pick<ImageGenerationRequest, "prompt" | "negativePrompt" | "width" | "height">,
-  checkpointModel: string,
-  extra?: ComfyUiExtraConfig,
-  uploadedImage?: UploadedImageRef,
-): Record<string, unknown> {
-  const seed = Math.floor(Math.random() * 2 ** 31);
-  const loras = extra?.loras ?? [];
-  const loraIds = LORA_NODE_IDS.slice(0, loras.length);
-
-  const graph: Record<string, unknown> = {
-    "4": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: checkpointModel } },
-  };
-
-  // Chain LoraLoader nodes from the checkpoint; each hop's model/clip output
-  // feeds the next. strength_model/strength_clip are collapsed into one
-  // `strength` field per entry — an intentional simplification, not the
-  // node's real two-independent-strengths shape.
+/** Chains LoraLoader nodes (ids `20`-`23`) from the checkpoint into `graph`
+ * (mutated in place), returning where the model/clip sources now point —
+ * `["4",0]`/`["4",1]` unchanged when `loras` is empty. Shared by both
+ * `buildWorkflow` and `buildEditWorkflow` so this wiring is written once.
+ * `strength_model`/`strength_clip` are collapsed into one `strength` field
+ * per entry — an intentional simplification, not the node's real
+ * two-independent-strengths shape. */
+function addLoraChain(
+  graph: Record<string, unknown>,
+  loras: ComfyUiExtraConfig["loras"],
+): { modelSource: [string, number]; clipSource: [string, number] } {
+  const loraIds = LORA_NODE_IDS.slice(0, loras?.length ?? 0);
   let modelSource: [string, number] = ["4", 0];
   let clipSource: [string, number] = ["4", 1];
   loraIds.forEach((nodeId, index) => {
-    const entry = loras[index];
+    const entry = loras![index];
     graph[nodeId] = {
       class_type: "LoraLoader",
       inputs: {
@@ -111,6 +104,27 @@ export function buildWorkflow(
     modelSource = [nodeId, 0];
     clipSource = [nodeId, 1];
   });
+  return { modelSource, clipSource };
+}
+
+/**
+ * Pure, testable without network: the ComfyUI API-format graph for this
+ * request. Base shape (no LoRA, no reference image) is the same standard
+ * txt2img graph ComfyUI itself ships as its default example workflow —
+ * byte-identical to v1 when `extra`/`uploadedImage` are both absent.
+ */
+export function buildWorkflow(
+  request: Pick<ImageGenerationRequest, "prompt" | "negativePrompt" | "width" | "height">,
+  checkpointModel: string,
+  extra?: ComfyUiExtraConfig,
+  uploadedImage?: UploadedImageRef,
+): Record<string, unknown> {
+  const seed = Math.floor(Math.random() * 2 ** 31);
+
+  const graph: Record<string, unknown> = {
+    "4": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: checkpointModel } },
+  };
+  const { modelSource, clipSource } = addLoraChain(graph, extra?.loras);
 
   graph["6"] = { class_type: "CLIPTextEncode", inputs: { text: request.prompt, clip: clipSource } };
   graph["7"] = { class_type: "CLIPTextEncode", inputs: { text: request.negativePrompt ?? "", clip: clipSource } };
@@ -162,6 +176,81 @@ export function buildWorkflow(
   };
   graph["8"] = { class_type: "VAEDecode", inputs: { samples: ["3", 0], vae: ["4", 2] } };
   graph[SAVE_IMAGE_NODE_ID] = { class_type: "SaveImage", inputs: { filename_prefix: "kumanga", images: ["8", 0] } };
+
+  return graph;
+}
+
+/**
+ * Pure, testable without network: the edit-path graph. Deliberately
+ * separate from `buildWorkflow` — editing always has a source image (no
+ * `EmptyLatentImage`/img2img choice), `ImageEditRequest` has no width/
+ * height (the caller re-resizes provider output to the source's own
+ * dimensions afterward regardless, so no `ImageScale` here either), and
+ * optionally has a mask.
+ *
+ * When `maskImage` is present: `LoadImageMask` with `channel: "red"` — NOT
+ * `"alpha"`. `AssetDetailEditor.tsx` paints opaque white circles on an
+ * initially-transparent canvas, so editable pixels are alpha=255; ComfyUI's
+ * `channel: "alpha"` computes `mask = 1 - alpha` (a legacy cutout-mask
+ * convention), which would invert polarity and PROTECT exactly the region
+ * meant to change. `"red"` passes straight through (R=255 → mask=1.0).
+ * `SetLatentNoiseMask` then lets KSampler discard/resample only the masked
+ * latent region. Denoise is `1.0` when masked (matches ComfyUI's own
+ * official inpainting example: the mask already fully protects everything
+ * outside it, so the masked region should be resampled entirely from the
+ * instruction, not biased toward the original content) — `0.6` when no
+ * mask (a gentler whole-image nudge; only reachable if some future caller
+ * of `editImage` other than `/api/assets/edit` omits a mask, since that
+ * route always supplies one today).
+ */
+export function buildEditWorkflow(
+  instruction: string,
+  checkpointModel: string,
+  sourceImage: UploadedImageRef,
+  maskImage: UploadedImageRef | undefined,
+  extra?: ComfyUiExtraConfig,
+): Record<string, unknown> {
+  const seed = Math.floor(Math.random() * 2 ** 31);
+
+  const graph: Record<string, unknown> = {
+    "4": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: checkpointModel } },
+  };
+  const { modelSource, clipSource } = addLoraChain(graph, extra?.loras);
+
+  graph["6"] = { class_type: "CLIPTextEncode", inputs: { text: instruction, clip: clipSource } };
+  graph["7"] = { class_type: "CLIPTextEncode", inputs: { text: "", clip: clipSource } };
+
+  const sourcePath = sourceImage.subfolder ? `${sourceImage.subfolder}/${sourceImage.name}` : sourceImage.name;
+  graph["30"] = { class_type: "LoadImage", inputs: { image: sourcePath } };
+  graph["31"] = { class_type: "VAEEncode", inputs: { pixels: ["30", 0], vae: ["4", 2] } };
+
+  let latentSource: [string, number] = ["31", 0];
+  let denoise = 0.6;
+  if (maskImage) {
+    const maskPath = maskImage.subfolder ? `${maskImage.subfolder}/${maskImage.name}` : maskImage.name;
+    graph["33"] = { class_type: "LoadImageMask", inputs: { image: maskPath, channel: "red" } };
+    graph["34"] = { class_type: "SetLatentNoiseMask", inputs: { samples: ["31", 0], mask: ["33", 0] } };
+    latentSource = ["34", 0];
+    denoise = 1;
+  }
+
+  graph["3"] = {
+    class_type: "KSampler",
+    inputs: {
+      seed,
+      steps: extra?.steps ?? 20,
+      cfg: extra?.cfg ?? 7,
+      sampler_name: extra?.samplerName ?? "euler",
+      scheduler: extra?.scheduler ?? "normal",
+      denoise,
+      model: modelSource,
+      positive: ["6", 0],
+      negative: ["7", 0],
+      latent_image: latentSource,
+    },
+  };
+  graph["8"] = { class_type: "VAEDecode", inputs: { samples: ["3", 0], vae: ["4", 2] } };
+  graph[SAVE_IMAGE_NODE_ID] = { class_type: "SaveImage", inputs: { filename_prefix: "kumanga-edit", images: ["8", 0] } };
 
   return graph;
 }
@@ -321,7 +410,7 @@ export function createComfyUiProvider(config: ComfyUiConfig): ImageGenerationPro
       textToImage: true,
       supportsReferenceImage: true,
       supportsTransparentBackground: false,
-      supportsImageEditing: false,
+      supportsImageEditing: true,
       reference: { supported: true, transport: "provider-native", maxImages: 1, endpointMode: "same-endpoint" },
       referenceImage: true,
       imageVariation: true,
@@ -347,6 +436,36 @@ export function createComfyUiProvider(config: ComfyUiConfig): ImageGenerationPro
       const started = Date.now();
       const uploadedImage = reference ? await uploadImage(base, config.apiKey, reference) : undefined;
       const workflow = buildWorkflow(request, config.model, config.comfyui, uploadedImage);
+      const promptId = await submitPrompt(base, config.apiKey, workflow);
+      const imageRef = await pollHistory(
+        base,
+        config.apiKey,
+        promptId,
+        config.pollIntervalMs ?? POLL_INTERVAL_MS,
+        config.pollTimeoutMs ?? POLL_TIMEOUT_MS,
+      );
+      request.trace?.("outbound_response_received", {
+        provider: "comfyui",
+        httpStatus: 200,
+        durationMs: Date.now() - started,
+      });
+      const result = await fetchImageBytes(base, config.apiKey, imageRef);
+      request.trace?.("provider_response_parsed", { provider: "comfyui", imageFound: true });
+      return result;
+    },
+
+    async editImage(request: ImageEditRequest): Promise<ImageGenerationResult> {
+      request.trace?.("outbound_request_start", {
+        provider: "comfyui",
+        operation: "edit_image",
+        endpointPath: "/prompt",
+        model: config.model,
+        maskAttached: Boolean(request.mask),
+      });
+      const started = Date.now();
+      const uploadedSource = await uploadImage(base, config.apiKey, request.image);
+      const uploadedMask = request.mask ? await uploadImage(base, config.apiKey, request.mask) : undefined;
+      const workflow = buildEditWorkflow(request.instruction, config.model, uploadedSource, uploadedMask, config.comfyui);
       const promptId = await submitPrompt(base, config.apiKey, workflow);
       const imageRef = await pollHistory(
         base,

@@ -12,7 +12,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ImageGenerationRequest } from "../types";
-import { buildWorkflow, createComfyUiProvider, fetchObjectInfoOptions } from "./comfyui";
+import { buildEditWorkflow, buildWorkflow, createComfyUiProvider, fetchObjectInfoOptions } from "./comfyui";
 
 const REQUEST: ImageGenerationRequest = {
   prompt: "a manga hero, dynamic pose",
@@ -123,6 +123,57 @@ describe("buildWorkflow", () => {
       { inputs: Record<string, unknown> }
     >;
     expect(graph["30"].inputs.image).toBe("kumanga/ref.png");
+  });
+});
+
+describe("buildEditWorkflow", () => {
+  const SOURCE = { name: "source_00001_.png", subfolder: "", type: "input" };
+
+  it("without a mask: whole-image edit at denoise 0.6, no LoadImageMask/SetLatentNoiseMask", () => {
+    const graph = buildEditWorkflow("add a hat", "m.safetensors", SOURCE, undefined) as Record<
+      string,
+      { class_type: string; inputs: Record<string, unknown> }
+    >;
+    expect(graph["30"]).toMatchObject({ class_type: "LoadImage", inputs: { image: "source_00001_.png" } });
+    expect(graph["31"]).toMatchObject({ class_type: "VAEEncode", inputs: { pixels: ["30", 0], vae: ["4", 2] } });
+    expect(graph["3"].inputs.latent_image).toEqual(["31", 0]);
+    expect(graph["3"].inputs.denoise).toBe(0.6);
+    expect(graph["6"].inputs.text).toBe("add a hat");
+    expect(graph["7"].inputs.text).toBe("");
+    expect(graph["33"]).toBeUndefined();
+    expect(graph["34"]).toBeUndefined();
+    expect(graph["5"]).toBeUndefined(); // no EmptyLatentImage on the edit path at all
+  });
+
+  it("with a mask: LoadImageMask uses channel 'red' (not 'alpha'), SetLatentNoiseMask wired in, denoise 1.0", () => {
+    const mask = { name: "mask_00001_.png", subfolder: "kumanga", type: "input" };
+    const graph = buildEditWorkflow("add a hat", "m.safetensors", SOURCE, mask) as Record<
+      string,
+      { class_type: string; inputs: Record<string, unknown> }
+    >;
+    expect(graph["33"]).toMatchObject({ class_type: "LoadImageMask", inputs: { image: "kumanga/mask_00001_.png", channel: "red" } });
+    expect(graph["34"]).toMatchObject({ class_type: "SetLatentNoiseMask", inputs: { samples: ["31", 0], mask: ["33", 0] } });
+    expect(graph["3"].inputs.latent_image).toEqual(["34", 0]);
+    expect(graph["3"].inputs.denoise).toBe(1);
+  });
+
+  it("chains LoRAs the same way the generation-path graph does", () => {
+    const graph = buildEditWorkflow("add a hat", "m.safetensors", SOURCE, undefined, {
+      loras: [{ name: "detail_tweaker_xl.safetensors", strength: 0.8 }],
+    }) as Record<string, { inputs: Record<string, unknown> }>;
+    expect(graph["20"].inputs).toMatchObject({ lora_name: "detail_tweaker_xl.safetensors", strength_model: 0.8, strength_clip: 0.8 });
+    expect(graph["3"].inputs.model).toEqual(["20", 0]);
+    expect(graph["6"].inputs.clip).toEqual(["20", 1]);
+  });
+
+  it("applies sampler overrides the same way the generation-path graph does", () => {
+    const graph = buildEditWorkflow("add a hat", "m.safetensors", SOURCE, undefined, {
+      steps: 30,
+      cfg: 4.5,
+      samplerName: "dpmpp_2m",
+      scheduler: "karras",
+    }) as Record<string, { inputs: Record<string, unknown> }>;
+    expect(graph["3"].inputs).toMatchObject({ steps: 30, cfg: 4.5, sampler_name: "dpmpp_2m", scheduler: "karras" });
   });
 });
 
@@ -260,14 +311,14 @@ describe("createComfyUiProvider", () => {
     expect(calls).toHaveLength(1);
   });
 
-  it("declares reference-image (img2img) support but no editing/transparent-background support", () => {
+  it("declares reference-image (img2img) and editing support, but no transparent-background support", () => {
     const provider = createComfyUiProvider({ baseUrl: "https://comfy.example.com", model: "m.safetensors" });
     expect(provider.capabilities.supportsReferenceImage).toBe(true);
     expect(provider.capabilities.reference).toMatchObject({ supported: true, transport: "provider-native", maxImages: 1 });
-    expect(provider.capabilities.supportsImageEditing).toBe(false);
+    expect(provider.capabilities.supportsImageEditing).toBe(true);
     expect(provider.capabilities.supportsTransparentBackground).toBe(false);
     expect(provider.capabilities.asyncGeneration).toBe(true);
-    expect(provider.editImage).toBeUndefined();
+    expect(provider.editImage).toBeInstanceOf(Function);
   });
 
   it("uploads the reference image, then submits a workflow whose LoadImage node uses the SERVER's own upload response name, not the client filename", async () => {
@@ -304,6 +355,49 @@ describe("createComfyUiProvider", () => {
     >;
     expect(submittedWorkflow["30"]).toMatchObject({ class_type: "LoadImage", inputs: { image: uploadedName } });
     expect(submittedWorkflow["3"].inputs.denoise).toBe(0.6);
+  });
+
+  it("editImage uploads source and mask separately, then submits a masked-inpaint workflow using each upload's own server name", async () => {
+    const sourceName = "server-source.png";
+    const maskName = "server-mask.png";
+    let uploadCount = 0;
+    const calls = stubFetch((url) => {
+      if (url.includes("/upload/image")) {
+        uploadCount += 1;
+        const name = uploadCount === 1 ? sourceName : maskName;
+        return new Response(JSON.stringify({ name, subfolder: "", type: "input" }), { status: 200 });
+      }
+      if (url.includes("/prompt")) return new Response(JSON.stringify({ prompt_id: PROMPT_ID }), { status: 200 });
+      if (url.includes("/history/")) {
+        return new Response(
+          JSON.stringify({
+            [PROMPT_ID]: { status: { completed: true }, outputs: { "9": { images: [{ filename: "edited.png", type: "output" }] } } },
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("/view")) return new Response(PNG_BYTES, { status: 200 });
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const provider = createComfyUiProvider({ baseUrl: "https://comfy.example.com", model: "m.safetensors", ...FAST_POLL });
+    const result = await provider.editImage!({
+      instruction: "add a hat",
+      image: { mimeType: "image/png", data: Buffer.from([10, 20, 30]) },
+      mask: { mimeType: "image/png", data: Buffer.from([40, 50, 60]) },
+    });
+
+    expect(result.mimeType).toBe("image/png");
+    expect(calls.filter((c) => c.url.includes("/upload/image"))).toHaveLength(2);
+
+    const promptCall = calls.find((c) => c.url.includes("/prompt"));
+    const submittedWorkflow = JSON.parse(String(promptCall!.init!.body)).prompt as Record<
+      string,
+      { class_type: string; inputs: Record<string, unknown> }
+    >;
+    expect(submittedWorkflow["30"]).toMatchObject({ class_type: "LoadImage", inputs: { image: sourceName } });
+    expect(submittedWorkflow["33"]).toMatchObject({ class_type: "LoadImageMask", inputs: { image: maskName, channel: "red" } });
+    expect(submittedWorkflow["3"].inputs.denoise).toBe(1);
   });
 });
 

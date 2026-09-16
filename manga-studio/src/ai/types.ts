@@ -43,6 +43,13 @@ export interface ImageGenerationResult {
 export interface ImageEditRequest {
   instruction: string;
   image: { mimeType: string; data: Buffer; url?: string };
+  /** White = editable, black = protected, at the source image's own pixel
+   * dimensions. Optional and purely additive: existing adapters (Gemini,
+   * customImage) never read it — they rely entirely on the caller's own
+   * post-hoc pixel compositing (`assets/localEdit.ts`) for locality.
+   * Adapters that understand real provider-side masking (ComfyUI) can use
+   * it for genuinely region-limited inpainting instead. */
+  mask?: { mimeType: string; data: Buffer };
   trace?: GenerationTrace;
 }
 
