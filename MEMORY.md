@@ -33,6 +33,60 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-16 — A brand-new character can start from a base/inspiration
+  reference image plus a text prompt, not text alone.** Prompted by a
+  `RemiPelloux/agent-mangaka-forge` research pass (a Codex-skill folder
+  convention for character consistency — verified its core idea, keeping
+  persistent reference images so an AI doesn't drift a recurring
+  character's design, is already solved in Kumanga's `Character`/
+  `characterStates`/`resolveCharacterIdentityReference` domain model, and
+  solved more robustly: deterministically in code
+  (`resolveOrGenerateState`'s `generateIfMissing`), not via a markdown rule
+  an LLM has to remember to follow — so nothing from that project's actual
+  mechanism was adopted). Answering the user's own follow-up question
+  ("can I use an existing character from another series as a base image,
+  then prompt to create a new design from it") surfaced a REAL, separate
+  gap: `GeneratorDialog.tsx`'s `ReferencePicker` (upload/pick an image +
+  say what it's for: style / layout / loose inspiration + text prompt →
+  generate something NEW) already existed for Scene/Object/Background/
+  Prop/Tone generation, but was hard-gated OFF for character generation
+  (`!isCharacterType`) — the ONLY image path for a character was either
+  pure text-to-image, or uploading a file that became the reference AS-IS
+  with no AI transformation at all (`CharactersTab.tsx`'s "Reference Only"
+  upload, a completely different, still-valid code path left untouched).
+
+  Fixed narrowly: `showBaseImagePicker = request.assetType === "character"
+  && !referenceAsset` — true only for a character's FIRST-EVER reference
+  (before it has one), never for character-pose/character-expression or a
+  character that already has a canonical reference, which keep using
+  their own EXISTING selector (`references`/`referenceChoice`, built from
+  the state graph — "which past render of THIS character anchors
+  identity," a different question entirely from "what external image
+  should inspire a brand new one"). When true, the same `ReferencePicker`
+  component renders (passing `category: "character"`, which the
+  component's existing category check already handles correctly — no
+  "layout" option, since that only makes sense for backgrounds) and its
+  chosen image flows into `generate()`'s `referenceAssets` alongside the
+  existing scene-reference path. Required zero changes to
+  `ai/promptTemplates.ts`: the reference-intent sentence ("use this as
+  loose inspiration only, don't copy it directly") was already being
+  folded into the `description` field before reaching
+  `buildAssetPrompt`, and the `"character"` prompt case already includes
+  `description` — the plumbing for "reference image + free text" was
+  already assetType-agnostic once the UI stopped blocking it.
+
+  Verified: full unit suite (1415/1415, unaffected — this is a UI-only
+  change with no existing test file for `GeneratorDialog.tsx`, matching
+  every other top-level dialog in this codebase), clean typecheck/lint/
+  build, and a new Playwright e2e test (create a character with the plain
+  "Create" button so it starts with zero assets → "Generate character
+  reference" → confirms the base-image picker actually renders, uploads
+  an inspiration image, confirms the "Use reference for" dropdown has no
+  "layout" option, generates, and confirms the reference image really
+  reached the provider via the mocked `/api/generate` request body — not
+  silently dropped because the request happened to be `assetType:
+  "character"`) passing on its first real run.
+
 - **2026-09-16 — Five features from a comfyui-comic-creator competitive
   audit (Tier A, all approved by the user together): whole-project PDF/EPUB
   export, linked/extended speech bubbles, reusable text style presets,

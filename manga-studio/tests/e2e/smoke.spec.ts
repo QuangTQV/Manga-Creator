@@ -1007,3 +1007,110 @@ test("translating a project creates a new project with translated dialogue, leav
   });
   expect(translatedText).toBe("[EN] Xin chào");
 });
+
+test("a brand-new character can start from a base/inspiration reference image plus a text prompt", async ({ page }) => {
+  // The gap this closes: Scene/Object/Tone generation already let a creator
+  // pick a reference image (upload or library) and say what it's FOR
+  // (style / loose inspiration), but that picker was hard-gated off for
+  // character generation — a brand-new character had no way to start from
+  // an uploaded base image (a photo, concept art, or a character from
+  // elsewhere) redesigned via prompt; the only image path was uploading a
+  // file that became the reference AS-IS, no AI involved at all.
+  await page.route("**/api/provider/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        configured: true,
+        capabilities: { referenceImage: true, supportsTransparentBackground: true },
+        storage: { configured: true },
+      }),
+    });
+  });
+
+  let lastReferenceCount = -1;
+  await page.route("**/api/generate", async (route) => {
+    const body = route.request().postDataJSON() as { referenceUrls?: string[] };
+    lastReferenceCount = body.referenceUrls?.length ?? 0;
+    const dataUrl = `data:image/png;base64,${TINY_PNG.toString("base64")}`;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        url: dataUrl,
+        sourceUrl: dataUrl,
+        processedImageUrl: dataUrl,
+        mimeType: "image/png",
+        hasAlpha: true,
+        backgroundRemoved: false,
+        processingStatus: "ready",
+        provider: "mock",
+        model: "mock-model",
+        referenceUsed: true,
+      }),
+    });
+  });
+  await page.route("**/api/assets/upload", async (route) => {
+    const dataUrl = `data:image/png;base64,${TINY_PNG.toString("base64")}`;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        sourceUrl: dataUrl,
+        processedImageUrl: dataUrl,
+        mimeType: "image/png",
+        hasAlpha: true,
+        backgroundRemoved: false,
+        processingStatus: "ready",
+      }),
+    });
+  });
+
+  // Create the character WITHOUT uploading a file and WITHOUT generating
+  // anything yet (the plain "Create" button) — this is the only way to
+  // reach a character with zero assets, which is the precondition for the
+  // base-image picker to appear at all (an existing reference means the
+  // OTHER selector — "which past render anchors identity" — applies instead).
+  await page.getByRole("button", { name: "+ New Character" }).click();
+  await page.getByRole("textbox", { name: "Name" }).fill("Nova");
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(page.getByText("Nova", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Generate character reference" }).click();
+  await expect(page.getByRole("heading", { name: "AI Asset Generator" })).toBeVisible();
+
+  // The picker only exists because this is a referenceless "character" —
+  // proving the gate actually opened for this case.
+  const referenceSelect = page.getByRole("combobox", { name: "Reference image" });
+  await expect(referenceSelect).toBeVisible();
+
+  await page.locator('input[type="file"][accept^="image/png"]').setInputFiles({
+    name: "inspiration.png",
+    mimeType: "image/png",
+    buffer: TINY_PNG,
+  });
+  // The uploaded file's own name, minus extension — same convention every
+  // other plain upload in this app uses (`uploadAsset.ts`).
+  await expect(page.getByAltText("inspiration")).toBeVisible();
+
+  // Default intent is "style", never "layout" (that option only makes sense
+  // for backgrounds) — matching art style, not identity copying, is the
+  // right default for "redesign inspired by this".
+  const useSelect = page.getByRole("combobox", { name: "Use reference for" });
+  await expect(useSelect).toHaveValue("style");
+  await expect(useSelect.locator("option")).toHaveCount(2); // no "layout" option for a character
+
+  await page.getByPlaceholder("Running toward camera while carrying a school bag").fill("A wandering swordswoman, silver hair");
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+
+  await expect(page.getByText("Generated result")).toBeVisible();
+  // The chosen base image really was sent to the provider as a reference —
+  // not silently dropped because this was a "character" request.
+  expect(lastReferenceCount).toBe(1);
+
+  await page.getByRole("button", { name: "Add to Library" }).click();
+  await expect(page.getByRole("heading", { name: "AI Asset Generator" })).not.toBeVisible();
+  // The generated result became Nova's own reference — not the uploaded
+  // inspiration image itself, which was only ever sent as guidance.
+  await expect(page.locator('img[alt="Nova reference"]')).toHaveCount(1);
+});

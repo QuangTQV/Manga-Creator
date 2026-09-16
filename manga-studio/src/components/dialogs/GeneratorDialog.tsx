@@ -119,6 +119,19 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
   const isToneType = request.assetType === "tone";
   const languageCategory: MangaLanguageCategory = request.languageCategory ?? "decorations";
   const canUseReference = Boolean(provider?.capabilities?.referenceImage && referenceAsset);
+  /**
+   * A brand-new character (no canonical reference yet) can optionally start
+   * from a base/inspiration image — often another series' character, a
+   * photo, or concept art — instead of text alone. This is deliberately
+   * NOT the same control as `references` below: that one picks among an
+   * EXISTING character's own past renders to keep identity consistent
+   * across MORE generations of the SAME design; this one supplies external
+   * material for the FIRST generation, which then becomes that identity.
+   * Reuses the exact `ReferencePicker` + intent wording already built for
+   * Scene/Object/Tone, so "use this as loose inspiration, don't copy it
+   * directly" reads the same way everywhere in this dialog.
+   */
+  const showBaseImagePicker = request.assetType === "character" && !referenceAsset;
 
   const prompt = useMemo(
     () =>
@@ -210,7 +223,8 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
       const chosenAsset =
         isCharacterType && activeReference?.assetId ? doc?.assets[activeReference.assetId] : undefined;
       const identityAsset = chosenAsset ?? (isCharacterType ? referenceAsset : undefined);
-      const sceneReference = !isCharacterType && sceneReferenceId ? doc?.assets[sceneReferenceId] : undefined;
+      const sceneReference =
+        (!isCharacterType || showBaseImagePicker) && sceneReferenceId ? doc?.assets[sceneReferenceId] : undefined;
       const referenceAssets = provider?.capabilities?.referenceImage
         ? [identityAsset, sceneReference, style?.referenceAsset].filter(
             (asset, index, list) => Boolean(asset) && list.findIndex((candidate) => candidate?.id === asset?.id) === index,
@@ -326,9 +340,11 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
         tileable: isToneType ? tileable : undefined,
         canonicalReferenceAssetId: request.assetType === "character" ? undefined : referenceId,
         referenceAssetIds: candidate.referenceUsed
-          ? [isCharacterType ? referenceAsset?.id : undefined, style?.referenceAsset?.id].filter(
-              (id): id is string => Boolean(id),
-            )
+          ? [
+              isCharacterType ? referenceAsset?.id : undefined,
+              showBaseImagePicker ? sceneReferenceId || undefined : undefined,
+              style?.referenceAsset?.id,
+            ].filter((id): id is string => Boolean(id))
           : undefined,
         ...(style ? styleMetadata(style) : {}),
       },
@@ -416,12 +432,14 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
               </div>
             )}
 
-            {!isCharacterType && <ReferencePicker
+            {(!isCharacterType || showBaseImagePicker) && <ReferencePicker
               value={sceneReferenceId}
               onChange={setSceneReferenceId}
               use={referenceUse}
               onUseChange={setReferenceUse}
-              category={request.assetType === "background" ? "background" : request.assetType === "tone" ? "tone" : "prop"}
+              category={
+                request.assetType === "background" ? "background" : request.assetType === "tone" ? "tone" : isCharacterType ? "character" : "prop"
+              }
               supported={Boolean(provider?.capabilities?.referenceImage)}
             />}
 
@@ -510,7 +528,9 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
                   ? "The character reference image will be sent to the provider to help preserve identity. Consistency is provider-dependent and not guaranteed."
                   : referenceAsset
                     ? "The configured provider does not support reference images — identity will rely on the text description only."
-                    : "No reference image yet — the first generated image becomes this character's reference."}
+                    : showBaseImagePicker
+                      ? "Optionally pick a reference image below — a photo, concept art, or a character from elsewhere — for the AI to design a NEW character from. Whatever it generates becomes this character's own reference; the source image is never copied in directly."
+                      : "No reference image yet — the first generated image becomes this character's reference."}
               </p>
             )}
 
@@ -762,16 +782,19 @@ function Field({
 }
 
 /**
- * One reference picker, shared by Scene, Object and Manga FX generation.
+ * One reference picker, shared by Scene, Object, Manga FX generation, and a
+ * brand-new character's first reference (`showBaseImagePicker`).
  *
  * Upload a new image or reuse one already in the library, and say what the
  * reference is FOR. The intent matters: "match this room's layout" and "match
  * this drawing's style" are different requests, and collapsing them makes the
  * provider guess.
  *
- * Characters keep their own reference selector, which is built from the state
- * graph and answers a different question — which existing render anchors this
- * identity.
+ * An EXISTING character (one with a canonical reference already) instead
+ * uses the separate `references`/`referenceChoice` selector above, built
+ * from the state graph — that one answers a different question (which
+ * existing render of THIS character anchors identity for one more pose or
+ * expression), not "what external image should inspire a new design."
  */
 function ReferencePicker({
   value,
