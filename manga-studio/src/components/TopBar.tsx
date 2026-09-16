@@ -28,6 +28,7 @@ import {
   UndoIcon,
 } from "./ui/icons";
 import { LAYOUT_PRESETS } from "@/domain/layouts";
+import { LANGUAGE_NAME_PRESETS } from "@/domain/languagePresets";
 import type { BubbleType, EffectKind, LayoutPresetId } from "@/domain/types";
 import { useEditorStore } from "@/editor/store";
 import { useUiStore, type GeneratorRequest } from "@/editor/uiStore";
@@ -38,20 +39,6 @@ import { exportProjectArchive } from "@/export/exportProjectArchive";
 import { exportFullBackup } from "@/export/projectBackup";
 import { importPagesFromFiles } from "@/services/importPages";
 import { getActiveStyleProfile } from "@/styles/profiles";
-
-/** Quick picks for the Language field's native suggestion dropdown — not a
- * fixed list the model is restricted to, any typed name works (see the
- * field's own title/comment where it's used). */
-const DIALOGUE_LANGUAGE_PRESETS = [
-  "English",
-  "Vietnamese",
-  "Japanese",
-  "Korean",
-  "Chinese (Simplified)",
-  "French",
-  "Spanish",
-  "German",
-];
 
 const BUBBLE_TYPES: { type: BubbleType; label: string }[] = [
   { type: "speech", label: "Speech bubble" },
@@ -100,6 +87,7 @@ export function TopBar() {
   const openChapters = useUiStore((s) => s.openChapters);
   const openPageOverview = useUiStore((s) => s.openPageOverview);
   const openPrintExport = useUiStore((s) => s.openPrintExport);
+  const openTranslateProject = useUiStore((s) => s.openTranslateProject);
   const openHistory = useUiStore((s) => s.openHistory);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<string | null>(null);
@@ -320,6 +308,7 @@ export function TopBar() {
           { key: "chapters", label: "Chapters" },
           { key: "overview", label: "Page Overview" },
           { key: "print", label: "Print Export" },
+          { key: "translate", label: "Translate Project" },
           { key: "live-ai", label: "Live AI" },
         ]}
         onPick={(key) => {
@@ -328,6 +317,7 @@ export function TopBar() {
           else if (key === "chapters") openChapters();
           else if (key === "overview") openPageOverview();
           else if (key === "print") openPrintExport();
+          else if (key === "translate") openTranslateProject();
           else if (key === "live-ai") openLiveAi();
         }}
       />
@@ -362,7 +352,7 @@ export function TopBar() {
           onKeyDown={(event) => event.key === "Enter" && event.currentTarget.blur()}
         />
         <datalist id="dialogue-language-options">
-          {DIALOGUE_LANGUAGE_PRESETS.map((name) => (
+          {LANGUAGE_NAME_PRESETS.map((name) => (
             <option key={name} value={name} />
           ))}
         </datalist>

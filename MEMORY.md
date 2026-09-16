@@ -33,6 +33,68 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-16 — Translate Project: AI-translate an already-lettered
+  project's dialogue into another language (backlog #28).** From a fresh
+  audit specifically for AI-powered (not general UI) gaps —
+  `ProjectSettings.dialogueLanguage` only ever governed what language NEW
+  Director-composed dialogue was written in; nothing read EXISTING bubble
+  text and translated it. Verified absent by reading code, not guessing,
+  before starting.
+
+  Deliberately produces a NEW, separate project rather than rewriting the
+  current one in place — a real localization workflow keeps the master-
+  language project and generates a per-locale copy, and this avoids any
+  risk of a bad/partial translation clobbering a creator's own wording
+  with no way back beyond Undo. `services/translateProject.ts` batches
+  every non-empty bubble in scope (30 per request — one call per batch,
+  not per bubble, matching Novel Import's own chunking pacing), calls the
+  new `/api/agent/translate` route, and for each returned translation
+  calls `render/bubbleFit.ts`'s `fitBubbleHeight` (backlog #24) before
+  applying `{text, height}` via `domain/itemOps.ts`'s `updateBubble` —
+  called directly on a plain `ProjectDocument`, NOT through the editor
+  store's `dispatch`, since the document being translated isn't open
+  anywhere yet. The dialog then hands the fully-translated document to
+  `projectsStore.ts`'s `importDocument` (the same "commit as a genuinely
+  new project" tail #21's full-backup import already added) and opens it.
+
+  New route (`app/api/agent/translate/route.ts`) is a near-exact structural
+  copy of `parse-novel/route.ts`'s pattern: `resolveProvider(request,
+  "agent")` → `createAgentProvider(...).completeJson(...)` → `parseModelJson`
+  + a small zod schema (`agent/translation/schema.ts`) → `recordLiveCall`
+  on both the success and failure paths. Gets provider rotation/fallback
+  "for free" the same way, since `createAgentProvider` always wraps with
+  it. One id in the model's response missing (or the whole batch failing)
+  never sinks the run: a missing id just leaves that bubble with its
+  original text (`skippedCount`, surfaced to the creator in the result
+  message), matching this session's established "one bad item, not the
+  whole operation" philosophy (#21's per-asset-URL tolerance, #18's
+  per-candidate independence).
+
+  Deliberately NOT the same thing as the Director's literal-lock rule
+  ("never translate exact quoted dialogue" — `agent-v3/director/
+  systemPrompt.ts` Rule 5): that rule protects a creator's own wording
+  from being silently reworded while composing NEW pages; this is a
+  separate, explicitly creator-INITIATED action whose entire point is
+  producing a translation, so the two don't actually conflict. Also does
+  NOT translate SFX/onomatopoeia baked into generated images (a
+  MangaLanguageAsset's pixels, not bubble text) — flagged as a real,
+  disclosed limitation, not silently missed: that would need regenerating
+  the image, a materially bigger feature.
+
+  Verified with unit tests for the prompt builder, the output schema, the
+  new route (mocking `createAgentProvider`/`resolveProvider`, mirroring
+  `remove-background/route.test.ts`'s pattern — no prior test existed for
+  ANY `agent/*` route, so this sets the precedent), and the service's own
+  batching/scope-filtering/skip-on-missing-id logic (with `bubbleFit.ts`
+  mocked out, since real Konva measurement needs a canvas this project's
+  Node vitest environment doesn't have). Plus a real-browser Playwright
+  test — mocking only `/api/agent/translate` — that types real dialogue,
+  translates the whole project, confirms a second, distinctly-named
+  project now exists alongside the untouched original, and reads the
+  new project's saved document straight out of IndexedDB to confirm the
+  actual translated text landed, rather than just checking the UI didn't
+  throw.
+
 - **2026-09-15 — Print crop (trim) marks (backlog #26).** Print Export
   (#16) only ever drew synthetic bleed, never marked where the actual
   trim line is. New `export/printCropMarks.ts`: `cropMarkGeometry(bleedPx)`
@@ -897,6 +959,26 @@ worth chasing on its own)**
     clamped to one page's 0..1 coordinate space everywhere: export,
     canvas, panel ops), needs its own scoping conversation, not a quick
     add.
+
+**Tier 11 — audited specifically for AI-powered gaps (2026-09-16), verified
+by reading code rather than guessing — both confirmed genuinely, fully
+absent, not partial**
+28. ~~Translate an already-lettered project's dialogue into another
+    language, producing a new duplicated project~~ — **done 2026-09-16**,
+    see Timeline. `ProjectSettings.dialogueLanguage` only ever governed
+    what language NEW Director-composed dialogue was written in; nothing
+    read existing bubble text and translated it. Builds directly on #24's
+    `bubbleFit.ts` (auto-fit needs no changes to serve a translated string
+    instead of a typed one) and on the same agent-provider-calling pattern
+    Novel Import's parse step already established.
+29. AI upscaling for real print resolution — not done, not started. Print
+    Export (#16/#26) only ever applies a geometric canvas scale; there is
+    no AI super-resolution capability anywhere in the codebase (no
+    provider, no capability flag, no route) — confirmed the existing
+    `assets/edit` local-edit route can't be repurposed for this either,
+    since it forcibly resizes whatever a provider returns back down to
+    the SOURCE's own dimensions before compositing. Needs a new provider
+    capability, higher effort/risk than #28.
 
 **Not in the backlog — deliberate, don't re-add without the user explicitly overriding**
 - PDF export (rejected design decision, not a gap — see `export/exportBook.ts`).

@@ -105,6 +105,9 @@ interface UiState {
   pageOverviewOpen: boolean;
   /** Print Export: DPI + physical page width + bleed, for sending pages to a physical printer. */
   printExportOpen: boolean;
+  /** Translate Project: send an already-lettered project's dialogue to
+   * another language, as a new, separate project. */
+  translateProjectOpen: boolean;
   /** Model Sheet: every generation of one character's states at once, for
    * checking design consistency — not the library shelf's "just the
    * latest render" view. Holds the character being viewed, or null. */
@@ -156,6 +159,8 @@ interface UiState {
   closePageOverview(): void;
   openPrintExport(): void;
   closePrintExport(): void;
+  openTranslateProject(): void;
+  closeTranslateProject(): void;
   openModelSheet(characterId: ID): void;
   closeModelSheet(): void;
 }
@@ -183,6 +188,7 @@ export const useUiStore = create<UiState>((set) => ({
   chaptersOpen: false,
   pageOverviewOpen: false,
   printExportOpen: false,
+  translateProjectOpen: false,
   modelSheetCharacterId: null,
   advancedMode: false,
   openGenerator: (request) => set({ generator: request }),
@@ -224,6 +230,8 @@ export const useUiStore = create<UiState>((set) => ({
   closePageOverview: () => set({ pageOverviewOpen: false }),
   openPrintExport: () => set({ printExportOpen: true }),
   closePrintExport: () => set({ printExportOpen: false }),
+  openTranslateProject: () => set({ translateProjectOpen: true }),
+  closeTranslateProject: () => set({ translateProjectOpen: false }),
   openModelSheet: (characterId) => set({ modelSheetCharacterId: characterId }),
   closeModelSheet: () => set({ modelSheetCharacterId: null }),
 }));

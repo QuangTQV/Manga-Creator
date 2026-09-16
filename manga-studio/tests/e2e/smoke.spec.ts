@@ -934,3 +934,76 @@ test("a full backup (.zip) round-trips a character's image to a new, independent
   const fetched = await page.request.get(importedSrc!);
   expect(fetched.ok()).toBe(true);
 });
+
+test("translating a project creates a new project with translated dialogue, leaving the original untouched", async ({
+  page,
+}) => {
+  // Real generation needs a configured agent provider, which this smoke
+  // environment has none of — intercepting /api/agent/translate the way
+  // the server would respond to a healthy connected provider lets this
+  // test exercise the actual new code (batching, height auto-refit,
+  // duplicate-not-mutate, auto-opening the result) without depending on
+  // that unrelated subsystem, the same boundary-isolation the font-upload
+  // and multi-candidate tests above draw. The mock echoes back whatever id
+  // it was actually sent, since this test doesn't know the bubble's real
+  // domain id ahead of time.
+  await page.route("**/api/agent/translate", async (route) => {
+    const body = JSON.parse(route.request().postData() ?? "{}") as { items: { id: string; text: string }[] };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        output: { translations: body.items.map((item) => ({ id: item.id, text: `[EN] ${item.text}` })) },
+      }),
+    });
+  });
+
+  await page.getByRole("combobox", { name: "Bubble" }).selectOption("speech");
+  await page.getByRole("button", { name: "Edit text" }).click();
+  await page.getByRole("textbox", { name: "Bubble text" }).fill("Xin chào");
+  await page.getByRole("textbox", { name: "Bubble text" }).press("Enter");
+
+  await page.getByRole("combobox", { name: "More" }).selectOption("translate");
+  await expect(page.getByRole("heading", { name: "Translate Project" })).toBeVisible();
+
+  await page.getByRole("combobox", { name: "Target language" }).fill("English");
+  await page.getByRole("button", { name: "Translate whole project" }).click();
+
+  await expect(page.getByText(/^Done — created/)).toBeVisible();
+
+  // Two distinct projects now exist — the translation never touched the
+  // original in place.
+  await expect(page.getByRole("button", { name: /Smoke Test Project \(English\)/ })).toBeVisible();
+  await expect(page.getByText("Smoke Test Project", { exact: true })).toBeVisible();
+
+  // The new project auto-opened; read its saved document straight out of
+  // IndexedDB (the same store `storage/projectStore.ts` writes to) for a
+  // direct, unambiguous check of the actual translated text — no need to
+  // fight Konva canvas coordinates to select the bubble again.
+  const translatedText = await page.evaluate(async () => {
+    const metaDb = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open("manga-studio");
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    const projectId = await new Promise<string>((resolve, reject) => {
+      const tx = metaDb.transaction("meta", "readonly");
+      const getReq = tx.objectStore("meta").get("lastProjectId");
+      getReq.onsuccess = () => resolve(getReq.result as string);
+      getReq.onerror = () => reject(getReq.error);
+    });
+    const json = await new Promise<string>((resolve, reject) => {
+      const tx = metaDb.transaction("projects", "readonly");
+      const getReq = tx.objectStore("projects").get(projectId);
+      getReq.onsuccess = () => resolve(getReq.result as string);
+      getReq.onerror = () => reject(getReq.error);
+    });
+    metaDb.close();
+    const doc = JSON.parse(json);
+    const bubble = Object.values(doc.items as Record<string, { kind: string; text?: string }>).find(
+      (item) => item.kind === "bubble",
+    );
+    return bubble?.text;
+  });
+  expect(translatedText).toBe("[EN] Xin chào");
+});
