@@ -382,7 +382,13 @@ export function readSessionConfig(
       ...fb,
       backupApiKeys: coerceBackupKeys(fb.backupApiKeys),
     }));
-    const hasCredential = Boolean(parsed.apiKey) || parsed.custom?.auth.mode === "none";
+    // Must mirror resolveApiKey's write-time "key optional" cases exactly —
+    // this is a real bug once: ComfyUI has no built-in auth (resolveApiKey
+    // allows saving it with an empty key), but this read-time check didn't
+    // know that, so a legitimately-saved keyless ComfyUI config silently
+    // read back as "not configured" on every subsequent load.
+    const hasCredential =
+      Boolean(parsed.apiKey) || parsed.custom?.auth.mode === "none" || parsed.providerType === "comfyui";
     const valid = Boolean(parsed.kind === kind && hasCredential && parsed.baseUrl && parsed.model);
     trace?.(valid ? "credential_deserialized" : "credential_validation_failed", {
       kind,

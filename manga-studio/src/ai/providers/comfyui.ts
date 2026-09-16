@@ -41,7 +41,7 @@ const MAX_ERROR_BODY_BYTES = 64 * 1024;
 const SAVE_IMAGE_NODE_ID = "9";
 const LORA_NODE_IDS = ["20", "21", "22", "23"];
 
-interface ComfyUiConfig {
+export interface ComfyUiConfig {
   apiKey?: string;
   baseUrl: string;
   model: string;
@@ -216,6 +216,26 @@ async function uploadImage(
     subfolder: typeof body.subfolder === "string" ? body.subfolder : undefined,
     type: typeof body.type === "string" ? body.type : undefined,
   };
+}
+
+/**
+ * Fetches the valid options for one COMBO/enum input on one ComfyUI node
+ * type — e.g. every LoRA filename ComfyUI can see (`LoraLoader.lora_name`)
+ * or every installed ControlNet model (`ControlNetLoader.control_net_name`).
+ * Used to populate a dropdown instead of requiring free-text entry. Reuses
+ * this file's own SSRF-guarded fetch plumbing — never a second, raw fetch
+ * path to a user-configurable URL.
+ */
+export async function fetchObjectInfoOptions(config: ComfyUiConfig, nodeClass: string, inputName: string): Promise<string[]> {
+  const base = assertSafeProviderUrl(config.baseUrl).toString().replace(/\/$/, "");
+  const response = await boundedFetch(`${base}/object_info/${encodeURIComponent(nodeClass)}`, {
+    method: "GET",
+    headers: authHeaders(config.apiKey),
+  });
+  if (!response.ok) throw new ProviderError(await safeErrorMessage(response, config.apiKey), 502);
+  const body = (await response.json().catch(() => null)) as Record<string, { input?: { required?: Record<string, unknown[]> } }> | null;
+  const options = body?.[nodeClass]?.input?.required?.[inputName]?.[0];
+  return Array.isArray(options) ? options.filter((o): o is string => typeof o === "string") : [];
 }
 
 async function submitPrompt(base: string, apiKey: string | undefined, workflow: Record<string, unknown>): Promise<string> {

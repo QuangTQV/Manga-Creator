@@ -12,7 +12,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ImageGenerationRequest } from "../types";
-import { buildWorkflow, createComfyUiProvider } from "./comfyui";
+import { buildWorkflow, createComfyUiProvider, fetchObjectInfoOptions } from "./comfyui";
 
 const REQUEST: ImageGenerationRequest = {
   prompt: "a manga hero, dynamic pose",
@@ -304,5 +304,34 @@ describe("createComfyUiProvider", () => {
     >;
     expect(submittedWorkflow["30"]).toMatchObject({ class_type: "LoadImage", inputs: { image: uploadedName } });
     expect(submittedWorkflow["3"].inputs.denoise).toBe(0.6);
+  });
+});
+
+describe("fetchObjectInfoOptions", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("extracts a COMBO input's option list from ComfyUI's object_info response", async () => {
+    stubFetch((url) => {
+      expect(url).toContain("/object_info/LoraLoader");
+      return new Response(
+        JSON.stringify({ LoraLoader: { input: { required: { lora_name: [["a.safetensors", "b.safetensors"]] } } } }),
+        { status: 200 },
+      );
+    });
+    const options = await fetchObjectInfoOptions({ baseUrl: "https://comfy.example.com", model: "m" }, "LoraLoader", "lora_name");
+    expect(options).toEqual(["a.safetensors", "b.safetensors"]);
+  });
+
+  it("returns an empty array, not a throw, when the node/input isn't present in the response", async () => {
+    stubFetch(() => new Response(JSON.stringify({ SomeOtherNode: {} }), { status: 200 }));
+    const options = await fetchObjectInfoOptions({ baseUrl: "https://comfy.example.com", model: "m" }, "LoraLoader", "lora_name");
+    expect(options).toEqual([]);
+  });
+
+  it("throws a safe ProviderError when ComfyUI itself is unreachable/errors", async () => {
+    stubFetch(() => new Response("server error", { status: 500 }));
+    await expect(
+      fetchObjectInfoOptions({ baseUrl: "https://comfy.example.com", model: "m" }, "LoraLoader", "lora_name"),
+    ).rejects.toThrow(/ComfyUI error/);
   });
 });

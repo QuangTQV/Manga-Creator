@@ -1365,3 +1365,44 @@ test("AI Settings: ComfyUI sampler settings and a LoRA row save wholesale with t
   await expect(imageCard.getByRole("spinbutton", { name: "Steps" })).toHaveValue("30");
   await expect(imageCard.getByRole("textbox", { name: "LoRA 1 filename" })).toHaveValue("detail_tweaker_xl.safetensors");
 });
+
+test("AI Settings: Fetch LoRAs populates the LoRA filename dropdown", async ({ page }) => {
+  await page.route("**/api/provider/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        configured: true,
+        agent: { configured: false },
+        image: { configured: true, source: "session", providerType: "comfyui", baseUrl: "http://127.0.0.1:8188", model: "sd_xl_base_1.0.safetensors" },
+        background: { configured: false },
+      }),
+    });
+  });
+
+  await page.route("**/api/provider/comfyui-object-info", async (route) => {
+    const body = route.request().postDataJSON() as { nodeClass: string };
+    expect(body.nodeClass).toBe("LoraLoader");
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ options: ["detail_tweaker_xl.safetensors", "add_more_details.safetensors"] }),
+    });
+  });
+
+  await page.getByRole("button", { name: "AI Settings" }).click();
+  const imageCard = page.locator("section").filter({ has: page.getByRole("heading", { name: "Image Generation" }) });
+
+  await imageCard.getByText("Advanced — ComfyUI settings").click();
+  await imageCard.getByRole("button", { name: "+ Add LoRA" }).click();
+  await imageCard.getByRole("button", { name: "Fetch LoRAs" }).click();
+
+  const options = await imageCard.locator("#comfyui-lora-options option").evaluateAll((els) => els.map((el) => el.getAttribute("value")));
+  expect(options).toEqual(["detail_tweaker_xl.safetensors", "add_more_details.safetensors"]);
+
+  // The `list` attribute (now set, since options exist) flips this input's
+  // exposed accessibility role from "textbox" to "combobox" in Chromium —
+  // same quirk already noted for the dialogue-language field in this file.
+  const nameInput = imageCard.getByRole("combobox", { name: "LoRA 1 filename" });
+  await expect(nameInput).toHaveAttribute("list", "comfyui-lora-options");
+});

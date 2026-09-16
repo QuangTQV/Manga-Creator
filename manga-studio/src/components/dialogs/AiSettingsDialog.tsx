@@ -262,7 +262,8 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
   const [comfyUiSampler, setComfyUiSampler] = useState("");
   const [comfyUiScheduler, setComfyUiScheduler] = useState("");
   const [loraRows, setLoraRows] = useState<LoraRow[]>([]);
-  const [busy, setBusy] = useState<"save" | "test" | "forget" | "models" | null>(null);
+  const [loraOptions, setLoraOptions] = useState<string[]>([]);
+  const [busy, setBusy] = useState<"save" | "test" | "forget" | "models" | "loras" | null>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [preview, setPreview] = useState<Record<string, unknown> | null>(null);
   const [hydrated, setHydrated] = useState(false);
@@ -443,6 +444,24 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
       const body = await response.json();
       setModels(Array.isArray(body.models) ? body.models : []);
       if (!body.models?.length) setMessage({ ok: false, text: "This provider doesn't expose a model list — enter the model ID manually." });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const fetchComfyUiOptions = async (nodeClass: "LoraLoader" | "ControlNetLoader", inputName: "lora_name" | "control_net_name") => {
+    setBusy("loras");
+    try {
+      const response = await fetch("/api/provider/comfyui-object-info", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind, nodeClass, inputName }),
+      });
+      const body = await response.json();
+      const options: string[] = Array.isArray(body.options) ? body.options : [];
+      setLoraOptions(options);
+      if (!options.length) setMessage({ ok: false, text: "ComfyUI didn't return a list — enter the filename manually." });
+      return options;
     } finally {
       setBusy(null);
     }
@@ -715,9 +734,29 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
           </p>
 
           <div className="mt-3 border-t border-zinc-800 pt-3">
-            <span className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">
-              LoRAs (checkpoint filenames as ComfyUI shows them, up to {MAX_COMFYUI_LORAS_CLIENT})
-            </span>
+            <div className="mb-1 flex items-center justify-between">
+              <span className="block text-[10px] uppercase tracking-wider text-zinc-500">
+                LoRAs (checkpoint filenames as ComfyUI shows them, up to {MAX_COMFYUI_LORAS_CLIENT})
+              </span>
+              {configured && (
+                <button
+                  type="button"
+                  className="shrink-0 rounded border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-[10px] hover:bg-zinc-700"
+                  onClick={() => fetchComfyUiOptions("LoraLoader", "lora_name")}
+                  disabled={busy !== null}
+                  title="Fetch the list of LoRA files ComfyUI can see (optional)"
+                >
+                  {busy === "loras" ? "…" : "Fetch LoRAs"}
+                </button>
+              )}
+            </div>
+            {loraOptions.length > 0 && (
+              <datalist id="comfyui-lora-options">
+                {loraOptions.map((o) => (
+                  <option key={o} value={o} />
+                ))}
+              </datalist>
+            )}
             {loraRows.map((row, index) => (
               <div key={index} className="mb-1.5 flex gap-1.5">
                 <input
@@ -726,6 +765,7 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
                   onChange={(e) => setLoraRows((rows) => rows.map((r, i) => (i === index ? { ...r, name: e.target.value } : r)))}
                   placeholder="detail_tweaker_xl.safetensors"
                   aria-label={`LoRA ${index + 1} filename`}
+                  list={loraOptions.length > 0 ? "comfyui-lora-options" : undefined}
                 />
                 <input
                   type="number"

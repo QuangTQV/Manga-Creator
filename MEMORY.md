@@ -33,6 +33,57 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-16 — ComfyUI adapter v3 PR1: LoRA/ControlNet-model dropdown
+  discovery, plus a real credential-readback bug found and fixed.** User
+  asked for ControlNet, real mask/inpainting, and LoRA-from-a-list — I
+  incorrectly told them no mask-paint tool existed (it does:
+  `AssetDetailEditor.tsx` + `/api/assets/edit`'s local compositor, already
+  provider-agnostic) before checking; corrected once verified via two
+  Explore-agent passes. Given the scope (3 sub-features, one touching
+  shared `ai/types.ts`), went through `EnterPlanMode` + a Plan-agent
+  design-validation pass, which recommended shipping as 3 sequential PRs
+  in a specific order (dropdown discovery → masked inpainting → ControlNet)
+  and caught two real would-be bugs in the *next* two PRs before any code
+  for them was written (`LoadImageMask`'s `channel: "alpha"` would invert
+  mask polarity; `ControlNetApplyAdvanced` needs explicit
+  `start_percent`/`end_percent` or ComfyUI rejects the graph) — see the
+  plan file `/Users/quang/.claude/plans/luminous-sparking-wombat.md` for
+  the full three-PR design; PR2/PR3 not yet built.
+  This PR: `fetchObjectInfoOptions()` in `comfyui.ts` (reuses the file's
+  own SSRF-guarded fetch helpers, `GET /object_info/{nodeClass}`,
+  extracts a COMBO input's option array defensively); new `POST
+  /api/provider/comfyui-object-info` route (`nodeClass`/`inputName`
+  zod-enum-restricted, best-effort `{options: []}` on any failure, same
+  philosophy as the existing `/api/provider/models` route); a "Fetch
+  LoRAs" button in `AiSettingsDialog.tsx`'s LoRA rows editor populating a
+  `<datalist>` (free text stays the fallback).
+  **Real bug found while writing the route's own test** (not by reading
+  code — the "keyless ComfyUI config" write path had already been tested,
+  but never round-tripped through the READ path): `readSessionConfig` in
+  `providerSession.ts` has its OWN separate `hasCredential` check, distinct
+  from `resolveApiKey` (used at save time) — it never got the "comfyui has
+  no built-in auth" exception `resolveApiKey` already had. Effect: a
+  legitimately-saved keyless ComfyUI provider would silently read back as
+  "not configured" on every subsequent page load / status check /
+  generation attempt, despite saving successfully — the whole v1 feature
+  would have appeared broken in real use. Fixed by adding the same
+  `providerType === "comfyui"` exception to `hasCredential`; added a
+  regression test that round-trips a saved config through
+  `readSessionConfig` specifically (the prior test only covered
+  `buildProviderConfig`, the write side) so a future edit to one check
+  without the other can't silently regress again. General lesson worth
+  keeping: **a config value with two independent "is this required"
+  checks (one at write, one at read) needs a test exercising BOTH paths,
+  not just the one that happens to be exercised while building the
+  feature that introduced the exception.**
+  Also hit and fixed an unrelated e2e gotcha while testing: once a `list`
+  attribute is present on an input (via a populated datalist), Chromium
+  changes its exposed ARIA role from `textbox` to `combobox` — same quirk
+  already known from the dialogue-language field elsewhere in this file's
+  e2e suite, now documented again at the LoRA-name-input call site.
+  Verified: `npm test` → 1478/1478; typecheck/lint/build clean; e2e suite
+  (35 tests) all passing.
+
 - **2026-09-16 — ComfyUI adapter v2: LoRA chaining, reference-image
   (img2img), and sampler tuning (backlog #47).** User asked to "finish it
   fully" right after v1 shipped; clarified via `AskUserQuestion` into two

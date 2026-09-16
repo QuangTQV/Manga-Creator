@@ -92,6 +92,26 @@ describe("buildProviderConfig", () => {
     expect(config.apiKey).toBe("");
   });
 
+  it("comfyui: a saved keyless config round-trips as configured through readSessionConfig, not just buildProviderConfig", () => {
+    // Regression test: readSessionConfig has its OWN separate hasCredential
+    // check (distinct from resolveApiKey, which buildProviderConfig uses at
+    // write time) — it silently forgot the "comfyui has no built-in auth"
+    // exception once already, which would make a real saved config read
+    // back as "not configured" on every page load despite saving fine.
+    process.env.ALLOW_PRIVATE_NETWORKS = "1";
+    process.env.APP_ENCRYPTION_KEY = "test-key-for-comfyui-readback";
+    const config = buildProviderConfig(
+      { kind: "image", providerType: "comfyui", baseUrl: undefined, apiKey: undefined, model: "sd_xl_base_1.0.safetensors" },
+      null,
+    );
+    const request = new NextRequest("http://localhost/api/provider/status", {
+      headers: { cookie: `${IMAGE_COOKIE}=${sealSecret(JSON.stringify(config))}` },
+    });
+    const read = readSessionConfig(request, "image");
+    expect(read).not.toBeNull();
+    expect(read?.providerType).toBe("comfyui");
+  });
+
   it("SSRF-guards user endpoints", () => {
     delete process.env.ALLOW_PRIVATE_NETWORKS;
     expect(() => buildProviderConfig({ ...payload, baseUrl: "https://169.254.169.254" }, null)).toThrow(
