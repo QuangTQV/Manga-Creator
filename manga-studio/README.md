@@ -30,6 +30,8 @@ by hand. The bear is BRAND; functional UI icons are Lucide (`src/components/ui/i
 - **Non-destructive panel editor.** A panel is a clipping viewport (Figma-frame semantics). The same full-body character asset becomes a full shot, medium shot, or close-up in different panels through crop modes — with zero new generations. Instances never modify their source asset.
 - **Real AI generation.** A provider abstraction with a Google Gemini adapter (reference-image aware, for character-consistent poses/expressions) and a generic OpenAI-compatible REST adapter. All keys stay server-side.
 - **Manga Agent.** Prompt → skill-guided plan → validated tool calls → execution through the same editor commands the manual UI uses. Results stay fully editable; one Undo reverts a whole agent run.
+- **Chapters & continuing a project.** Group pages into chapters; bulk-import existing page images to keep working on a manga started elsewhere; Novel Import matches prose against characters already in the project instead of duplicating them.
+- **Print export & translation.** Export to PNG, CBZ, or print-ready pages with bleed and crop marks. "Translate Project" sends lettered dialogue through your AI provider and produces a new, separate project — the source project is never mutated.
 - **Persistence & export.** Projects survive refresh (IndexedDB + remote object storage for images); pages export to PNG at 1×/2×.
 
 ## Quick start (local)

@@ -78,8 +78,21 @@ machine**:
   of planned pages — the AI structures the prose into scenes and beats
   first, a deterministic pass decides page/panel boundaries from that, and
   you generate each page through the same Manga Agent as any other page,
-  one at a time. See
+  one at a time. Cross-checks the prose against characters already in your
+  project, so a returning character gets matched instead of duplicated. See
   [docs/NOVEL_IMPORT.md](manga-studio/docs/NOVEL_IMPORT.md).
+- **Continue an existing manga.** Bulk-import your own page images to keep
+  working on a project you already started elsewhere, or resume any
+  in-progress project with full character/style continuity.
+- **Chapters.** Group pages into chapters, reorder them, and target a single
+  chapter from export, print or translate.
+- **Typography that behaves like lettering.** Speech bubbles auto-resize to
+  fit their text as you type, and support a warp effect for shout/impact
+  lettering.
+- **Print-ready export & translation.** Export a page or the whole project
+  to PNG, CBZ, or print-ready PDF-style pages with bleed and crop marks —
+  or translate every lettered bubble into another language with one click,
+  which creates a new project so your original stays untouched.
 - **Persistence & export.** Projects survive refresh (IndexedDB + remote object
   storage for images); export one page to PNG at 1× / 2×, or the whole
   project as a CBZ (every page, in order — the standard format comic
@@ -194,9 +207,26 @@ the agent produced remains fully hand-editable afterwards.
 
 ### How do I export my manga?
 
-Pages export to PNG at 1× or 2× resolution. Project data stays in your local
-storage, so you keep everything — projects, assets and generated images — even
-if you stop using the app.
+Pages export to PNG at 1× or 2×, the whole project to CBZ, or print-ready with
+bleed and crop marks for professional printing. Project data stays in your
+local storage, so you keep everything — projects, assets and generated
+images — even if you stop using the app.
+
+### Can I translate a finished project into another language?
+
+Yes — "Translate Project" (top bar → More) sends every lettered bubble's
+dialogue through your connected AI provider and creates a **new** project
+with the translated text; your original, source-language project is never
+modified. You can translate the whole project, one chapter, or just the
+current page. Text baked directly into an image (e.g. sound effects) isn't
+translated, only editable speech-bubble text.
+
+### Can I continue a manga I already started?
+
+Yes. Bulk-import your existing page images into a project to keep working on
+them, and Novel Import checks new prose against characters already in the
+project so a returning character is matched instead of recreated from
+scratch.
 
 ### Can I deploy Kumanga instead of running it locally?
 
