@@ -15,6 +15,7 @@
 import { z } from "zod";
 import type { NextRequest, NextResponse } from "next/server";
 import { assertSafeProviderUrl } from "@/ai/security";
+import { comfyUiConfigSchema, type ComfyUiExtraConfig } from "./comfyui/config";
 import { customApiSchema, validateCustomApi, type CustomApiConfig } from "./customApi/config";
 import { isEncryptionConfigured, openSecret, sealSecret } from "./secretBox";
 
@@ -78,6 +79,10 @@ export interface FallbackProviderConfig {
   model: string;
   custom?: CustomApiConfig;
   backupApiKeys?: BackupKeyEntry[];
+  // Deliberate scope cut: a ComfyUI fallback gets v1 defaults only (no
+  // per-fallback LoRA/sampler tuning) — `comfyui` extras are primary-only
+  // for now, same bounded-effort cut fallback custom providers already
+  // accept elsewhere in this file.
 }
 
 export interface ProviderConfig {
@@ -90,6 +95,11 @@ export interface ProviderConfig {
   model: string;
   /** Declarative API description — present when providerType === "custom". */
   custom?: CustomApiConfig;
+  /** Sampler/LoRA tuning — present only when providerType === "comfyui".
+   * Nothing here is secret (unlike backupApiKeys), so it needs no dedicated
+   * mutation endpoint: it round-trips through ProviderSummary and is
+   * resubmitted wholesale on every save, same as rotationStrategy. */
+  comfyui?: ComfyUiExtraConfig;
   /**
    * Extra keys for the SAME provider/model, tried on rate limit / no
    * credit / auth failure instead of failing the request outright. Multiple
@@ -176,6 +186,9 @@ export const configPayloadSchema = z.object({
   apiKey: z.string().min(4).max(4096).optional(),
   model: z.string().max(200).default(""),
   custom: customApiSchema.optional(),
+  /** Sampler/LoRA tuning, providerType === "comfyui" only. Omitted or all-
+   * default = keep whatever is already stored (not secret, safe to echo). */
+  comfyui: comfyUiConfigSchema.optional(),
   /** Omitted on save = keep the previously stored backups; `[]` clears them.
    * The main AI Settings save no longer sends this (backup keys are now
    * managed live through `/api/provider/backup-keys`) — still accepted here
@@ -265,6 +278,18 @@ function buildFallbackProviderConfig(kind: ProviderKind, payload: FallbackProvid
   };
 }
 
+/** Collapses an all-unset comfyui payload (steps/cfg/samplerName/scheduler
+ * all absent AND no loras) to `undefined` — avoids writing `comfyui: {}`
+ * noise into every ComfyUI save for users who never open the Advanced
+ * section. */
+function normalizeComfyUiConfig(raw: ComfyUiExtraConfig | undefined): ComfyUiExtraConfig | undefined {
+  if (!raw) return undefined;
+  const loras = raw.loras?.filter((l) => l.name.trim()) ?? [];
+  const hasScalar = raw.steps !== undefined || raw.cfg !== undefined || raw.samplerName !== undefined || raw.scheduler !== undefined;
+  if (!hasScalar && loras.length === 0) return undefined;
+  return { ...raw, loras: loras.length > 0 ? loras : undefined };
+}
+
 /**
  * Validate a payload into a full config. `existing` supplies the kept API key
  * (and kept fallback chain) when the user edits other fields without
@@ -274,6 +299,7 @@ export function buildProviderConfig(payload: ConfigPayload, existing: ProviderCo
   const providerType = resolveProviderType(payload.kind, payload.providerType);
   const baseUrl = resolveBaseUrl(providerType, payload.baseUrl);
   const isCustom = providerType === "custom";
+  const isComfyUi = providerType === "comfyui";
   if (isCustom) {
     if (!payload.custom) throw new Error("Custom API configuration is required");
     validateCustomApi(payload.custom, payload.kind === "background" ? "image" : payload.kind);
@@ -293,6 +319,8 @@ export function buildProviderConfig(payload: ConfigPayload, existing: ProviderCo
     apiKey,
     model: payload.model.trim() || (payload.kind === "background" ? "background-removal" : ""),
     custom: isCustom ? payload.custom : undefined,
+    // Not secret — safe to fall back to whatever is already stored, same as rotationStrategy below.
+    comfyui: isComfyUi ? normalizeComfyUiConfig(payload.comfyui) ?? existing?.comfyui : undefined,
     backupApiKeys,
     rotationStrategy: payload.rotationStrategy ?? existing?.rotationStrategy,
     cooldownSeconds: payload.cooldownSeconds ?? existing?.cooldownSeconds,
@@ -480,6 +508,8 @@ export interface ProviderSummary {
   model?: string;
   /** Non-secret API description (custom providers) so users can re-edit it. */
   custom?: CustomApiConfig;
+  /** Sampler/LoRA tuning (comfyui providers) — nothing secret, safe to echo. */
+  comfyui?: ComfyUiExtraConfig;
   /** How many backup keys are stored — never the keys themselves. */
   backupKeyCount?: number;
   /** Per-key weight/enabled, index-ordered — see `BackupKeySummary`. */
@@ -505,6 +535,7 @@ export function summarize(resolved: ResolvedProvider | null): ProviderSummary {
     // The custom block is declarative non-secret configuration; the key
     // lives only in ProviderConfig.apiKey, which never enters a summary.
     custom: config.custom,
+    comfyui: config.comfyui,
     backupKeyCount: config.backupApiKeys?.length ?? 0,
     backupKeys: config.backupApiKeys?.map((entry) => ({
       weight: entry.weight ?? 1,

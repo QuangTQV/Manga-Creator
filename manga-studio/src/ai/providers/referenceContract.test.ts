@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CustomApiConfig } from "@/server/customApi/config";
 import type { ProviderConfig } from "@/server/providerSession";
 import { ProviderError, type ImageGenerationRequest } from "../types";
+import { createComfyUiProvider } from "./comfyui";
 import { createCustomImageProvider } from "./customImage";
 import { createGeminiProvider } from "./gemini";
 import { createGenericRestProvider } from "./genericRest";
@@ -141,6 +142,45 @@ describe("Contract E: unsupported reference ⇒ explicit failure, never silent f
   });
 });
 
+describe("Contract F: ComfyUI's provider-native reference transport (img2img)", () => {
+  const PROMPT_ID = "3ba1b2c4-758b-4b53-8a4c-dc1c9a8c9a95";
+
+  it("uploads the reference image to /upload/image, then wires the workflow's LoadImage to the server's own returned name", async () => {
+    // ComfyUI's flow is 4 sequential endpoints, not the file's usual single
+    // canned response — a local multi-endpoint stub, same style comfyui.test.ts uses.
+    const perUrlCalls: { url: string; init: RequestInit }[] = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      perUrlCalls.push({ url, init: init ?? {} });
+      if (url.includes("/upload/image")) return new Response(JSON.stringify({ name: "server-named-ref.png", subfolder: "", type: "input" }));
+      if (url.includes("/prompt")) return new Response(JSON.stringify({ prompt_id: PROMPT_ID }));
+      if (url.includes("/history/")) {
+        return new Response(
+          JSON.stringify({ [PROMPT_ID]: { status: { completed: true }, outputs: { "9": { images: [{ filename: "out.png", type: "output" }] } } } }),
+        );
+      }
+      if (url.includes("/view")) return new Response(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]));
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const provider = createComfyUiProvider({
+      ...baseConfig("comfyui", "sd_xl_base_1.0.safetensors"),
+      pollIntervalMs: 5,
+      pollTimeoutMs: 200,
+    });
+    await provider.generateImage(REF_REQUEST);
+
+    const uploadCall = perUrlCalls.find((c) => c.url.includes("/upload/image"));
+    expect(uploadCall).toBeDefined();
+    const uploadedFile = (uploadCall!.init.body as FormData).get("image") as File;
+    expect(new Uint8Array(await uploadedFile.arrayBuffer())).toEqual(new Uint8Array(LUCY));
+
+    const promptCall = perUrlCalls.find((c) => c.url.includes("/prompt"));
+    const workflow = JSON.parse(String(promptCall!.init.body)).prompt;
+    expect(workflow["30"].inputs.image).toBe("server-named-ref.png");
+  });
+});
+
 describe("capability ⇄ implementation binding", () => {
   it("every adapter's supportsReferenceImage flag mirrors its reference contract", () => {
     const custom: CustomApiConfig = {
@@ -157,6 +197,7 @@ describe("capability ⇄ implementation binding", () => {
       createGenericRestProvider(baseConfig("openai-compatible", "gpt-image-1")),
       createGenericRestProvider(baseConfig("openai-compatible", "dall-e-2")),
       createCustomImageProvider(baseConfig("custom", "x", custom)),
+      createComfyUiProvider(baseConfig("comfyui", "sd_xl_base_1.0.safetensors")),
     ];
     for (const provider of providers) {
       expect(provider.capabilities.supportsReferenceImage, provider.id).toBe(provider.capabilities.reference.supported);

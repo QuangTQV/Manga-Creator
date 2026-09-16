@@ -61,6 +61,69 @@ describe("buildWorkflow", () => {
     expect(graph["5"].inputs.width).toBe(1024);
     expect(graph["5"].inputs.height).toBe(1024);
   });
+
+  it("overrides sampler defaults when extra config is provided", () => {
+    const graph = buildWorkflow(REQUEST, "m.safetensors", { steps: 30, cfg: 4.5, samplerName: "dpmpp_2m", scheduler: "karras" }) as Record<
+      string,
+      { inputs: Record<string, unknown> }
+    >;
+    expect(graph["3"].inputs).toMatchObject({ steps: 30, cfg: 4.5, sampler_name: "dpmpp_2m", scheduler: "karras" });
+  });
+
+  it("chains a single LoRA between the checkpoint and everything downstream", () => {
+    const graph = buildWorkflow(REQUEST, "m.safetensors", { loras: [{ name: "detail_tweaker_xl.safetensors", strength: 0.8 }] }) as Record<
+      string,
+      { class_type: string; inputs: Record<string, unknown> }
+    >;
+    expect(graph["20"]).toMatchObject({
+      class_type: "LoraLoader",
+      inputs: { lora_name: "detail_tweaker_xl.safetensors", strength_model: 0.8, strength_clip: 0.8, model: ["4", 0], clip: ["4", 1] },
+    });
+    expect(graph["3"].inputs.model).toEqual(["20", 0]);
+    expect(graph["6"].inputs.clip).toEqual(["20", 1]);
+    expect(graph["7"].inputs.clip).toEqual(["20", 1]);
+    expect(graph["21"]).toBeUndefined(); // only one entry configured
+  });
+
+  it("chains 4 LoRAs in order, each feeding the next, with the checkpoint feeding only the first", () => {
+    const loras = [
+      { name: "a.safetensors" },
+      { name: "b.safetensors" },
+      { name: "c.safetensors" },
+      { name: "d.safetensors" },
+    ];
+    const graph = buildWorkflow(REQUEST, "m.safetensors", { loras }) as Record<string, { inputs: Record<string, unknown> }>;
+    expect(graph["20"].inputs.model).toEqual(["4", 0]);
+    expect(graph["21"].inputs.model).toEqual(["20", 0]);
+    expect(graph["22"].inputs.model).toEqual(["21", 0]);
+    expect(graph["23"].inputs.model).toEqual(["22", 0]);
+    expect(graph["3"].inputs.model).toEqual(["23", 0]); // KSampler reads the LAST chain link
+    expect(graph["20"].inputs.strength_model).toBe(1); // default strength when unset
+  });
+
+  it("switches to img2img (LoadImage → ImageScale → VAEEncode) when an uploaded image is given, dropping EmptyLatentImage", () => {
+    const graph = buildWorkflow(REQUEST, "m.safetensors", undefined, { name: "ref_00001_.png", subfolder: "", type: "input" }) as Record<
+      string,
+      { class_type: string; inputs: Record<string, unknown> }
+    >;
+    expect(graph["5"]).toBeUndefined(); // EmptyLatentImage replaced entirely
+    expect(graph["30"]).toMatchObject({ class_type: "LoadImage", inputs: { image: "ref_00001_.png" } });
+    expect(graph["32"]).toMatchObject({
+      class_type: "ImageScale",
+      inputs: { image: ["30", 0], width: 832, height: 1216, upscale_method: "lanczos", crop: "disabled" },
+    });
+    expect(graph["31"]).toMatchObject({ class_type: "VAEEncode", inputs: { pixels: ["32", 0], vae: ["4", 2] } });
+    expect(graph["3"].inputs.latent_image).toEqual(["31", 0]);
+    expect(graph["3"].inputs.denoise).toBe(0.6); // preserves reference identity, still allows variation
+  });
+
+  it("joins a non-empty upload subfolder into LoadImage's image path", () => {
+    const graph = buildWorkflow(REQUEST, "m.safetensors", undefined, { name: "ref.png", subfolder: "kumanga" }) as Record<
+      string,
+      { inputs: Record<string, unknown> }
+    >;
+    expect(graph["30"].inputs.image).toBe("kumanga/ref.png");
+  });
 });
 
 describe("createComfyUiProvider", () => {
@@ -197,12 +260,49 @@ describe("createComfyUiProvider", () => {
     expect(calls).toHaveLength(1);
   });
 
-  it("declares no reference/editing/transparent support in this pass", () => {
+  it("declares reference-image (img2img) support but no editing/transparent-background support", () => {
     const provider = createComfyUiProvider({ baseUrl: "https://comfy.example.com", model: "m.safetensors" });
-    expect(provider.capabilities.supportsReferenceImage).toBe(false);
+    expect(provider.capabilities.supportsReferenceImage).toBe(true);
+    expect(provider.capabilities.reference).toMatchObject({ supported: true, transport: "provider-native", maxImages: 1 });
     expect(provider.capabilities.supportsImageEditing).toBe(false);
     expect(provider.capabilities.supportsTransparentBackground).toBe(false);
     expect(provider.capabilities.asyncGeneration).toBe(true);
     expect(provider.editImage).toBeUndefined();
+  });
+
+  it("uploads the reference image, then submits a workflow whose LoadImage node uses the SERVER's own upload response name, not the client filename", async () => {
+    const uploadedName = "server_renamed_ref_00007_.png";
+
+    const calls = stubFetch((url) => {
+      if (url.includes("/upload/image")) return new Response(JSON.stringify({ name: uploadedName, subfolder: "", type: "input" }), { status: 200 });
+      if (url.includes("/prompt")) return new Response(JSON.stringify({ prompt_id: PROMPT_ID }), { status: 200 });
+      if (url.includes("/history/")) {
+        return new Response(
+          JSON.stringify({
+            [PROMPT_ID]: { status: { completed: true }, outputs: { "9": { images: [{ filename: "out.png", type: "output" }] } } },
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("/view")) return new Response(PNG_BYTES, { status: 200 });
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const provider = createComfyUiProvider({ baseUrl: "https://comfy.example.com", model: "m.safetensors", ...FAST_POLL });
+    const referenceBytes = Buffer.from([1, 2, 3, 4, 5]);
+    await provider.generateImage({ ...REQUEST, referenceImages: [{ mimeType: "image/png", data: referenceBytes }] });
+
+    const uploadCall = calls.find((c) => c.url.includes("/upload/image"));
+    expect(uploadCall).toBeDefined();
+    const uploadedFile = (uploadCall!.init!.body as FormData).get("image") as File;
+    expect(new Uint8Array(await uploadedFile.arrayBuffer())).toEqual(new Uint8Array(referenceBytes));
+
+    const promptCall = calls.find((c) => c.url.includes("/prompt"));
+    const submittedWorkflow = JSON.parse(String(promptCall!.init!.body)).prompt as Record<
+      string,
+      { class_type: string; inputs: Record<string, unknown> }
+    >;
+    expect(submittedWorkflow["30"]).toMatchObject({ class_type: "LoadImage", inputs: { image: uploadedName } });
+    expect(submittedWorkflow["3"].inputs.denoise).toBe(0.6);
   });
 });

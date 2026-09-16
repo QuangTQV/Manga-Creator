@@ -33,6 +33,85 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-16 — ComfyUI adapter v2: LoRA chaining, reference-image
+  (img2img), and sampler tuning (backlog #47).** User asked to "finish it
+  fully" right after v1 shipped; clarified via `AskUserQuestion` into two
+  parts done in order: (1) QA v1 — found and fixed a real bug (`canSave`
+  wrongly required a non-empty API key even for ComfyUI, which has none;
+  a first-time save of a fresh ComfyUI config could never enable the Save
+  button — caught by writing the e2e test v1 was missing, not by reading
+  the code) and added a Playwright scenario covering protocol selection,
+  save, and Test Connection; (2) this v2 build, went through
+  `EnterPlanMode` twice-over — once to draft the design, once more via a
+  Plan-agent second opinion that caught a real correctness gap before any
+  code was written (see below).
+  New `src/server/comfyui/config.ts`: `ComfyUiExtraConfig` (steps, cfg,
+  samplerName, scheduler, up to `MAX_COMFYUI_LORAS` = 4 `{name,
+  strength}` entries) — a NEW, non-secret sibling to `custom?:
+  CustomApiConfig` on `ProviderConfig`. Unlike backup keys, nothing here
+  is a credential, so it needed no `/api/provider/*` mutation endpoint:
+  it lives in the plain `ProviderConfig`/`ProviderSummary` and is
+  resubmitted wholesale on every AI Settings save, exactly like
+  `rotationStrategy` already is — a much simpler pattern than
+  `BackupKeysList`'s live-per-row-API pattern, correctly recommended by
+  the Plan-agent review over blindly mirroring `fallbackRows`'
+  touched-gating (that gating exists ONLY because fallback secrets can
+  never be read back; LoRA filenames aren't secret, so hydrate + resend
+  unconditionally instead).
+  `comfyui.ts`'s `buildWorkflow` gained: a `LoraLoader` chain (node ids
+  `20`-`23`, chained from the checkpoint, each hop's model/clip output
+  feeding the next — `strength_model`/`strength_clip` intentionally
+  collapsed into one `strength` field per entry) that KSampler/both
+  `CLIPTextEncode` nodes now read from instead of the checkpoint directly
+  when present; and an img2img path (`LoadImage` id `30` → `ImageScale`
+  id `32` → `VAEEncode` id `31`) used when `request.referenceImages[0]`
+  exists, via a new `uploadImage()` that POSTs multipart to ComfyUI's own
+  `/upload/image` FIRST (mirrors `genericRest.ts`'s `buildEditsFormData`
+  Blob/FormData pattern — no manual `Content-Type`) and wires the graph
+  to the **server's own returned filename**, never the client-sent one
+  (ComfyUI auto-dedupes/renames on collision).
+  **The correctness gap the Plan-agent review caught before any code was
+  written**: the original design replaced `EmptyLatentImage` with
+  `LoadImage`+`VAEEncode` for img2img but had NO width/height-resizing
+  step — since nothing downstream in `ai/generate.ts` re-scales provider
+  output, and `EmptyLatentImage` was the ONLY place `request.width`/
+  `height` took effect in v1, removing it would have made output
+  resolution silently follow the reference image's own native size
+  instead of the requested size. Fixed by inserting `ImageScale` (id
+  `32`) between `LoadImage` and `VAEEncode`. Caught by a validating
+  Plan-agent pass BEFORE implementation, not by a test after the fact —
+  worth remembering as a reason to actually use the second-opinion Plan
+  agent step, not skip it for "I already know this codebase" tasks.
+  Deliberate scope cut, called out explicitly per the plan (not silent):
+  a ComfyUI provider configured as a *fallback*
+  (`FallbackProviderConfig`) does NOT get `comfyui` extras — only v1
+  defaults; commented in `providerSession.ts` and in the architecture doc.
+  Tests: `comfyui.test.ts` gained `buildWorkflow` unit tests for 1- and
+  4-entry LoRA chains and the img2img node substitution, plus a
+  `generateImage` end-to-end test asserting the `/upload/image` →
+  `/prompt` → `/history` → `/view` sequence and that the submitted
+  workflow's `LoadImage` node uses the mocked upload response's name, not
+  the client's. `referenceContract.test.ts` (the shared cross-adapter
+  "declared reference support ⇒ image physically in the request"
+  guarantee) gained ComfyUI in its capability-binding table and its own
+  Contract F block. New Playwright e2e scenario covers opening "Advanced
+  — ComfyUI settings", adding a LoRA row + sampler fields, saving, and
+  confirming the exact payload plus re-hydration on reopen — which
+  surfaced a genuine native-`<details>` gotcha: clicking an already-open
+  `<details>` summary (its `open` prop was already `true` from hydrated
+  non-empty state) toggles it CLOSED, not a no-op: don't click a
+  disclosure whose open state is derived from data that might already be
+  populated.
+  Verified: `npm test` → 1468/1468 (was 1461 after v1); `npm run
+  typecheck && npm run lint && npm run build` clean; full Playwright
+  suite (34 tests, single worker) all passing.
+  No live ComfyUI instance was reachable to verify `/upload/image`'s
+  real response shape or the exact `LoraLoader`/`ImageScale` field names
+  against — written defensively (a malformed node/field surfaces as
+  ComfyUI's own `/prompt` 400, already handled, not silent wrong output),
+  flagged explicitly in both the plan and the architecture doc as
+  something to spot-check against a real instance.
+
 - **2026-09-16 — ComfyUI adapter: local self-hosted image generation
   (backlog #46, the follow-up to the doc-only local-model commit below).**
   Went through `EnterPlanMode` given it touches `providerSession.ts`
@@ -1528,13 +1607,13 @@ worth porting)**
     and a real workflow graph doesn't fit the cookie-size budget. v1 is
     checkpoint-only txt2img (no LoRA, no reference-image/img2img) —
     those remain explicit future follow-ups, not started.
-47. ComfyUI adapter v2: LoRA chaining, reference-image/img2img support,
-    and UI-exposed sampler/steps/cfg tuning — deliberately deferred out of
-    #46's v1. Needs its own scoping pass (LoRA list storage? per-character
-    trigger tags? how much of `buildWorkflow`'s fixed graph needs to
-    become configurable without re-opening the cookie-size problem #46
-    was built specifically to avoid). Do not start without the user
-    explicitly asking for one of these three.
+47. ~~ComfyUI adapter v2: LoRA chaining, reference-image/img2img support,
+    and UI-exposed sampler/steps/cfg tuning~~ — **done 2026-09-16**, see
+    Timeline. Sampler/LoRA settings live in a new non-secret
+    `ProviderConfig.comfyui` field (no cookie-size problem — nothing here
+    is a full workflow graph). Deliberate scope cut: a ComfyUI provider
+    configured as a *fallback* does not get `comfyui` extras, only v1
+    defaults (not fixed, not silent — commented in `providerSession.ts`).
 
 **Not in the backlog — deliberate, don't re-add without the user explicitly overriding**
 - PDF export as the WHOLE-BOOK interchange format — CBZ remains that

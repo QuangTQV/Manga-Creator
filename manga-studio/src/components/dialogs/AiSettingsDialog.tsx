@@ -90,6 +90,19 @@ function emptyFallbackRow(providerType: string): FallbackRow {
   return { providerType, name: "", baseUrl: "", apiKey: "", model: "", backupApiKeysText: "" };
 }
 
+/** One LoRA row for a ComfyUI provider — `strength` stays a string in local
+ * state (controlled numeric input), parsed on save. Not secret. */
+interface LoraRow {
+  name: string;
+  strength: string;
+}
+
+function emptyLoraRow(): LoraRow {
+  return { name: "", strength: "" };
+}
+
+const MAX_COMFYUI_LORAS_CLIENT = 4;
+
 export function AiSettingsDialog() {
   const open = useUiStore((s) => s.settingsOpen);
   const close = useUiStore((s) => s.closeSettings);
@@ -241,6 +254,14 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
   // that means clearing it" (sent as `[]`).
   const [fallbackRows, setFallbackRows] = useState<FallbackRow[]>([]);
   const [fallbackTouched, setFallbackTouched] = useState(false);
+  // ComfyUI sampler/LoRA settings — nothing here is secret (unlike backup
+  // keys or fallback providers), so it's hydrated unconditionally and
+  // resubmitted wholesale every save, not gated behind a "touched" flag.
+  const [comfyUiSteps, setComfyUiSteps] = useState("");
+  const [comfyUiCfg, setComfyUiCfg] = useState("");
+  const [comfyUiSampler, setComfyUiSampler] = useState("");
+  const [comfyUiScheduler, setComfyUiScheduler] = useState("");
+  const [loraRows, setLoraRows] = useState<LoraRow[]>([]);
   const [busy, setBusy] = useState<"save" | "test" | "forget" | "models" | null>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [preview, setPreview] = useState<Record<string, unknown> | null>(null);
@@ -263,6 +284,18 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
         setModel(summary.model ?? "");
       }
       setRotationStrategy(summary.rotationStrategy ?? "round_robin");
+      if (summary.comfyui) {
+        setComfyUiSteps(summary.comfyui.steps !== undefined ? String(summary.comfyui.steps) : "");
+        setComfyUiCfg(summary.comfyui.cfg !== undefined ? String(summary.comfyui.cfg) : "");
+        setComfyUiSampler(summary.comfyui.samplerName ?? "");
+        setComfyUiScheduler(summary.comfyui.scheduler ?? "");
+        setLoraRows(
+          (summary.comfyui.loras ?? []).map((l) => ({
+            name: l.name,
+            strength: l.strength !== undefined ? String(l.strength) : "",
+          })),
+        );
+      }
     }
     setHydrated(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -326,6 +359,18 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
             // Empty field + already configured = keep the stored key.
             apiKey: apiKey || undefined,
             model: model || (kind === "background" ? "background-removal" : ""),
+            comfyui:
+              providerType === "comfyui"
+                ? {
+                    steps: comfyUiSteps.trim() ? Number(comfyUiSteps) : undefined,
+                    cfg: comfyUiCfg.trim() ? Number(comfyUiCfg) : undefined,
+                    samplerName: comfyUiSampler.trim() || undefined,
+                    scheduler: comfyUiScheduler.trim() || undefined,
+                    loras: loraRows
+                      .filter((r) => r.name.trim())
+                      .map((r) => ({ name: r.name.trim(), strength: r.strength.trim() ? Number(r.strength) : undefined })),
+                  }
+                : undefined,
             ...rotation,
           };
       const response = await fetch("/api/provider/config", {
@@ -618,6 +663,104 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
             </div>
           </div>
       </details>
+
+      {providerType === "comfyui" && (
+        <details className="mt-2" open={Boolean(comfyUiSteps || comfyUiCfg || comfyUiSampler || comfyUiScheduler || loraRows.length)}>
+          <summary className="cursor-pointer select-none text-[10px] uppercase tracking-wider text-zinc-500">
+            Advanced — ComfyUI settings
+          </summary>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <Field label="Steps">
+              <input
+                type="number"
+                min={1}
+                max={150}
+                className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1.5 font-mono text-xs"
+                value={comfyUiSteps}
+                onChange={(e) => setComfyUiSteps(e.target.value)}
+                placeholder="20"
+              />
+            </Field>
+            <Field label="CFG scale">
+              <input
+                type="number"
+                min={0}
+                max={30}
+                step={0.5}
+                className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1.5 font-mono text-xs"
+                value={comfyUiCfg}
+                onChange={(e) => setComfyUiCfg(e.target.value)}
+                placeholder="7"
+              />
+            </Field>
+            <Field label="Sampler name">
+              <input
+                className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1.5 font-mono text-xs"
+                value={comfyUiSampler}
+                onChange={(e) => setComfyUiSampler(e.target.value)}
+                placeholder="euler"
+              />
+            </Field>
+            <Field label="Scheduler">
+              <input
+                className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1.5 font-mono text-xs"
+                value={comfyUiScheduler}
+                onChange={(e) => setComfyUiScheduler(e.target.value)}
+                placeholder="normal"
+              />
+            </Field>
+          </div>
+          <p className="mt-1 text-[10px] leading-4 text-zinc-600">
+            Leave blank to use the built-in defaults (steps 20, cfg 7, euler/normal).
+          </p>
+
+          <div className="mt-3 border-t border-zinc-800 pt-3">
+            <span className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">
+              LoRAs (checkpoint filenames as ComfyUI shows them, up to {MAX_COMFYUI_LORAS_CLIENT})
+            </span>
+            {loraRows.map((row, index) => (
+              <div key={index} className="mb-1.5 flex gap-1.5">
+                <input
+                  className="min-w-0 flex-1 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1.5 font-mono text-xs"
+                  value={row.name}
+                  onChange={(e) => setLoraRows((rows) => rows.map((r, i) => (i === index ? { ...r, name: e.target.value } : r)))}
+                  placeholder="detail_tweaker_xl.safetensors"
+                  aria-label={`LoRA ${index + 1} filename`}
+                />
+                <input
+                  type="number"
+                  min={0}
+                  max={2}
+                  step={0.05}
+                  className="w-20 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1.5 font-mono text-xs"
+                  value={row.strength}
+                  onChange={(e) => setLoraRows((rows) => rows.map((r, i) => (i === index ? { ...r, strength: e.target.value } : r)))}
+                  placeholder="1"
+                  aria-label={`LoRA ${index + 1} strength`}
+                />
+                <button
+                  type="button"
+                  className="rounded border border-zinc-700 bg-zinc-800 px-2 text-xs hover:bg-zinc-700"
+                  onClick={() => setLoraRows((rows) => rows.filter((_, i) => i !== index))}
+                  aria-label={`Remove LoRA ${index + 1}`}
+                  title="Remove"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            {loraRows.length < MAX_COMFYUI_LORAS_CLIENT && (
+              <button
+                type="button"
+                className="rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs hover:bg-zinc-700"
+                onClick={() => setLoraRows((rows) => [...rows, emptyLoraRow()])}
+              >
+                + Add LoRA
+              </button>
+            )}
+          </div>
+        </details>
+      )}
 
       <div className="mt-2 flex items-center gap-2">
         <button

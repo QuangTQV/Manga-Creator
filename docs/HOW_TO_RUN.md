@@ -79,7 +79,7 @@ Kumanga không bundle model nào, nhưng chuẩn **OpenAI-compatible** và **Cus
 | Automatic1111 (webui) | Custom API, method `POST`, endpoint `http://localhost:7860/sdapi/v1/txt2img`, execution **sync**, response type `base64`, response path `images[0]` |
 | ComfyUI | Chuẩn riêng **"ComfyUI (local)"** trong danh sách provider — chỉ cần Base URL (mặc định `http://127.0.0.1:8188`) và Model = **tên file checkpoint** đúng như ComfyUI hiển thị (ví dụ `sd_xl_base_1.0.safetensors`). Không cần API key. |
 
-ComfyUI dùng một adapter riêng (không qua Custom API) vì API của nó không phải REST đơn giản: `/history/{prompt_id}` trả kết quả dưới một key **động** chính là `prompt_id` vừa submit, và workflow graph gửi lên quá lớn so với giới hạn cookie — adapter tự dựng workflow txt2img chuẩn (checkpoint + prompt + kích thước) ở phía server, chưa hỗ trợ LoRA hoặc ảnh tham chiếu (img2img) trong bản này.
+ComfyUI dùng một adapter riêng (không qua Custom API) vì API của nó không phải REST đơn giản: `/history/{prompt_id}` trả kết quả dưới một key **động** chính là `prompt_id` vừa submit, và workflow graph gửi lên quá lớn so với giới hạn cookie — adapter tự dựng workflow ở phía server. Mở mục "Advanced — ComfyUI settings" trong AI Settings để chỉnh steps/CFG/sampler/scheduler và thêm tối đa 4 LoRA (tên file + độ mạnh). Nếu tạo nhân vật/pose kèm ảnh tham chiếu, ComfyUI cũng tự chuyển sang chế độ img2img (giữ nét đặc trưng của ảnh tham chiếu, vẫn cho phép đổi pose/biểu cảm).
 
 ### 6. Các lệnh khác
 
@@ -186,7 +186,7 @@ Kumanga bundles no model, but the **OpenAI-compatible** and **Custom API** provi
 | Automatic1111 (webui) | Custom API, method `POST`, endpoint `http://localhost:7860/sdapi/v1/txt2img`, execution **sync**, response type `base64`, response path `images[0]` |
 | ComfyUI | Its own **"ComfyUI (local)"** entry in the provider list — just set Base URL (defaults to `http://127.0.0.1:8188`) and Model to the **checkpoint filename** exactly as ComfyUI shows it (e.g. `sd_xl_base_1.0.safetensors`). No API key needed. |
 
-ComfyUI gets a dedicated adapter rather than a Custom API mapping because its protocol isn't plain REST: `/history/{prompt_id}` nests its result under a **dynamic** key — the `prompt_id` that was just submitted — and a full workflow graph is too large for the cookie-based config budget. The adapter builds a standard txt2img workflow (checkpoint + prompt + size) server-side; LoRA and reference-image (img2img) support aren't included in this pass.
+ComfyUI gets a dedicated adapter rather than a Custom API mapping because its protocol isn't plain REST: `/history/{prompt_id}` nests its result under a **dynamic** key — the `prompt_id` that was just submitted — and a full workflow graph is too large for the cookie-based config budget. The adapter builds the workflow server-side. Open "Advanced — ComfyUI settings" in AI Settings to tune steps/CFG/sampler/scheduler and add up to 4 LoRAs (filename + strength). Generating a character/pose with a reference image also automatically switches to img2img (keeps the reference's identity while still allowing pose/expression changes).
 
 ### 6. Other commands
 
