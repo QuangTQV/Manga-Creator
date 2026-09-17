@@ -56,6 +56,16 @@ export interface ImageEditRequest {
    * Adapters that understand real provider-side masking (ComfyUI) can use
    * it for genuinely region-limited inpainting instead. */
   mask?: { mimeType: string; data: Buffer };
+  /** Extra identity/style references sent ALONGSIDE the edit source (e.g. a
+   * character's existing canonical render, so the provider has a stronger
+   * identity anchor than the edit source alone) — same shape/purpose as
+   * `ImageGenerationRequest.referenceImages`/`referenceUrls`, kept as its
+   * own pair of fields since editing's primary "reference" is `image`
+   * itself. Optional: adapters that have no slot for a second reference
+   * during an edit (e.g. ComfyUI, whose edit graph already spends its one
+   * image input on the edit source) may ignore it. */
+  referenceImages?: { mimeType: string; data: Buffer }[];
+  referenceUrls?: string[];
   trace?: GenerationTrace;
 }
 

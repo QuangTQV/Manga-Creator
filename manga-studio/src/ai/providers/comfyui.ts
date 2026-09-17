@@ -493,6 +493,14 @@ export function createComfyUiProvider(config: ComfyUiConfig): ImageGenerationPro
     },
 
     async editImage(request: ImageEditRequest): Promise<ImageGenerationResult> {
+      // request.referenceImages (extra identity references alongside the
+      // edit source) is intentionally NOT used here: the edit graph's one
+      // image-input slot already goes to the edit source itself via
+      // VAEEncode. Blending in a SEPARATE identity reference during an
+      // edit would need model composition (e.g. an IPAdapter node) this
+      // adapter doesn't build — a real capability gap, not an oversight;
+      // Gemini/customImage use it (see their own editImage), ComfyUI's
+      // edit path does not yet.
       request.trace?.("outbound_request_start", {
         provider: "comfyui",
         operation: "edit_image",

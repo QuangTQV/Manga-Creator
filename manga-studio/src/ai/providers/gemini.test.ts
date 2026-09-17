@@ -78,6 +78,57 @@ describe("Gemini image generation adapter", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  it("editImage sends extra identity references alongside the edit source, capped at 3 total", async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      const images = body.contents[0].parts.filter((p: { inline_data?: unknown }) => p.inline_data);
+      // Source + 2 extra references = 3, exactly at Gemini's declared maxImages.
+      expect(images).toHaveLength(3);
+      expect(images[0].inline_data.data).toBe(Buffer.from("source").toString("base64"));
+      expect(images[1].inline_data.data).toBe(Buffer.from("ref-1").toString("base64"));
+      expect(images[2].inline_data.data).toBe(Buffer.from("ref-2").toString("base64"));
+      return new Response(
+        JSON.stringify({ candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/png", data: "iVBORw0KGgo=" } }] } }] }),
+        { status: 200 },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await provider().editImage!({
+      instruction: "add a hat",
+      image: { mimeType: "image/png", data: Buffer.from("source") },
+      referenceImages: [
+        { mimeType: "image/png", data: Buffer.from("ref-1") },
+        { mimeType: "image/png", data: Buffer.from("ref-2") },
+      ],
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("editImage truncates extra references rather than exceeding the declared maxImages", async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      const images = body.contents[0].parts.filter((p: { inline_data?: unknown }) => p.inline_data);
+      expect(images).toHaveLength(3); // source + 2, NOT source + 3
+      return new Response(
+        JSON.stringify({ candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/png", data: "iVBORw0KGgo=" } }] } }] }),
+        { status: 200 },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await provider().editImage!({
+      instruction: "add a hat",
+      image: { mimeType: "image/png", data: Buffer.from("source") },
+      referenceImages: [
+        { mimeType: "image/png", data: Buffer.from("ref-1") },
+        { mimeType: "image/png", data: Buffer.from("ref-2") },
+        { mimeType: "image/png", data: Buffer.from("ref-3") },
+      ],
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   it("rejects malformed and image-less responses safely", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("not json", { status: 200 })));
     await expect(provider().generateImage(request)).rejects.toMatchObject({ safeMessage: "Invalid image response from provider" });

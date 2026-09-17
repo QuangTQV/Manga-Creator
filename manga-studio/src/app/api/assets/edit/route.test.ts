@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import sharp from "sharp";
 import { loadStoredAsset } from "@/assets/loadStoredAsset";
+import { loadReferences } from "@/ai/generate";
 import { createImageProvider } from "@/ai/providerRegistry";
 import { resolveProvider } from "@/server/providerSession";
 import { POST } from "./route";
 
 vi.mock("@/assets/loadStoredAsset", () => ({ loadStoredAsset: vi.fn() }));
+vi.mock("@/ai/generate", () => ({ loadReferences: vi.fn() }));
 vi.mock("@/ai/providerRegistry", () => ({ createImageProvider: vi.fn() }));
 vi.mock("@/server/providerSession", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/providerSession")>();
@@ -15,6 +17,7 @@ vi.mock("@/server/providerSession", async (importOriginal) => {
 vi.mock("@/storage/objectStore", () => ({ putObject: vi.fn().mockResolvedValue({ url: "https://blob.example/edited.png" }) }));
 
 const loadMock = vi.mocked(loadStoredAsset);
+const loadReferencesMock = vi.mocked(loadReferences);
 const createProviderMock = vi.mocked(createImageProvider);
 const resolveProviderMock = vi.mocked(resolveProvider);
 
@@ -52,6 +55,7 @@ function request(body: unknown): NextRequest {
 
 beforeEach(() => {
   loadMock.mockReset();
+  loadReferencesMock.mockReset();
   createProviderMock.mockReset();
   resolveProviderMock.mockReset();
 });
@@ -117,5 +121,74 @@ describe("POST /api/assets/edit — mask forwarding to provider.editImage", () =
     // Still receives a mask field in the call (harmless — Gemini's real
     // adapter implementation simply never destructures it).
     expect(editImageMock.mock.calls[0][0].mask).toBeDefined();
+  });
+});
+
+describe("POST /api/assets/edit — extra identity references alongside the edit source", () => {
+  it("loads referenceUrls and forwards both the bytes and the URLs to provider.editImage", async () => {
+    const sourcePng = await solidPng(200, 50, 50, 255);
+    loadMock.mockResolvedValue({ data: sourcePng, mimeType: "image/png" });
+    loadReferencesMock.mockResolvedValue([{ mimeType: "image/png", data: Buffer.from("canonical-render") }]);
+    resolveProviderMock.mockReturnValue({
+      config: { kind: "image", providerType: "gemini", baseUrl: "https://x", apiKey: "k", model: "m" },
+      source: "session",
+    });
+
+    const editImageMock = vi.fn().mockResolvedValue({ mimeType: "image/png", data: await solidPng(0, 200, 0, 255) });
+    createProviderMock.mockReturnValue({
+      id: "gemini",
+      label: "Gemini",
+      model: "m",
+      capabilities: { supportsImageEditing: true, supportsReferenceImage: true } as never,
+      editImage: editImageMock,
+    } as never);
+
+    const response = await POST(
+      request({
+        sourceUrl: "https://blob.example/source.png",
+        maskPng: await halfMaskPng(),
+        instruction: "add a hat",
+        referenceUrls: ["https://blob.example/character-canonical.png"],
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(loadReferencesMock).toHaveBeenCalledWith(["https://blob.example/character-canonical.png"]);
+    const call = editImageMock.mock.calls[0][0];
+    expect(call.referenceImages).toEqual([{ mimeType: "image/png", data: Buffer.from("canonical-render") }]);
+    expect(call.referenceUrls).toEqual(["https://blob.example/character-canonical.png"]);
+  });
+
+  it("never loads or forwards references when the provider does not support them", async () => {
+    const sourcePng = await solidPng(200, 50, 50, 255);
+    loadMock.mockResolvedValue({ data: sourcePng, mimeType: "image/png" });
+    resolveProviderMock.mockReturnValue({
+      config: { kind: "image", providerType: "comfyui", baseUrl: "https://comfy.example.com", apiKey: "", model: "m" },
+      source: "session",
+    });
+
+    const editImageMock = vi.fn().mockResolvedValue({ mimeType: "image/png", data: await solidPng(0, 200, 0, 255) });
+    createProviderMock.mockReturnValue({
+      id: "comfyui",
+      label: "ComfyUI",
+      model: "m",
+      capabilities: { supportsImageEditing: true, supportsReferenceImage: false } as never,
+      editImage: editImageMock,
+    } as never);
+
+    const response = await POST(
+      request({
+        sourceUrl: "https://blob.example/source.png",
+        maskPng: await halfMaskPng(),
+        instruction: "add a hat",
+        referenceUrls: ["https://blob.example/character-canonical.png"],
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(loadReferencesMock).not.toHaveBeenCalled();
+    const call = editImageMock.mock.calls[0][0];
+    expect(call.referenceImages).toBeUndefined();
+    expect(call.referenceUrls).toBeUndefined();
   });
 });

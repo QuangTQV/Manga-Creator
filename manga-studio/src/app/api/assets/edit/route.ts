@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import sharp from "sharp";
 import { loadStoredAsset } from "@/assets/loadStoredAsset";
+import { loadReferences } from "@/ai/generate";
 import { ProviderError } from "@/ai/types";
 import { putObject } from "@/storage/objectStore";
 import { resolveProvider } from "@/server/providerSession";
@@ -99,11 +100,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // compositing step below, same as before this field existed.
     const maskPngForProvider = await sharp(maskRaw, { raw: { width, height, channels: 4 } }).png().toBuffer();
 
-    trace("provider_edit_start", { width, height, provider: provider.id });
+    // Identity/style references (e.g. a character's canonical render) sent
+    // ALONGSIDE the edit source — previously accepted by this schema and
+    // documented as such, but never actually forwarded to the provider.
+    // Gated on supportsReferenceImage the same way the main generation
+    // route gates references, since a provider with no reference-image
+    // concept has nowhere to put them.
+    const referenceUrls = provider.capabilities.supportsReferenceImage ? parsed.data.referenceUrls ?? [] : [];
+    const referenceImages = referenceUrls.length > 0 ? await loadReferences(referenceUrls) : undefined;
+
+    trace("provider_edit_start", { width, height, provider: provider.id, referenceCount: referenceUrls.length });
     const edited = await provider.editImage({
       instruction: parsed.data.instruction,
       image: { mimeType: source.mimeType, data: source.data, url: parsed.data.sourceUrl },
       mask: { mimeType: "image/png", data: maskPngForProvider },
+      referenceImages,
+      referenceUrls: referenceUrls.length > 0 ? referenceUrls : undefined,
       trace,
     });
 

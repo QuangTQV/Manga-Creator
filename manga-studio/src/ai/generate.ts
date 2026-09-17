@@ -205,7 +205,11 @@ function categoryFor(assetType: GeneratedAssetType): AssetCategory {
   return "character";
 }
 
-async function loadReferences(urls: string[]): Promise<{ mimeType: string; data: Buffer }[]> {
+/** Bounded, allowlisted per-URL loader — shared by every caller that needs
+ * to turn a stored/remote reference URL into real bytes (this module's own
+ * generation path, the ControlNet single-image case, and
+ * `/api/assets/edit` for extra identity references alongside an edit). */
+export async function loadReferences(urls: string[]): Promise<{ mimeType: string; data: Buffer }[]> {
   const references: { mimeType: string; data: Buffer }[] = [];
   for (const url of urls) {
     if (!isAllowedReferenceUrl(url)) {

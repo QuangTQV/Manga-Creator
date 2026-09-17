@@ -33,6 +33,52 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-17 — Fixed local-edit identity references being silently
+  dropped, plus a smaller same-session-pattern bug.** Found during a
+  requested code review pass over the ComfyUI v3 work, not by the user
+  reporting broken behavior.
+  **The real bug**: `AssetDetailEditor.tsx` builds a `referenceUrls` array
+  (a character's canonical render, sent alongside an edit so the provider
+  has a stronger identity anchor) and `/api/assets/edit/route.ts`'s own
+  zod schema accepts and documents it ("Identity/style references, sent
+  alongside the source where supported") — but the route never actually
+  forwarded it to `provider.editImage(...)`. Pre-existing, predates this
+  session's ComfyUI work entirely; just never noticed until asked to look.
+  Fixed: `ImageEditRequest` (`ai/types.ts`) gains
+  `referenceImages?`/`referenceUrls?` (same shape/pairing as
+  `ImageGenerationRequest`'s own fields, kept separate from `image` since
+  editing's primary reference is the source itself). `ai/generate.ts`'s
+  `loadReferences` — already bounded/allowlisted — is now exported and
+  reused (not duplicated) by the route, gated on
+  `provider.capabilities.supportsReferenceImage` the same way the main
+  generation route already gates references. Gemini's `editImage` now
+  sends `[source, ...extraRefs]` capped at its own declared `maxImages`
+  (3) rather than silently exceeding the capability it promises.
+  customImage's `editImage` extends both the base64 and URL reference
+  arrays consistently with its existing per-mode logic. ComfyUI's
+  `editImage` explicitly does NOT use the new field — its edit graph's one
+  image-input slot already goes to the edit source via `VAEEncode`;
+  blending in a second identity reference would need model composition
+  (an IPAdapter-style node) that adapter doesn't build — documented as a
+  real, deliberate capability gap in a code comment, not a silent no-op.
+  New tests: Gemini gets two `editImage` cases (extra references
+  included, and truncated at exactly `maxImages` rather than exceeded).
+  `referenceContract.test.ts` gets a new Contract G block covering
+  customImage's `editImage` in both base64 and URL reference-transport
+  modes. `assets/edit/route.test.ts` gets two new cases: references
+  loaded and forwarded when the provider supports them, and never
+  loaded/forwarded at all when it doesn't (proving the capability gate
+  actually short-circuits, not just that it happens to pass through unused).
+  **The smaller bug, found while re-scanning for the SAME pattern that
+  had already bitten twice this session** (`hasCredential` in v3 PR1,
+  `normalizeComfyUiConfig` in v3 PR3): the "Advanced — ComfyUI settings"
+  `<details>` disclosure's own hand-enumerated "is there anything to
+  show" check was missing `comfyUiControlNetStrength` — added when
+  ControlNet strength shipped in PR3 but never added to this list. Fixed
+  in an earlier, separate commit this same day (`311bee7`) once spotted.
+  Verified: `npm test` → 1498/1498; typecheck/lint/build clean; full
+  Playwright suite (36 tests) passing.
+
 - **2026-09-17 — Documented Azure OpenAI (Agent) + Kaggle free-GPU
   ComfyUI (Image Generation) as a combined hosting recipe.** User asked
   whether they could run the Manga Agent purely via a cloud API (Azure

@@ -61,10 +61,14 @@ export function createGeminiProvider(config: GeminiConfig): ImageGenerationProvi
     },
 
     async editImage(request: ImageEditRequest): Promise<ImageGenerationResult> {
+      // The edit source counts toward this adapter's own declared
+      // maxImages (3) — extra identity references are truncated rather
+      // than silently exceeding what the capability promises.
+      const referenceImages = [request.image, ...(request.referenceImages ?? [])].slice(0, 3);
       return runGeminiImageRequest(config, {
         prompt: request.instruction,
         assetType: "character",
-        referenceImages: [request.image],
+        referenceImages,
         trace: request.trace,
       }, "edit_image");
     },

@@ -181,6 +181,48 @@ describe("Contract F: ComfyUI's provider-native reference transport (img2img)", 
   });
 });
 
+describe("Contract G: editImage sends extra identity references alongside the edit source", () => {
+  it("custom (base64 mode): edit source AND extra reference both reach the rendered request template", async () => {
+    const custom: CustomApiConfig = {
+      method: "POST",
+      headers: [],
+      auth: { mode: "none" },
+      requestTemplate: '{"prompt":"{{prompt}}","refs":"{{referenceImages}}"}',
+      referenceMode: "base64",
+      execution: "sync",
+      response: { path: "data[0].b64_json", type: "base64" },
+    };
+    const calls = stubFetch(OK_RESPONSE);
+    await createCustomImageProvider(baseConfig("custom", "anything", custom)).editImage!({
+      instruction: "add a hat",
+      image: { mimeType: "image/png", data: LUCY },
+      referenceImages: [{ mimeType: "image/png", data: Buffer.from("extra-ref") }],
+    });
+    const body = JSON.parse(String(calls[0].init.body));
+    expect(body.refs).toEqual([LUCY_B64, Buffer.from("extra-ref").toString("base64")]);
+  });
+
+  it("custom (url mode): edit source URL AND extra reference URL both reach the rendered request template", async () => {
+    const custom: CustomApiConfig = {
+      method: "POST",
+      headers: [],
+      auth: { mode: "none" },
+      requestTemplate: '{"prompt":"{{prompt}}","refs":"{{referenceImages}}"}',
+      referenceMode: "url",
+      execution: "sync",
+      response: { path: "data[0].b64_json", type: "base64" },
+    };
+    const calls = stubFetch(OK_RESPONSE);
+    await createCustomImageProvider(baseConfig("custom", "anything", custom)).editImage!({
+      instruction: "add a hat",
+      image: { mimeType: "image/png", data: LUCY, url: "https://blob.example/source.png" },
+      referenceUrls: ["https://blob.example/character-canonical.png"],
+    });
+    const body = JSON.parse(String(calls[0].init.body));
+    expect(body.refs).toEqual(["https://blob.example/source.png", "https://blob.example/character-canonical.png"]);
+  });
+});
+
 describe("capability ⇄ implementation binding", () => {
   it("every adapter's supportsReferenceImage flag mirrors its reference contract", () => {
     const custom: CustomApiConfig = {

@@ -85,11 +85,15 @@ export function createCustomImageProvider(config: ProviderConfig): ImageGenerati
     ...(custom.referenceMode !== "none" ? {
       async editImage(request: ImageEditRequest): Promise<ImageGenerationResult> {
         try {
+          // "url" mode needs every reference's URL, not just its bytes —
+          // if the edit source has no URL, extra references have nowhere
+          // consistent to go either (pre-existing limitation for the
+          // source image itself, unchanged here).
           return await runGeneration(config, {
             prompt: request.instruction,
             assetType: "character",
-            referenceImages: [request.image],
-            referenceUrls: request.image.url ? [request.image.url] : undefined,
+            referenceImages: [request.image, ...(request.referenceImages ?? [])],
+            referenceUrls: request.image.url ? [request.image.url, ...(request.referenceUrls ?? [])] : undefined,
             trace: request.trace,
           });
         } catch (error) {
