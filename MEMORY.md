@@ -33,6 +33,35 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-17 — Two Retry options on a failed Agent run: same plan vs. new
+  plan.** User asked why "Retry" always seemed to restart from scratch, and
+  proposed there should be two choices: retry just the failed step, or
+  retry from the beginning. Investigated `AgentPanel.tsx`'s `run()`/
+  `execute()` split before deciding: `run()` always calls
+  `runCreativeDirection` (a fresh, nondeterministic Director LLM planning
+  call) then `execute(outcome)`; `execute(prepared)` is the ALREADY-existing
+  separate function that only re-executes a given plan (no LLM call) — it's
+  the same function the "Continue" confirm-dialog button already calls.
+  True step-level partial retry (keep already-succeeded steps like `create_
+  character`, only regenerate the failed image) would require changing the
+  deliberate whole-transaction-rollback design ("a run either lands whole or
+  does not land at all" — `orchestrator.ts`'s own docstring; also entangled
+  with the "one Undo reverts an entire agent run" invariant). Asked the user
+  to choose between that bigger architectural change and the smaller,
+  already-safe option; they chose the smaller one. Shipped: the `error`
+  block's "Run failed" UI now shows "Retry (same plan)" (calls `execute(
+  prepared)` directly — `prepared` was already sitting in React state,
+  never cleared on failure) alongside "Retry (new plan)" (the original
+  behavior, `run(prompt.trim())`), gated on `runSummary?.status === "failed"
+  && prepared` so a genuine PLANNING failure (no valid prepared plan to
+  reuse) still shows just the single original "Retry". No automated test
+  added: this repo's e2e suite (`smoke.spec.ts`) has no existing harness
+  for mocking a full agent run (Director LLM + execution) end-to-end, and
+  `execute(prepared)` is already an existing, separately-exercised code
+  path (the "Continue" button) — building new mocking infrastructure just
+  for this button felt disproportionate to the change and risked being more
+  fragile than the feature itself. Flagging the gap explicitly rather than
+  skipping it silently.
 - **2026-09-17 — Per-LoRA scope ("all" / "isolated" / "scene").** After the
   white-background LoRA (weight 0.3, alongside the line-art LoRA at 0.5)
   finally produced a clean, genuinely white-background test generation —

@@ -268,7 +268,31 @@ export function AgentPanel() {
         <div className="rounded border border-red-900 bg-red-950/50 p-3 text-red-200">
           <p className="font-medium">{runSummary?.status === "failed" ? "Run failed" : "Agent planning failed"}</p>
           <p className="mt-1 text-[11px] text-red-300">{error}</p>
-          <button className="mt-2 rounded border border-red-800 px-2.5 py-1 text-[10px] hover:bg-red-900/40" onClick={() => run(prompt.trim())}>Retry</button>
+          <div className="mt-2 flex gap-2">
+            {/* A failed EXECUTION (not a planning failure) still has a valid
+                `prepared` plan sitting in state — the whole run rolled back
+                on the page, but the plan itself was never invalidated.
+                Re-running it skips a fresh (nondeterministic) Director LLM
+                call, so a retry doesn't also risk a different character
+                description/scene interpretation on top of whatever made
+                the execution itself fail. */}
+            {runSummary?.status === "failed" && prepared && (
+              <button
+                className="rounded border border-red-800 px-2.5 py-1 text-[10px] hover:bg-red-900/40"
+                onClick={() => execute(prepared)}
+                title="Re-run the exact same plan — skips asking the Director for a new one"
+              >
+                Retry (same plan)
+              </button>
+            )}
+            <button
+              className="rounded border border-red-800 px-2.5 py-1 text-[10px] hover:bg-red-900/40"
+              onClick={() => run(prompt.trim())}
+              title={runSummary?.status === "failed" && prepared ? "Ask the Director for a fresh plan and run that instead" : undefined}
+            >
+              {runSummary?.status === "failed" && prepared ? "Retry (new plan)" : "Retry"}
+            </button>
+          </div>
         </div>
       )}
 
