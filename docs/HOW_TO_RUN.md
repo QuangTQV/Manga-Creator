@@ -110,6 +110,11 @@ Bấm **Test Connection** trước khi Save.
    !wget -q -O ComfyUI/models/checkpoints/sd_xl_base_1.0.safetensors \
      "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors"
    ```
+   Muốn dùng IPAdapter (giữ đặc điểm nhân vật khi sửa ảnh cục bộ) trên server Kaggle này thì cài thêm, cùng cell hoặc cell riêng:
+   ```python
+   !git clone https://github.com/cubiq/ComfyUI_IPAdapter_plus.git ComfyUI/custom_nodes/ComfyUI_IPAdapter_plus
+   # Cần thêm model IPAdapter + CLIP vision — xem README của repo trên để lấy đúng link tải theo checkpoint bạn dùng
+   ```
 3. Chạy server ComfyUI ở chế độ nền:
    ```python
    import subprocess
@@ -274,6 +279,11 @@ Click **Test Connection** before Save.
    # Swap this URL for whichever checkpoint you want
    !wget -q -O ComfyUI/models/checkpoints/sd_xl_base_1.0.safetensors \
      "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors"
+   ```
+   Want IPAdapter (identity-preserving local edits) on this Kaggle server too? Add, in the same cell or a separate one:
+   ```python
+   !git clone https://github.com/cubiq/ComfyUI_IPAdapter_plus.git ComfyUI/custom_nodes/ComfyUI_IPAdapter_plus
+   # Also needs an IPAdapter model + CLIP vision model — see that repo's own README for the right download link for your checkpoint
    ```
 3. Start the ComfyUI server in the background:
    ```python
