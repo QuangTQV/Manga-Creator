@@ -83,7 +83,7 @@ ComfyUI dùng một adapter riêng (không qua Custom API) vì API của nó kh�
 
 **Chọn checkpoint/LoRA cho ComfyUI — tránh lỗi "Background removal did not complete":**
 
-Khi tạo một nhân vật (asset dạng cắt trong suốt), Kumanga luôn chèn vào prompt yêu cầu "cô lập trên nền trắng tinh, không bối cảnh" rồi **tự tách nền bằng thuật toán cục bộ** (dò vùng màu liền từ viền ảnh vào — không dùng AI để tách nền). Checkpoint SDXL gốc (`sd_xl_base_1.0.safetensors`, mục 5c dùng làm ví dụ) thường **không tuân theo tốt** chỉ dẫn này — hay vẽ thêm phố xá/nội thất phía sau nhân vật — khiến bước tách nền không tìm được vùng trắng liền mạch và thất bại với đúng lỗi trên. Cách khắc phục rẻ nhất: thêm LoRA, không cần đổi checkpoint.
+Khi tạo một nhân vật (asset dạng cắt trong suốt), Kumanga luôn chèn vào prompt yêu cầu "cô lập trên nền trắng tinh, không bối cảnh" rồi **tự tách nền bằng thuật toán cục bộ** (dò vùng màu liền từ viền ảnh vào — không dùng AI để tách nền). Checkpoint SDXL gốc (`sd_xl_base_1.0.safetensors`) thường **không tuân theo tốt** chỉ dẫn này — hay vẽ thêm phố xá/nội thất phía sau nhân vật — khiến bước tách nền không tìm được vùng trắng liền mạch và thất bại với đúng lỗi trên. Đổi sang checkpoint anime-tag như **Animagine XL 4.0** (xem bảng checkpoint ở mục 5c dưới) đã cải thiện đáng kể; thêm LoRA bên dưới cải thiện thêm nữa, không cần đổi lại checkpoint mỗi lần.
 
 | LoRA | Vai trò | Nguồn |
 |---|---|---|
@@ -123,15 +123,26 @@ Bấm **Test Connection** trước khi Save.
 **Chạy ComfyUI trên Kaggle (GPU free), xuất ra URL public để Kumanga gọi:**
 
 1. Vào kaggle.com → Code → New Notebook → mục Settings bên phải → Accelerator → chọn **GPU T4 x2** (hoặc P100). Dùng chế độ **Interactive session** (không dùng "Save & Run All / Commit" — chế độ đó chạy xong tự tắt máy, không giữ server sống).
-2. Cài và tải model, dán vào 1 cell:
+2. Cài ComfyUI và tải checkpoint. Chọn 1 trong 3 model dưới đây tuỳ nhu cầu — cả 3 đều tải trực tiếp từ Hugging Face, không cần tài khoản:
+
+   | Checkpoint | Phù hợp khi | Kích thước |
+   |---|---|---|
+   | [`stabilityai/stable-diffusion-xl-base-1.0`](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0) | Model gốc, đa năng nhất, nhưng **kém tuân theo** yêu cầu "nền trắng tinh" khi tạo nhân vật (xem mục 5b phía trên) | ~6.9 GB |
+   | **`cagliostrolab/animagine-xl-4.0`** (khuyến nghị cho Kumanga) | Train riêng cho anime/manga, bám tag tốt hơn nhiều — dễ ra đúng nền trắng/nền đơn giản khi tạo nhân vật, hợp phong cách "Minimal Line Manga" | ~6.9 GB |
+   | [`OnomaAIResearch/Illustrious-XL-v2.0`](https://huggingface.co/OnomaAIResearch/Illustrious-XL-v2.0) | Muốn dùng chung với hệ sinh thái LoRA anime lớn nhất hiện nay (đa số LoRA/checkpoint mới trên Civitai train trên nền Illustrious) | ~6.9 GB |
+
+   Dán vào 1 cell (ví dụ dùng Animagine XL 4.0 — đổi URL/tên file sang dòng tương ứng ở bảng trên nếu muốn model khác):
    ```python
    !git clone https://github.com/comfyanonymous/ComfyUI.git
    !pip install -r ComfyUI/requirements.txt -q
 
-   # Đổi URL theo checkpoint bạn muốn dùng
-   !wget -q -O ComfyUI/models/checkpoints/sd_xl_base_1.0.safetensors \
-     "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors"
+   !wget -q -O ComfyUI/models/checkpoints/animagine-xl-4.0.safetensors \
+     "https://huggingface.co/cagliostrolab/animagine-xl-4.0/resolve/main/animagine-xl-4.0.safetensors"
+   # Model gốc, đa năng: stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors
+   # Hệ LoRA Illustrious: OnomaAIResearch/Illustrious-XL-v2.0/resolve/main/Illustrious-XL-v2.0.safetensors
    ```
+   Nhớ đổi **Model** trong AI Settings khớp đúng tên file bạn vừa tải (ví dụ `animagine-xl-4.0.safetensors`).
+
    Muốn dùng IPAdapter (giữ đặc điểm nhân vật khi sửa ảnh cục bộ) trên server Kaggle này thì cài thêm, cùng cell hoặc cell riêng:
    ```python
    !git clone https://github.com/cubiq/ComfyUI_IPAdapter_plus.git ComfyUI/custom_nodes/ComfyUI_IPAdapter_plus
@@ -169,7 +180,7 @@ Bấm **Test Connection** trước khi Save.
        print("Chưa tìm thấy URL, kiểm tra lại log phía trên.")
    ```
    Copy URL dạng `https://xxxx-xxxx.trycloudflare.com` in ra ở bước này.
-5. Trong Kumanga: AI Settings → Image Generation → chọn **ComfyUI (local)** → Base URL = URL cloudflared vừa lấy → Model = tên file checkpoint (ví dụ `sd_xl_base_1.0.safetensors`) → **không cần** bật `ALLOW_PRIVATE_NETWORKS=1` (URL này là public thật) → Test Connection → Save.
+5. Trong Kumanga: AI Settings → Image Generation → chọn **ComfyUI (local)** → Base URL = URL cloudflared vừa lấy → Model = tên file checkpoint bạn đã tải ở bước 2 (ví dụ `animagine-xl-4.0.safetensors`) → **không cần** bật `ALLOW_PRIVATE_NETWORKS=1` (URL này là public thật) → Test Connection → Save.
 
 **Lưu ý quan trọng:**
 - Kaggle interactive session tự tắt sau một khoảng không hoạt động, và có giới hạn giờ GPU/tuần theo tài khoản — mỗi lần notebook restart, URL cloudflared **đổi mới hoàn toàn**, phải vào AI Settings dán lại Base URL.
@@ -288,7 +299,7 @@ ComfyUI gets a dedicated adapter rather than a Custom API mapping because its pr
 
 **Picking a checkpoint/LoRA for ComfyUI — avoiding "Background removal did not complete":**
 
-When generating a character (a cutout-style asset), Kumanga always adds "isolated on a pure white background, no scenery" to the prompt, then **strips that background with a local algorithm** (flood-fill from the image edges — no AI involved in the removal step itself). The base SDXL checkpoint (`sd_xl_base_1.0.safetensors`, used as the example in 5c below) often **doesn't follow that instruction well** — it tends to draw a street or interior behind the character anyway — so the flood-fill finds no clean, edge-connected white region and fails with exactly that error. The cheapest fix is adding a LoRA, not switching checkpoints.
+When generating a character (a cutout-style asset), Kumanga always adds "isolated on a pure white background, no scenery" to the prompt, then **strips that background with a local algorithm** (flood-fill from the image edges — no AI involved in the removal step itself). The base SDXL checkpoint (`sd_xl_base_1.0.safetensors`) often **doesn't follow that instruction well** — it tends to draw a street or interior behind the character anyway — so the flood-fill finds no clean, edge-connected white region and fails with exactly that error. Switching to an anime-tag-trained checkpoint like **Animagine XL 4.0** (see the checkpoint table in section 5c below) already helps a lot; the LoRAs below help further on top of that, without needing to keep swapping checkpoints.
 
 | LoRA | Purpose | Source |
 |---|---|---|
@@ -328,15 +339,26 @@ Click **Test Connection** before Save.
 **Running ComfyUI on Kaggle's free GPU, exposed as a public URL Kumanga can call:**
 
 1. Go to kaggle.com → Code → New Notebook → Settings panel on the right → Accelerator → pick **GPU T4 x2** (or P100). Use **Interactive session** mode, not "Save & Run All / Commit" — that mode shuts the machine down once it finishes, it won't keep a server alive.
-2. Install ComfyUI and download a model, in one cell:
+2. Install ComfyUI and download a checkpoint. Pick one of these three — all download directly from Hugging Face, no account needed:
+
+   | Checkpoint | Good for | Size |
+   |---|---|---|
+   | [`stabilityai/stable-diffusion-xl-base-1.0`](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0) | The stock general-purpose model, but it **follows "isolated on a pure white background" poorly** when generating characters (see section 5b above) | ~6.9 GB |
+   | **`cagliostrolab/animagine-xl-4.0`** (recommended for Kumanga) | Trained specifically on anime/manga art with much stronger tag adherence — far more likely to land a clean white/simple background on character generation, and fits the "Minimal Line Manga" style | ~6.9 GB |
+   | [`OnomaAIResearch/Illustrious-XL-v2.0`](https://huggingface.co/OnomaAIResearch/Illustrious-XL-v2.0) | If you want compatibility with today's largest anime LoRA ecosystem — most new anime LoRAs/checkpoints on Civitai are trained on Illustrious as their base | ~6.9 GB |
+
+   One cell (using Animagine XL 4.0 as the example — swap the URL/filename for one of the other rows if you want a different checkpoint):
    ```python
    !git clone https://github.com/comfyanonymous/ComfyUI.git
    !pip install -r ComfyUI/requirements.txt -q
 
-   # Swap this URL for whichever checkpoint you want
-   !wget -q -O ComfyUI/models/checkpoints/sd_xl_base_1.0.safetensors \
-     "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors"
+   !wget -q -O ComfyUI/models/checkpoints/animagine-xl-4.0.safetensors \
+     "https://huggingface.co/cagliostrolab/animagine-xl-4.0/resolve/main/animagine-xl-4.0.safetensors"
+   # Stock general-purpose: stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors
+   # Illustrious LoRA ecosystem: OnomaAIResearch/Illustrious-XL-v2.0/resolve/main/Illustrious-XL-v2.0.safetensors
    ```
+   Make sure **Model** in AI Settings matches whatever filename you actually downloaded (e.g. `animagine-xl-4.0.safetensors`).
+
    Want IPAdapter (identity-preserving local edits) on this Kaggle server too? Add, in the same cell or a separate one:
    ```python
    !git clone https://github.com/cubiq/ComfyUI_IPAdapter_plus.git ComfyUI/custom_nodes/ComfyUI_IPAdapter_plus
@@ -374,7 +396,7 @@ Click **Test Connection** before Save.
        print("URL not found yet — check the log above.")
    ```
    Copy the printed `https://xxxx-xxxx.trycloudflare.com` URL.
-5. In Kumanga: AI Settings → Image Generation → pick **ComfyUI (local)** → Base URL = the cloudflared URL you just got → Model = the checkpoint filename (e.g. `sd_xl_base_1.0.safetensors`) → **no need** to enable `ALLOW_PRIVATE_NETWORKS=1` (this is a real public URL) → Test Connection → Save.
+5. In Kumanga: AI Settings → Image Generation → pick **ComfyUI (local)** → Base URL = the cloudflared URL you just got → Model = the checkpoint filename you downloaded in step 2 (e.g. `animagine-xl-4.0.safetensors`) → **no need** to enable `ALLOW_PRIVATE_NETWORKS=1` (this is a real public URL) → Test Connection → Save.
 
 **Important caveats:**
 - A Kaggle interactive session shuts down after a period of inactivity, and GPU hours are capped per week per account — every time the notebook restarts, the cloudflared URL **changes completely**, so you'll need to paste the new Base URL into AI Settings again.

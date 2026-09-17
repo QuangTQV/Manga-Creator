@@ -50,7 +50,17 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
   (needs a Civitai API key for the wget download — anonymous downloads
   are blocked there), plus a CFG-bump fallback. Cross-linked from both
   §7 Troubleshooting sections so a future user hitting this exact error
-  message finds the fix.
+  message finds the fix. Follow-up in the same session: user asked for
+  "xịn hơn" (better/quality) checkpoint options in the Kaggle download
+  cell itself, not just LoRAs layered on base SDXL. Verified two more
+  real, directly-downloadable-from-Hugging-Face anime checkpoints via
+  `WebSearch`/`WebFetch` before writing them into the doc (never guessed
+  a model URL): `cagliostrolab/animagine-xl-4.0` (anime/danbooru-tag
+  trained, much stronger tag adherence — made the new default in the §5c
+  Kaggle cell) and `OnomaAIResearch/Illustrious-XL-v2.0` (base for most of
+  today's anime LoRA ecosystem, offered as an alternative). §5b's LoRA
+  guidance updated to say "switch checkpoint first, LoRAs on top" instead
+  of "LoRA instead of switching checkpoint."
 - **2026-09-17 — Custom API agent: self-heal `max_tokens` →
   `max_completion_tokens`.** User was configuring Azure OpenAI as the
   Manga Agent via the Custom API protocol (following `docs/HOW_TO_RUN.md`
