@@ -199,18 +199,22 @@ export function Studio() {
   );
 }
 
-/** Origin credit: quiet, fixed, never over the canvas. */
+/** Origin + fork credit: quiet, fixed, never over the canvas. Both links
+ * are required — see NOTICE.md and LICENSE's attribution clause. */
 function Attribution() {
   return (
-    <a
-      href="https://github.com/BotTony329/mangaharness"
-      target="_blank"
-      rel="noopener noreferrer"
-      className="fixed bottom-1.5 left-2 z-40 text-[10px] opacity-50 transition-opacity hover:opacity-90"
+    <div
+      className="fixed bottom-1.5 left-2 z-40 flex items-center gap-1 text-[10px] opacity-50 transition-opacity hover:opacity-90"
       style={{ color: "var(--text-muted)" }}
     >
-      Kumanga by BotTony329
-    </a>
+      <a href="https://github.com/BotTony329/mangaharness" target="_blank" rel="noopener noreferrer">
+        Kumanga by BotTony329
+      </a>
+      <span>·</span>
+      <a href="https://github.com/QuangTQV" target="_blank" rel="noopener noreferrer">
+        fork by QuangTQV
+      </a>
+    </div>
   );
 }
 

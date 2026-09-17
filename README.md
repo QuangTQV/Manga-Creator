@@ -11,12 +11,13 @@ backgrounds — a non-destructive editor composes them into manga pages, and a
 natural-language **Manga Agent** can build whole panels for you. Bring your own
 API key (BYOK); there is no account, no cloud lock-in, and no bundled model.
 
-*Kuma* (bear) + *manga*. Created and maintained by
-**[BotTony329](https://github.com/BotTony329)**.
+*Kuma* (bear) + *manga*. Originally created by
+**[BotTony329](https://github.com/BotTony329)**; this fork is maintained by
+**[QuangTQV](https://github.com/QuangTQV)**.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-v0.3.0-8A2BE2)](https://github.com/QuangTQV/Manga-Creator/releases/tag/v0.3.0)
-[![Tests](https://img.shields.io/badge/tests-1425%2F1425%20pass-brightgreen)](https://github.com/QuangTQV/Manga-Creator/releases/tag/v0.3.0)
+[![Tests](https://img.shields.io/badge/tests-1504%2F1504%20pass-brightgreen)](https://github.com/QuangTQV/Manga-Creator/releases/tag/v0.3.0)
 [![Stack](https://img.shields.io/badge/Next.js%2015-TypeScript%205-black)](manga-studio/)
 
 **[🌐 Website](https://kumanga-website.vercel.app/)** ·
@@ -38,7 +39,9 @@ Manga Agent that operates the same editor through natural-language prompts.
 - **Stack**: Next.js 15 · React 19 · TypeScript 5 · npm workspaces
 - **Status**: actively developed —
   [v0.3.0](https://github.com/QuangTQV/Manga-Creator/releases/tag/v0.3.0)
-  released 2026-09-16, 1425/1425 tests passing, `npm audit` clean
+  released 2026-09-16, plus ongoing work since (local self-hosted AI,
+  LoRA/ControlNet/IPAdapter, real masked inpainting — see below),
+  1504/1504 tests passing, `npm audit` clean
   ([release notes](https://github.com/QuangTQV/Manga-Creator/releases/tag/v0.3.0) ·
   [v0.1 baseline report](docs/RELEASE_FREEZE_V0.1.md) for the original freeze this fork started from)
 - **License**: MIT (keep [`NOTICE.md`](NOTICE.md) attribution on forks)
@@ -67,8 +70,22 @@ machine**:
 - **Non-destructive panel editor.** A panel is a clipping viewport; crop modes
   re-frame assets without new generations; instances never modify their source.
 - **Real AI generation.** A provider abstraction with a Google Gemini adapter
-  (reference-image aware, for character-consistent poses and expressions) and a
-  generic OpenAI-compatible REST adapter.
+  (reference-image aware, for character-consistent poses and expressions), a
+  generic OpenAI-compatible REST adapter, a fully declarative Custom API
+  adapter for any other vendor, and a dedicated **ComfyUI** adapter for
+  running your own models locally or on rented/free GPU (see below).
+- **Local, self-hosted image generation (ComfyUI).** Point Kumanga at your
+  own ComfyUI instance — no cloud image API required. Supports LoRA
+  chaining, ControlNet (pose/line-art guidance from a control image you
+  supply), reference-image-aware generation, and real mask-aware local
+  editing (inpainting), with IPAdapter automatically preserving a
+  character's identity during an edit. See
+  [docs/HOW_TO_RUN.md](docs/HOW_TO_RUN.md) for local setup, or running
+  ComfyUI on Kaggle's free GPU quota and Azure OpenAI for the text agent.
+- **Real local editing.** Paint a mask over any generated asset and ask the
+  AI to redraw just that region — the rest of the pixels are guaranteed
+  byte-identical to the original, regardless of what the provider actually
+  returns.
 - **Manga Agent.** Prompt → skill-guided plan → validated tool calls →
   execution through the same editor commands the manual UI uses.
 - **Live AI.** A panel (top bar → "Live AI") showing the actual prompt sent
@@ -119,8 +136,13 @@ standard, enter base URL + key + model, Test Connection, Save:
 
 | Surface | Supported standards |
 |---|---|
-| Image generation | Google Gemini (reference-image aware) · any OpenAI-compatible REST endpoint |
-| Manga Agent | OpenAI-compatible · Anthropic-compatible · Gemini |
+| Image generation | Google Gemini (reference-image aware) · any OpenAI-compatible REST endpoint · **ComfyUI** (local/self-hosted — LoRA, ControlNet, IPAdapter, real inpainting) · fully declarative Custom API for anything else |
+| Manga Agent | OpenAI-compatible (works with Ollama/LM Studio locally too) · Anthropic-compatible · Gemini · Azure OpenAI (via Custom API) |
+
+Want to run everything yourself — text through a cheap cloud API like Azure
+OpenAI, image generation on a free GPU (e.g. a Kaggle notebook running
+ComfyUI, tunneled out)? See
+[docs/HOW_TO_RUN.md §5b/§5c](docs/HOW_TO_RUN.md) for exact setup steps.
 
 Credentials are AES-GCM-encrypted into HttpOnly session cookies — never
 client-readable, never stored in project data. Replace or forget them any time,
@@ -151,8 +173,8 @@ traversal and provider-session security all have dedicated test suites
 Requires Node.js 18.18+ (20+ LTS recommended for Next.js 15).
 
 ```bash
-git clone https://github.com/BotTony329/mangaharness.git
-cd mangaharness
+git clone https://github.com/QuangTQV/Manga-Creator.git
+cd Manga-Creator
 npm install
 cp .env.example .env.local   # optional — the editor works without any AI key
 npm run dev                  # http://localhost:3000
@@ -241,15 +263,27 @@ override any operator-default providers. A reference deployment runs at
 
 ### What is the current status of the project?
 
-Actively developed. The latest release is
+Actively developed. The latest tagged release is
 [v0.3.0](https://github.com/QuangTQV/Manga-Creator/releases/tag/v0.3.0)
-(2026-09-16): 1425/1425 tests passing, clean typecheck, lint and build, and
-zero `npm audit` vulnerabilities. See the
+(2026-09-16); since then this fork has added local self-hosted image
+generation (ComfyUI), LoRA/ControlNet/IPAdapter support, and real
+mask-aware local editing. 1504/1504 tests passing, clean typecheck, lint
+and build, and zero `npm audit` vulnerabilities. See the
 [release notes](https://github.com/QuangTQV/Manga-Creator/releases) for
-what shipped in each version, and [ARCHITECTURE.md](ARCHITECTURE.md) for
-module boundaries and the agent pipeline. The original v0.1 baseline this
-fork started from is preserved at
+what shipped in each tagged version, and [ARCHITECTURE.md](ARCHITECTURE.md)
+for module boundaries and the agent pipeline. The original v0.1 baseline
+this fork started from is preserved at
 [docs/RELEASE_FREEZE_V0.1.md](docs/RELEASE_FREEZE_V0.1.md) for reference.
+
+### Can I run everything myself, without paying for cloud AI?
+
+Yes. The Manga Agent works with any OpenAI-compatible endpoint, including
+locally-run models (Ollama, LM Studio) or Azure OpenAI. Image generation
+can run entirely on your own or rented GPU via a dedicated **ComfyUI**
+adapter — including LoRA, ControlNet, IPAdapter-preserved local edits, and
+real inpainting — with no cloud image API involved at all. See
+[docs/HOW_TO_RUN.md](docs/HOW_TO_RUN.md) for exact setup, including a
+walkthrough for running ComfyUI on Kaggle's free GPU quota.
 
 ## Repository layout
 
@@ -262,5 +296,7 @@ fork started from is preserved at
 
 ## License & attribution
 
-Kumanga is MIT-licensed and built by **BotTony329**. If you fork or reuse it,
-keep the attribution ([`NOTICE.md`](NOTICE.md)) intact.
+Kumanga is MIT-licensed. Originally created by **[BotTony329](https://github.com/BotTony329)**;
+this fork is maintained by **[QuangTQV](https://github.com/QuangTQV)**. If
+you fork or reuse it, keep the attribution ([`NOTICE.md`](NOTICE.md)) intact
+— the license requires it.

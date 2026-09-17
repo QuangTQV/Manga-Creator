@@ -33,6 +33,39 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-17 — Fork attribution + README overhaul.** User asked to
+  remove "Created and maintained by BotTony329" from README.md, saying
+  this is now their own project. Flagged before acting: the LICENSE's own
+  text requires "the attribution in NOTICE.md" be included in all
+  copies/forks, and NOTICE.md itself says "This notice must be preserved
+  in copies, forks and derivative works" — removing it outright would be
+  a license violation, not a stylistic choice. User agreed to the
+  compliant alternative instead: **keep** BotTony329's original credit
+  (required), **add** QuangTQV (https://github.com/QuangTQV) as this
+  fork's maintainer alongside it — in `NOTICE.md`, `README.md` (intro
+  line + License & attribution section), and the in-app corner
+  attribution link (`Studio.tsx`'s `Attribution` component, now two small
+  links instead of one). This matches CLAUDE.md's own standing instruction
+  on this exact scenario ("if the user wants to drop it, flag that as a
+  licensing decision, not a code change to just make") — worth remembering
+  for any FUTURE request to touch attribution: don't just comply, explain
+  the license requirement first and offer the compliant middle ground.
+  Also did the README content update the user asked for in the same
+  message: test count badge 1425→1504 (stale since the v0.3.0 release
+  README pass, before this session's ComfyUI work existed), quick-start
+  `git clone` URL corrected from the upstream `BotTony329/mangaharness` to
+  this fork's own `QuangTQV/Manga-Creator` (previously inconsistent with
+  `docs/HOW_TO_RUN.md`, which already used the fork URL), and new content
+  throughout ("What can it do?", the AI-providers table, two FAQ entries)
+  covering everything shipped this session: ComfyUI (LoRA/ControlNet/
+  IPAdapter/real inpainting), Azure OpenAI via Custom API, and running
+  ComfyUI on Kaggle's free GPU — all pointing at `docs/HOW_TO_RUN.md` for
+  exact steps rather than duplicating them.
+  Verified: `npm test` → 1504/1504; typecheck/lint/build clean; a targeted
+  e2e smoke check confirmed the studio still boots after the `Studio.tsx`
+  change (no e2e test asserted the old attribution text, so no test
+  needed updating there).
+
 - **2026-09-17 — Added IPAdapter support to ComfyUI's edit path, closing
   the capability gap the previous fix (below) had documented but not
   built.** User asked to "add IPAdapter" right after that fix shipped.
