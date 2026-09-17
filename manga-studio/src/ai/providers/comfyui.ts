@@ -22,7 +22,9 @@
  *   30,31,33,34 edit path (v3 PR2) — LoadImage/VAEEncode/LoadImageMask/
  *         SetLatentNoiseMask. Never both graphs at once, so the 30/31
  *         reuse across the two functions is not a real collision.
- *   40+   reserved for ControlNet/upscale (v3 PR3+).
+ *   40-42 ControlNet (v3 PR3, generation path only) — LoadImage/
+ *         ControlNetLoader/ControlNetApplyAdvanced.
+ *   43+   reserved for any future stage.
  */
 
 import type { ComfyUiExtraConfig } from "@/server/comfyui/config";
@@ -118,6 +120,7 @@ export function buildWorkflow(
   checkpointModel: string,
   extra?: ComfyUiExtraConfig,
   uploadedImage?: UploadedImageRef,
+  uploadedControlImage?: UploadedImageRef,
 ): Record<string, unknown> {
   const seed = Math.floor(Math.random() * 2 ** 31);
 
@@ -128,6 +131,36 @@ export function buildWorkflow(
 
   graph["6"] = { class_type: "CLIPTextEncode", inputs: { text: request.prompt, clip: clipSource } };
   graph["7"] = { class_type: "CLIPTextEncode", inputs: { text: request.negativePrompt ?? "", clip: clipSource } };
+
+  // ControlNet composes orthogonally with the LoRA chain (model/clip source
+  // above) and img2img (latent source below) — it only affects which
+  // conditioning KSampler's positive/negative actually read.
+  let positiveSource: [string, number] = ["6", 0];
+  let negativeSource: [string, number] = ["7", 0];
+  if (uploadedControlImage && extra?.controlNetModel) {
+    const controlPath = uploadedControlImage.subfolder
+      ? `${uploadedControlImage.subfolder}/${uploadedControlImage.name}`
+      : uploadedControlImage.name;
+    graph["40"] = { class_type: "LoadImage", inputs: { image: controlPath } };
+    graph["41"] = { class_type: "ControlNetLoader", inputs: { control_net_name: extra.controlNetModel } };
+    // start_percent/end_percent are REQUIRED inputs on this node's raw
+    // API-format graph (the ComfyUI UI defaults them; a hand-built graph
+    // must supply them explicitly or /prompt rejects it) — full range.
+    graph["42"] = {
+      class_type: "ControlNetApplyAdvanced",
+      inputs: {
+        positive: positiveSource,
+        negative: negativeSource,
+        control_net: ["41", 0],
+        image: ["40", 0],
+        strength: extra.controlNetStrength ?? 1,
+        start_percent: 0,
+        end_percent: 1,
+      },
+    };
+    positiveSource = ["42", 0];
+    negativeSource = ["42", 1];
+  }
 
   let latentSource: [string, number] = ["5", 0];
   let denoise = 1;
@@ -169,8 +202,8 @@ export function buildWorkflow(
       scheduler: extra?.scheduler ?? "normal",
       denoise,
       model: modelSource,
-      positive: ["6", 0],
-      negative: ["7", 0],
+      positive: positiveSource,
+      negative: negativeSource,
       latent_image: latentSource,
     },
   };
@@ -426,16 +459,21 @@ export function createComfyUiProvider(config: ComfyUiConfig): ImageGenerationPro
 
     async generateImage(request: ImageGenerationRequest): Promise<ImageGenerationResult> {
       const reference = request.referenceImages?.[0];
+      if (request.controlImage && !config.comfyui?.controlNetModel) {
+        throw new ProviderError("ControlNet model not configured — set one in AI Settings → Advanced → ComfyUI settings", 400);
+      }
       request.trace?.("outbound_request_start", {
         provider: "comfyui",
         operation: "generate_image",
         endpointPath: "/prompt",
         model: config.model,
         referenceAttached: Boolean(reference),
+        controlImageAttached: Boolean(request.controlImage),
       });
       const started = Date.now();
       const uploadedImage = reference ? await uploadImage(base, config.apiKey, reference) : undefined;
-      const workflow = buildWorkflow(request, config.model, config.comfyui, uploadedImage);
+      const uploadedControlImage = request.controlImage ? await uploadImage(base, config.apiKey, request.controlImage) : undefined;
+      const workflow = buildWorkflow(request, config.model, config.comfyui, uploadedImage, uploadedControlImage);
       const promptId = await submitPrompt(base, config.apiKey, workflow);
       const imageRef = await pollHistory(
         base,

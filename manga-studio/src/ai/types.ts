@@ -31,6 +31,12 @@ export interface ImageGenerationRequest {
   referenceImages?: { mimeType: string; data: Buffer }[];
   /** The validated storage URLs of those references (custom APIs in URL mode). */
   referenceUrls?: string[];
+  /** A structural/pose control image (ComfyUI ControlNet), purpose-distinct
+   * from `referenceImages` (identity/style/layout) — deliberately its own
+   * field, not folded into that array. The user supplies this already
+   * pre-processed (e.g. an OpenPose skeleton render); no adapter runs any
+   * preprocessing itself. Ignored by every adapter except ComfyUI. */
+  controlImage?: { mimeType: string; data: Buffer };
   /** Server-only observability hook. It is never serialized or exposed to providers. */
   trace?: GenerationTrace;
 }
@@ -88,6 +94,9 @@ export interface ProviderCapabilities {
   imageVariation: boolean;
   transparentOutput: boolean;
   asyncGeneration: boolean;
+  /** A second, purpose-distinct structural/pose control image (ComfyUI
+   * ControlNet) — optional so every other adapter is unaffected. */
+  supportsControlImage?: boolean;
 }
 
 export interface ProviderStatus {

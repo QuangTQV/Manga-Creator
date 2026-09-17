@@ -39,6 +39,9 @@ export interface GenerateImageRequest {
   prompt: string;
   negativePrompt?: string;
   referenceUrls?: string[];
+  /** A structural/pose control image (ComfyUI ControlNet) — purpose-distinct
+   * from referenceUrls. */
+  controlImageUrl?: string;
   size?: "portrait" | "landscape" | "square";
   expectMonochrome?: boolean;
   /** Screentone semantics, when assetType is "tone". */
@@ -60,6 +63,8 @@ export interface ProviderCapabilities {
   referenceImage?: boolean;
   supportsTransparentBackground?: boolean;
   supportsReferenceImage?: boolean;
+  /** A second, purpose-distinct structural/pose control image (ComfyUI ControlNet). */
+  supportsControlImage?: boolean;
 }
 
 export interface ProviderStatusSnapshot {

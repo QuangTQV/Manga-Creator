@@ -112,6 +112,25 @@ describe("buildProviderConfig", () => {
     expect(read?.providerType).toBe("comfyui");
   });
 
+  it("comfyui: a config with ONLY a controlNetModel set (no steps/cfg/loras) is not dropped as 'empty'", () => {
+    // Regression test: normalizeComfyUiConfig's emptiness check has to know
+    // about every scalar field or it silently collapses a real config to
+    // undefined — this already happened once for the original 4 fields
+    // before controlNetModel/controlNetStrength existed; guard the new ones.
+    process.env.ALLOW_PRIVATE_NETWORKS = "1";
+    const config = buildProviderConfig(
+      {
+        kind: "image",
+        providerType: "comfyui",
+        apiKey: undefined,
+        model: "sd_xl_base_1.0.safetensors",
+        comfyui: { controlNetModel: "control_v11p_sd15_openpose.pth" },
+      },
+      null,
+    );
+    expect(config.comfyui).toEqual({ controlNetModel: "control_v11p_sd15_openpose.pth" });
+  });
+
   it("SSRF-guards user endpoints", () => {
     delete process.env.ALLOW_PRIVATE_NETWORKS;
     expect(() => buildProviderConfig({ ...payload, baseUrl: "https://169.254.169.254" }, null)).toThrow(

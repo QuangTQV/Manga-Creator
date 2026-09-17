@@ -285,7 +285,13 @@ function buildFallbackProviderConfig(kind: ProviderKind, payload: FallbackProvid
 function normalizeComfyUiConfig(raw: ComfyUiExtraConfig | undefined): ComfyUiExtraConfig | undefined {
   if (!raw) return undefined;
   const loras = raw.loras?.filter((l) => l.name.trim()) ?? [];
-  const hasScalar = raw.steps !== undefined || raw.cfg !== undefined || raw.samplerName !== undefined || raw.scheduler !== undefined;
+  const hasScalar =
+    raw.steps !== undefined ||
+    raw.cfg !== undefined ||
+    raw.samplerName !== undefined ||
+    raw.scheduler !== undefined ||
+    raw.controlNetModel !== undefined ||
+    raw.controlNetStrength !== undefined;
   if (!hasScalar && loras.length === 0) return undefined;
   return { ...raw, loras: loras.length > 0 ? loras : undefined };
 }

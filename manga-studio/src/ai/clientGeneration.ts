@@ -92,6 +92,7 @@ export async function callGenerateApi(request: {
   prompt: string;
   negativePrompt?: string;
   referenceUrls?: string[];
+  controlImageUrl?: string;
   size?: "portrait" | "landscape" | "square";
   /** Project style is monochrome: the server refuses colour-contaminated results. */
   expectMonochrome?: boolean;

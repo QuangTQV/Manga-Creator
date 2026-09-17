@@ -24,6 +24,12 @@ export const comfyUiConfigSchema = z.object({
   samplerName: z.string().min(1).max(60).optional(),
   scheduler: z.string().min(1).max(60).optional(),
   loras: z.array(comfyUiLoraSchema).max(MAX_COMFYUI_LORAS).optional(),
+  /** One configured ControlNet model, reused for every generation that
+   * happens to include a control image — not a per-generation picker.
+   * Switching ControlNet type (pose/edge/depth) means changing this field,
+   * a deliberate scope cut for the first pass of ControlNet support. */
+  controlNetModel: z.string().min(1).max(200).optional(),
+  controlNetStrength: z.number().min(0).max(2).optional(),
 });
 
 export type ComfyUiLoraEntry = z.infer<typeof comfyUiLoraSchema>;

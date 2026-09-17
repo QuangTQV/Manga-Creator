@@ -261,6 +261,11 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
   const [comfyUiCfg, setComfyUiCfg] = useState("");
   const [comfyUiSampler, setComfyUiSampler] = useState("");
   const [comfyUiScheduler, setComfyUiScheduler] = useState("");
+  // One configured ControlNet model reused for every generation that
+  // happens to include a control image — not a per-generation picker.
+  const [comfyUiControlNetModel, setComfyUiControlNetModel] = useState("");
+  const [comfyUiControlNetStrength, setComfyUiControlNetStrength] = useState("");
+  const [controlNetModelOptions, setControlNetModelOptions] = useState<string[]>([]);
   const [loraRows, setLoraRows] = useState<LoraRow[]>([]);
   const [loraOptions, setLoraOptions] = useState<string[]>([]);
   const [busy, setBusy] = useState<"save" | "test" | "forget" | "models" | "loras" | null>(null);
@@ -290,6 +295,8 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
         setComfyUiCfg(summary.comfyui.cfg !== undefined ? String(summary.comfyui.cfg) : "");
         setComfyUiSampler(summary.comfyui.samplerName ?? "");
         setComfyUiScheduler(summary.comfyui.scheduler ?? "");
+        setComfyUiControlNetModel(summary.comfyui.controlNetModel ?? "");
+        setComfyUiControlNetStrength(summary.comfyui.controlNetStrength !== undefined ? String(summary.comfyui.controlNetStrength) : "");
         setLoraRows(
           (summary.comfyui.loras ?? []).map((l) => ({
             name: l.name,
@@ -367,6 +374,8 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
                     cfg: comfyUiCfg.trim() ? Number(comfyUiCfg) : undefined,
                     samplerName: comfyUiSampler.trim() || undefined,
                     scheduler: comfyUiScheduler.trim() || undefined,
+                    controlNetModel: comfyUiControlNetModel.trim() || undefined,
+                    controlNetStrength: comfyUiControlNetStrength.trim() ? Number(comfyUiControlNetStrength) : undefined,
                     loras: loraRows
                       .filter((r) => r.name.trim())
                       .map((r) => ({ name: r.name.trim(), strength: r.strength.trim() ? Number(r.strength) : undefined })),
@@ -459,7 +468,7 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
       });
       const body = await response.json();
       const options: string[] = Array.isArray(body.options) ? body.options : [];
-      setLoraOptions(options);
+      (nodeClass === "LoraLoader" ? setLoraOptions : setControlNetModelOptions)(options);
       if (!options.length) setMessage({ ok: false, text: "ComfyUI didn't return a list — enter the filename manually." });
       return options;
     } finally {
@@ -684,7 +693,12 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
       </details>
 
       {providerType === "comfyui" && (
-        <details className="mt-2" open={Boolean(comfyUiSteps || comfyUiCfg || comfyUiSampler || comfyUiScheduler || loraRows.length)}>
+        <details
+          className="mt-2"
+          open={Boolean(
+            comfyUiSteps || comfyUiCfg || comfyUiSampler || comfyUiScheduler || comfyUiControlNetModel || loraRows.length,
+          )}
+        >
           <summary className="cursor-pointer select-none text-[10px] uppercase tracking-wider text-zinc-500">
             Advanced — ComfyUI settings
           </summary>
@@ -732,6 +746,58 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
           <p className="mt-1 text-[10px] leading-4 text-zinc-600">
             Leave blank to use the built-in defaults (steps 20, cfg 7, euler/normal).
           </p>
+
+          <div className="mt-3 border-t border-zinc-800 pt-3">
+            <div className="mb-1 flex items-center justify-between">
+              <span className="block text-[10px] uppercase tracking-wider text-zinc-500">
+                ControlNet (structural/pose control image — you supply an already pre-processed image; no auto-preprocessing)
+              </span>
+              {configured && (
+                <button
+                  type="button"
+                  className="shrink-0 rounded border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-[10px] hover:bg-zinc-700"
+                  onClick={() => fetchComfyUiOptions("ControlNetLoader", "control_net_name")}
+                  disabled={busy !== null}
+                  title="Fetch the list of ControlNet models ComfyUI can see (optional)"
+                >
+                  {busy === "loras" ? "…" : "Fetch ControlNet models"}
+                </button>
+              )}
+            </div>
+            {controlNetModelOptions.length > 0 && (
+              <datalist id="comfyui-controlnet-options">
+                {controlNetModelOptions.map((o) => (
+                  <option key={o} value={o} />
+                ))}
+              </datalist>
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="ControlNet model">
+                <input
+                  className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1.5 font-mono text-xs"
+                  value={comfyUiControlNetModel}
+                  onChange={(e) => setComfyUiControlNetModel(e.target.value)}
+                  placeholder="control_v11p_sd15_openpose.pth"
+                  list={controlNetModelOptions.length > 0 ? "comfyui-controlnet-options" : undefined}
+                />
+              </Field>
+              <Field label="Strength">
+                <input
+                  type="number"
+                  min={0}
+                  max={2}
+                  step={0.05}
+                  className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1.5 font-mono text-xs"
+                  value={comfyUiControlNetStrength}
+                  onChange={(e) => setComfyUiControlNetStrength(e.target.value)}
+                  placeholder="1"
+                />
+              </Field>
+            </div>
+            <p className="mt-1 text-[10px] leading-4 text-zinc-600">
+              Only applies when a generation actually attaches a control image. Leave the model blank to disable ControlNet.
+            </p>
+          </div>
 
           <div className="mt-3 border-t border-zinc-800 pt-3">
             <div className="mb-1 flex items-center justify-between">

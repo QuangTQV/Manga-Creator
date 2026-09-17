@@ -22,6 +22,9 @@ export const generateRequestSchema = z.object({
   prompt: z.string().min(3).max(4000),
   negativePrompt: z.string().max(1000).optional(),
   referenceUrls: z.array(z.string().max(2048)).max(3).optional(),
+  /** A structural/pose control image (ComfyUI ControlNet) — purpose-distinct
+   * from referenceUrls, so its own field rather than folded into that array. */
+  controlImageUrl: z.string().max(2048).optional(),
   size: z.enum(["portrait", "landscape", "square"]).optional(),
   /** Monochrome project style: refuse colour-contaminated character results. */
   expectMonochrome: z.boolean().optional(),
@@ -87,6 +90,21 @@ export async function generateAssetImage(
   const referenceImages = wantsReferences ? await loadReferences(input.referenceUrls ?? []) : [];
   trace?.("reference_processing_complete", { loaded: referenceImages.length });
 
+  if (input.controlImageUrl && !provider.capabilities.supportsControlImage) {
+    throw new ProviderError("Selected model does not support a ControlNet control image", 400, {
+      stage: "capability_validation",
+      provider: provider.id,
+      model: provider.model,
+    });
+  }
+  // A control image is purpose-distinct from referenceImages (structural/pose
+  // guidance, not identity) — reuses the same bounded/allowlisted per-URL
+  // loader, just for a single URL, not a second fetch implementation.
+  const controlImage =
+    provider.capabilities.supportsControlImage && input.controlImageUrl
+      ? (await loadReferences([input.controlImageUrl]))[0]
+      : undefined;
+
   const size = SIZE_MAP[input.size ?? "portrait"];
   const category = categoryFor(input.assetType);
   /**
@@ -117,6 +135,7 @@ export async function generateAssetImage(
     transparentBackground,
     referenceImages,
     referenceUrls: validatedUrls,
+    controlImage,
     trace,
   });
 

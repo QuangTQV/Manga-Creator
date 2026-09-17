@@ -124,6 +124,71 @@ describe("buildWorkflow", () => {
     >;
     expect(graph["30"].inputs.image).toBe("kumanga/ref.png");
   });
+
+  it("wires ControlNetApplyAdvanced between the text-encode nodes and KSampler when a control image + model are configured", () => {
+    const controlImage = { name: "pose.png", subfolder: "", type: "input" };
+    const graph = buildWorkflow(REQUEST, "m.safetensors", { controlNetModel: "control_v11p_sd15_openpose.pth", controlNetStrength: 0.8 }, undefined, controlImage) as Record<
+      string,
+      { class_type: string; inputs: Record<string, unknown> }
+    >;
+    expect(graph["40"]).toMatchObject({ class_type: "LoadImage", inputs: { image: "pose.png" } });
+    expect(graph["41"]).toMatchObject({ class_type: "ControlNetLoader", inputs: { control_net_name: "control_v11p_sd15_openpose.pth" } });
+    expect(graph["42"]).toMatchObject({
+      class_type: "ControlNetApplyAdvanced",
+      inputs: {
+        positive: ["6", 0],
+        negative: ["7", 0],
+        control_net: ["41", 0],
+        image: ["40", 0],
+        strength: 0.8,
+        start_percent: 0,
+        end_percent: 1,
+      },
+    });
+    expect(graph["3"].inputs.positive).toEqual(["42", 0]);
+    expect(graph["3"].inputs.negative).toEqual(["42", 1]);
+  });
+
+  it("defaults ControlNet strength to 1 when unset", () => {
+    const graph = buildWorkflow(REQUEST, "m.safetensors", { controlNetModel: "control.pth" }, undefined, { name: "pose.png" }) as Record<
+      string,
+      { inputs: Record<string, unknown> }
+    >;
+    expect(graph["42"].inputs.strength).toBe(1);
+  });
+
+  it("ignores an uploaded control image if no controlNetModel is configured — no ControlNet nodes added", () => {
+    const graph = buildWorkflow(REQUEST, "m.safetensors", undefined, undefined, { name: "pose.png" }) as Record<string, unknown>;
+    expect(graph["40"]).toBeUndefined();
+    expect(graph["41"]).toBeUndefined();
+    expect(graph["42"]).toBeUndefined();
+  });
+
+  it("composes LoRA + img2img + ControlNet simultaneously without collision — each affects only its own KSampler input", () => {
+    const graph = buildWorkflow(
+      REQUEST,
+      "m.safetensors",
+      { loras: [{ name: "detail.safetensors", strength: 0.7 }], controlNetModel: "control.pth" },
+      { name: "identity-ref.png" }, // img2img reference
+      { name: "pose.png" }, // ControlNet control image
+    ) as Record<string, { class_type: string; inputs: Record<string, unknown> }>;
+
+    // LoRA affects model/clip source only.
+    expect(graph["3"].inputs.model).toEqual(["20", 0]);
+    expect(graph["6"].inputs.clip).toEqual(["20", 1]);
+    // img2img affects latent source only.
+    expect(graph["30"]).toMatchObject({ class_type: "LoadImage", inputs: { image: "identity-ref.png" } });
+    expect(graph["3"].inputs.latent_image).toEqual(["31", 0]);
+    expect(graph["3"].inputs.denoise).toBe(0.6);
+    // ControlNet affects positive/negative conditioning source only.
+    expect(graph["40"]).toMatchObject({ class_type: "LoadImage", inputs: { image: "pose.png" } });
+    expect(graph["3"].inputs.positive).toEqual(["42", 0]);
+    expect(graph["3"].inputs.negative).toEqual(["42", 1]);
+    // ControlNetApplyAdvanced itself reads from the ORIGINAL text-encode
+    // nodes (not affected by the LoRA chain — clip is, conditioning isn't).
+    expect(graph["42"].inputs.positive).toEqual(["6", 0]);
+    expect(graph["42"].inputs.negative).toEqual(["7", 0]);
+  });
 });
 
 describe("buildEditWorkflow", () => {
@@ -398,6 +463,44 @@ describe("createComfyUiProvider", () => {
     expect(submittedWorkflow["30"]).toMatchObject({ class_type: "LoadImage", inputs: { image: sourceName } });
     expect(submittedWorkflow["33"]).toMatchObject({ class_type: "LoadImageMask", inputs: { image: maskName, channel: "red" } });
     expect(submittedWorkflow["3"].inputs.denoise).toBe(1);
+  });
+
+  it("generateImage uploads the control image and submits a ControlNet-wired workflow using its own server name", async () => {
+    const controlName = "server-control.png";
+    const calls = stubFetch((url) => {
+      if (url.includes("/upload/image")) return new Response(JSON.stringify({ name: controlName, subfolder: "", type: "input" }), { status: 200 });
+      if (url.includes("/prompt")) return new Response(JSON.stringify({ prompt_id: PROMPT_ID }), { status: 200 });
+      if (url.includes("/history/")) {
+        return new Response(
+          JSON.stringify({
+            [PROMPT_ID]: { status: { completed: true }, outputs: { "9": { images: [{ filename: "out.png", type: "output" }] } } },
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("/view")) return new Response(PNG_BYTES, { status: 200 });
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const provider = createComfyUiProvider({
+      baseUrl: "https://comfy.example.com",
+      model: "m.safetensors",
+      comfyui: { controlNetModel: "control_v11p_sd15_openpose.pth" },
+      ...FAST_POLL,
+    });
+    await provider.generateImage({ ...REQUEST, controlImage: { mimeType: "image/png", data: Buffer.from([9, 9, 9]) } });
+
+    const promptCall = calls.find((c) => c.url.includes("/prompt"));
+    const submittedWorkflow = JSON.parse(String(promptCall!.init!.body)).prompt as Record<string, { inputs: Record<string, unknown> }>;
+    expect(submittedWorkflow["40"].inputs.image).toBe(controlName);
+    expect(submittedWorkflow["3"].inputs.positive).toEqual(["42", 0]);
+  });
+
+  it("throws a clear ProviderError when a control image is supplied but no ControlNet model is configured", async () => {
+    const provider = createComfyUiProvider({ baseUrl: "https://comfy.example.com", model: "m.safetensors", ...FAST_POLL });
+    await expect(
+      provider.generateImage({ ...REQUEST, controlImage: { mimeType: "image/png", data: Buffer.from([9, 9, 9]) } }),
+    ).rejects.toThrow(/ControlNet model not configured/);
   });
 });
 

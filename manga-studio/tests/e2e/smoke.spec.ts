@@ -1406,3 +1406,72 @@ test("AI Settings: Fetch LoRAs populates the LoRA filename dropdown", async ({ p
   const nameInput = imageCard.getByRole("combobox", { name: "LoRA 1 filename" });
   await expect(nameInput).toHaveAttribute("list", "comfyui-lora-options");
 });
+
+test("AI Settings: ControlNet model/strength save wholesale and Fetch ControlNet models populates its own dropdown", async ({ page }) => {
+  let savedComfyUi: Record<string, unknown> | undefined;
+
+  await page.route("**/api/provider/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        configured: true,
+        agent: { configured: false },
+        image: {
+          configured: true,
+          source: "session",
+          providerType: "comfyui",
+          baseUrl: "http://127.0.0.1:8188",
+          model: "sd_xl_base_1.0.safetensors",
+          comfyui: savedComfyUi,
+        },
+        background: { configured: false },
+      }),
+    });
+  });
+
+  await page.route("**/api/provider/config", async (route) => {
+    const body = route.request().postDataJSON() as { comfyui?: Record<string, unknown> };
+    savedComfyUi = body.comfyui;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ configured: true, source: "session" }) });
+  });
+
+  await page.route("**/api/provider/comfyui-object-info", async (route) => {
+    const body = route.request().postDataJSON() as { nodeClass: string };
+    expect(body.nodeClass).toBe("ControlNetLoader");
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ options: ["control_v11p_sd15_openpose.pth", "control_v11p_sd15_canny.pth"] }),
+    });
+  });
+
+  await page.getByRole("button", { name: "AI Settings" }).click();
+  const imageCard = page.locator("section").filter({ has: page.getByRole("heading", { name: "Image Generation" }) });
+
+  await imageCard.getByText("Advanced — ComfyUI settings").click();
+  await imageCard.getByRole("button", { name: "Fetch ControlNet models" }).click();
+
+  const options = await imageCard
+    .locator("#comfyui-controlnet-options option")
+    .evaluateAll((els) => els.map((el) => el.getAttribute("value")));
+  expect(options).toEqual(["control_v11p_sd15_openpose.pth", "control_v11p_sd15_canny.pth"]);
+
+  // Same Chromium `list`-attribute-flips-role-to-combobox quirk as the LoRA field.
+  const modelInput = imageCard.getByRole("combobox", { name: "ControlNet model" });
+  await modelInput.fill("control_v11p_sd15_openpose.pth");
+  await imageCard.getByRole("spinbutton", { name: "Strength" }).fill("0.75");
+
+  await imageCard.getByRole("button", { name: "Save" }).click();
+  await expect(imageCard.getByText("Saved. Credentials are stored securely for this browser session.")).toBeVisible();
+  expect(savedComfyUi).toMatchObject({ controlNetModel: "control_v11p_sd15_openpose.pth", controlNetStrength: 0.75 });
+
+  // Reopening is a fresh mount — the fetched dropdown options are local
+  // component state, not persisted, so this input is back to plain
+  // "textbox" (no `list` attribute) until "Fetch ControlNet models" is
+  // clicked again; the saved VALUE still hydrates correctly either way.
+  await page.getByRole("button", { name: "Close settings" }).click();
+  await page.getByRole("button", { name: "AI Settings" }).click();
+  await expect(imageCard.getByRole("textbox", { name: "ControlNet model" })).toHaveValue("control_v11p_sd15_openpose.pth");
+  await expect(imageCard.getByRole("spinbutton", { name: "Strength" })).toHaveValue("0.75");
+});

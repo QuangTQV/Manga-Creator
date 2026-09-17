@@ -36,7 +36,7 @@ import { CATEGORY_LABELS, LANGUAGE_CATEGORIES } from "@/language/library";
 
 interface ProviderInfo {
   configured: boolean;
-  capabilities?: { referenceImage?: boolean; supportsTransparentBackground?: boolean };
+  capabilities?: { referenceImage?: boolean; supportsTransparentBackground?: boolean; supportsControlImage?: boolean };
   storage?: { configured?: boolean; backend?: string };
 }
 
@@ -103,6 +103,10 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
    */
   const [sceneReferenceId, setSceneReferenceId] = useState<string>("");
   const [referenceUse, setReferenceUse] = useState<"layout" | "style" | "loose">("style");
+  /** A structural/pose control image (ComfyUI ControlNet) — purpose-distinct
+   * from the identity/scene reference above; the user supplies it already
+   * pre-processed (e.g. an OpenPose skeleton render). */
+  const [controlImageId, setControlImageId] = useState<string>("");
 
   useEffect(() => {
     fetchProviderStatus()
@@ -240,6 +244,8 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
         return;
       }
 
+      const controlImageAsset =
+        provider?.capabilities?.supportsControlImage && controlImageId ? doc?.assets[controlImageId] : undefined;
       const requestPayload = {
         assetType: request.assetType,
         prompt,
@@ -247,6 +253,7 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
         size: defaultAspect(request.assetType),
         expectMonochrome: isMonochromeStyle(style?.profile),
         referenceUrls: referenceAssets.length > 0 ? referenceAssets.map((asset) => assetRenderUrl(asset)!).filter(Boolean) : undefined,
+        controlImageUrl: controlImageAsset ? (assetRenderUrl(controlImageAsset) ?? undefined) : undefined,
       };
       const outcomes = await Promise.allSettled(
         Array.from({ length: effectiveCandidateCount }, () => generateImage(requestPayload)),
@@ -442,6 +449,17 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
               }
               supported={Boolean(provider?.capabilities?.referenceImage)}
             />}
+
+            {provider?.capabilities?.supportsControlImage && !isToneType && !isLanguageType && (
+              <ReferencePicker
+                value={controlImageId}
+                onChange={setControlImageId}
+                category={request.assetType === "background" ? "background" : isCharacterType ? "character" : "prop"}
+                supported
+                label="Control image (pose/edge — ComfyUI ControlNet)"
+                showUseSelector={false}
+              />
+            )}
 
             {isLanguageType && (
               <div className="mb-3">
@@ -803,13 +821,24 @@ function ReferencePicker({
   onUseChange,
   category,
   supported,
+  label = "Reference image",
+  unsupportedMessage = "The connected image model does not accept reference images, so this generation uses the description only.",
+  // The layout/style/loose wording describes how OTHER providers weight a
+  // reference image for identity/style — meaningless for a ComfyUI
+  // ControlNet structural input, which has its own separate strength
+  // setting in AI Settings instead. Defaults to true (every existing
+  // call site keeps showing it).
+  showUseSelector = true,
 }: {
   value: string;
   onChange: (assetId: string) => void;
-  use: "layout" | "style" | "loose";
-  onUseChange: (use: "layout" | "style" | "loose") => void;
+  use?: "layout" | "style" | "loose";
+  onUseChange?: (use: "layout" | "style" | "loose") => void;
   category: AssetCategory;
   supported: boolean;
+  label?: string;
+  unsupportedMessage?: string;
+  showUseSelector?: boolean;
 }) {
   const doc = useEditorStore((s) => s.doc);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -824,7 +853,7 @@ function ReferencePicker({
   if (!supported) {
     return (
       <p className="mb-3 rounded-md bg-[var(--bg-elevated)] p-2 text-[11px] leading-4 text-zinc-500">
-        The connected image model does not accept reference images, so this generation uses the description only.
+        {unsupportedMessage}
       </p>
     );
   }
@@ -832,11 +861,11 @@ function ReferencePicker({
   return (
     <div className="mb-3">
       <label className="mb-1 block text-xs text-zinc-400">
-        Reference image <span className="text-zinc-600">(optional)</span>
+        {label} <span className="text-zinc-600">(optional)</span>
       </label>
       <div className="flex gap-2">
         <select
-          aria-label="Reference image"
+          aria-label={label}
           className="min-w-0 flex-1 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1.5 text-sm"
           value={value}
           onChange={(event) => onChange(event.target.value)}
@@ -888,16 +917,18 @@ function ReferencePicker({
             alt={selected.name}
             className="h-12 w-12 rounded border border-zinc-700 object-cover"
           />
-          <select
-            aria-label="Use reference for"
-            className="min-w-0 flex-1 rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-[11px]"
-            value={use}
-            onChange={(event) => onUseChange(event.target.value as "layout" | "style" | "loose")}
-          >
-            {category === "background" && <option value="layout">Match the layout and architecture</option>}
-            <option value="style">Match the art style</option>
-            <option value="loose">Loose inspiration</option>
-          </select>
+          {showUseSelector && (
+            <select
+              aria-label="Use reference for"
+              className="min-w-0 flex-1 rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-[11px]"
+              value={use}
+              onChange={(event) => onUseChange?.(event.target.value as "layout" | "style" | "loose")}
+            >
+              {category === "background" && <option value="layout">Match the layout and architecture</option>}
+              <option value="style">Match the art style</option>
+              <option value="loose">Loose inspiration</option>
+            </select>
+          )}
         </div>
       )}
       {error && <p className="mt-1 text-[11px] text-red-400">{error}</p>}

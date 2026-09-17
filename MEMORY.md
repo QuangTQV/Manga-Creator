@@ -33,6 +33,72 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-17 — ComfyUI adapter v3 PR3: ControlNet (final PR of the
+  three-PR v3 plan; backlog #47 fully done now).** Per the approved plan
+  (`/Users/quang/.claude/plans/luminous-sparking-wombat.md`), user-supplied
+  pre-processed control image only — no auto pose/edge extraction, since
+  ComfyUI's preprocessor nodes (`controlnet_aux`) aren't part of a vanilla
+  install and depending on them would risk "unknown node type" for anyone
+  who hasn't added that extra pack.
+  `ProviderCapabilities.supportsControlImage?: boolean` (`ai/types.ts`,
+  optional so every other adapter is unaffected) and
+  `ImageGenerationRequest.controlImage?: {mimeType, data}` — its own field,
+  not folded into `referenceImages`, since that array's single ComfyUI
+  slot (`maxImages: 1`) is already spent on v2's img2img feature and the
+  two purposes (identity/style reference vs. structural control) are
+  genuinely different. `ai/generate.ts` gained a matching
+  `controlImageUrl` schema field + capability gate, and reused
+  `loadReferences([url])` for the single-URL fetch rather than writing a
+  second bounded-fetch implementation.
+  `GeneratorDialog.tsx`'s `ReferencePicker` gained `label`/
+  `unsupportedMessage`/`showUseSelector` props so the control-image picker
+  could reuse the exact same component (upload-or-pick-from-library)
+  instead of a parallel widget — `showUseSelector={false}` hides the
+  reference-weighting dropdown ("match layout/style/loose inspiration"),
+  which describes identity-reference semantics with no meaning for a
+  ControlNet structural input.
+  `comfyui.ts`'s `buildWorkflow` gained nodes `40`-`42`
+  (`LoadImage`/`ControlNetLoader`/`ControlNetApplyAdvanced`, per the
+  design the Plan-agent review already validated during PR2's planning —
+  both required `start_percent`/`end_percent` inputs supplied explicitly,
+  both conditioning outputs wired to KSampler), composing orthogonally
+  with the LoRA chain (model/clip source) and img2img (latent source) —
+  confirmed with a dedicated 3-way-composition test, not just an
+  architectural claim. `generateImage` throws a clear `ProviderError` if a
+  control image arrives with no `controlNetModel` configured, rather than
+  silently dropping it.
+  `AiSettingsDialog.tsx` reuses PR1's `fetchComfyUiOptions`/
+  `comfyui-object-info` mechanism for a "Fetch ControlNet models" button
+  — proof that PR1's generic route design (parameterized by node
+  class/input name) was genuinely reusable, not just built for LoRA.
+  **Another small real bug caught while extending the config, same
+  category as PR1's `hasCredential` gap**: `normalizeComfyUiConfig`
+  (`providerSession.ts`) collapses an all-unset `comfyui` object to
+  `undefined` to avoid writing cookie noise for users who never open the
+  Advanced section — its emptiness check is a hand-enumerated list of
+  field names, and had NOT been extended for the two new fields
+  (`controlNetModel`/`controlNetStrength`). A config with only a
+  ControlNet model set (no steps/cfg/LoRAs) would have been silently
+  dropped on every save. Fixed, with a regression test pinning the exact
+  failure case. **Pattern worth remembering**: any "is this object
+  effectively empty" check built as an enumerated field list needs to be
+  revisited every time a sibling field is added to that same config
+  shape — two bugs in three PRs came from exactly this shape of check
+  (`hasCredential`'s OR-chain in PR1, `normalizeComfyUiConfig`'s
+  AND-of-undefined-checks here) silently going stale.
+  Verified: `npm test` → 1492/1492; typecheck/lint/build clean; full
+  Playwright suite (36 tests) all passing, including a save/hydrate
+  round-trip test for the two new fields and a "Fetch ControlNet models"
+  dropdown test reusing PR1's own e2e pattern.
+  **Overall v3 status: DONE** — all three planned PRs (dropdown discovery,
+  masked inpainting, ControlNet) shipped, tested, and pushed. No live
+  ComfyUI instance was available anywhere in this three-PR arc to verify
+  the real `/object_info`, `LoadImageMask`, or `ControlNetApplyAdvanced`
+  behavior empirically — every unverified specific was flagged explicitly
+  in code comments and both architecture docs rather than assumed silently
+  correct; first real use against a live instance should be treated as
+  the actual acceptance test for this whole feature arc.
+
 - **2026-09-16 — ComfyUI adapter v3 PR2: real, provider-side masked
   inpainting.** Second of the three planned v3 PRs (see PR1's entry below
   for the full plan/context — same session, same backlog request).
@@ -1726,6 +1792,17 @@ worth porting)**
     is a full workflow graph). Deliberate scope cut: a ComfyUI provider
     configured as a *fallback* does not get `comfyui` extras, only v1
     defaults (not fixed, not silent — commented in `providerSession.ts`).
+48. ~~ComfyUI adapter v3: LoRA/ControlNet-model dropdown discovery, real
+    provider-side masked inpainting, and ControlNet~~ — **done
+    2026-09-17**, see Timeline (three separate PR entries: dropdown
+    discovery, masked inpainting, ControlNet). User explicitly asked for
+    all three after a status check surfaced them as missing (one
+    incorrectly — the mask-paint UI already existed, corrected before any
+    code was written). Went through `EnterPlanMode` + a Plan-agent design
+    review that caught two real bugs before writing any code (see the
+    plan file and the PR2/PR3 Timeline entries). No live ComfyUI instance
+    was available anywhere in this arc — first real use against one
+    should be treated as this feature's actual acceptance test.
 
 **Not in the backlog — deliberate, don't re-add without the user explicitly overriding**
 - PDF export as the WHOLE-BOOK interchange format — CBZ remains that
