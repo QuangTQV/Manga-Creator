@@ -156,7 +156,11 @@ Bấm **Test Connection** trước khi Save.
    # !wget -q -O ComfyUI/models/checkpoints/Illustrious-XL-v2.0.safetensors \
    #   "https://huggingface.co/OnomaAIResearch/Illustrious-XL-v2.0/resolve/main/Illustrious-XL-v2.0.safetensors"
    ```
-   Nhớ đổi **Model** trong AI Settings khớp đúng tên file bạn vừa tải (ví dụ `sd_xl_base_1.0.safetensors`).
+   Kiểm tra lại đúng tên file (và kích thước — phòng trường hợp tải lỗi/thiếu) bằng 1 cell riêng:
+   ```python
+   !ls -la ComfyUI/models/checkpoints/
+   ```
+   Nhớ đổi **Model** trong AI Settings khớp đúng tên file hiện ra ở đó (ví dụ `sd_xl_base_1.0.safetensors`).
 
    Muốn dùng IPAdapter (giữ đặc điểm nhân vật khi sửa ảnh cục bộ) trên server Kaggle này thì cài thêm, cùng cell hoặc cell riêng:
    ```python
@@ -408,7 +412,11 @@ Click **Test Connection** before Save.
    # !wget -q -O ComfyUI/models/checkpoints/Illustrious-XL-v2.0.safetensors \
    #   "https://huggingface.co/OnomaAIResearch/Illustrious-XL-v2.0/resolve/main/Illustrious-XL-v2.0.safetensors"
    ```
-   Make sure **Model** in AI Settings matches whatever filename you actually downloaded (e.g. `sd_xl_base_1.0.safetensors`).
+   Check the exact filename (and size — in case the download was incomplete) in its own cell:
+   ```python
+   !ls -la ComfyUI/models/checkpoints/
+   ```
+   Make sure **Model** in AI Settings matches whatever filename shows up there (e.g. `sd_xl_base_1.0.safetensors`).
 
    Want IPAdapter (identity-preserving local edits) on this Kaggle server too? Add, in the same cell or a separate one:
    ```python
