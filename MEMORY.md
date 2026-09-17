@@ -33,6 +33,34 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-17 — Per-LoRA scope ("all" / "isolated" / "scene").** After the
+  white-background LoRA (weight 0.3, alongside the line-art LoRA at 0.5)
+  finally produced a clean, genuinely white-background test generation —
+  confirmed via the "Test generation" button, the first fully clean result
+  of the whole debugging session — the user asked a good architectural
+  question: can a LoRA apply conditionally, since a backdrop-biasing LoRA
+  that helps character generation would actively fight a `background`-type
+  generation (which wants a full scene, the opposite bias). Until now
+  every configured LoRA applied unconditionally to every generation
+  (`addLoraChain` in `comfyui.ts`, shared by `buildWorkflow`/
+  `buildEditWorkflow`). Added `ComfyUiLoraEntry.scope?: "all" | "isolated" |
+  "scene"` (`server/comfyui/config.ts`; omitted = "all", so every existing
+  saved config is unaffected). `addLoraChain` now takes the CURRENT
+  request's scope and filters entries before chaining — `buildWorkflow`
+  derives it from `request.assetType` (`"background"` → `"scene"`, else
+  `"isolated"`; required widening `buildWorkflow`'s `request` Pick type to
+  include `assetType`, which `ImageGenerationRequest` already carried but
+  the Pick had never needed before). `buildEditWorkflow` is hardcoded
+  `"isolated"` — a local edit always targets an existing cutout asset,
+  never a background. `AiSettingsDialog.tsx`'s LoRA row editor gained a
+  third `<select>` per row ("All generations" / "Character/prop cutouts
+  only" / "Backgrounds only"). Regression tests in both `comfyui.test.ts`
+  (graph-level: an isolated-scoped LoRA is skipped on a background request
+  and vice versa, an unscoped one applies to both) and a new e2e test
+  (save/hydrate round-trip for the scope field). `HOW_TO_RUN.md` updated to
+  recommend scoping the white-background LoRA to "Character/prop cutouts
+  only" so it no longer needs manual toggling when switching between
+  generating a character and a background.
 - **2026-09-17 — Traced a "still draws a street scene" failure past the
   prompt-building layer into the Creative Director's own output.** After
   the `stateRuntime.ts` fix (previous entry) was confirmed live via Live

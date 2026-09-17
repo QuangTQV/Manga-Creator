@@ -16,6 +16,12 @@ const comfyUiLoraSchema = z.object({
   // independent strengths are intentionally collapsed into one field,
   // matching how most simple LoRA UIs present a single slider.
   strength: z.number().min(0).max(2).optional(),
+  /** Which generations this LoRA chains into. A LoRA that biases toward a
+   * plain white backdrop (good for an isolated character/prop cutout) is
+   * actively counterproductive on a "background" scene generation, which
+   * wants a full, detailed environment — the opposite backdrop. Omitted
+   * (or "all") keeps the previous unconditional behavior. */
+  scope: z.enum(["all", "isolated", "scene"]).optional(),
 });
 
 /** The exact, current preset strings `IPAdapterUnifiedLoader` accepts —

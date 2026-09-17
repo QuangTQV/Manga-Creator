@@ -53,7 +53,7 @@ describe("buildWorkflow", () => {
   });
 
   it("defaults negativePrompt to empty string and size to 1024 when omitted", () => {
-    const graph = buildWorkflow({ prompt: "x" }, "model.safetensors") as Record<
+    const graph = buildWorkflow({ prompt: "x", assetType: "character" }, "model.safetensors") as Record<
       string,
       { inputs: Record<string, unknown> }
     >;
@@ -99,6 +99,41 @@ describe("buildWorkflow", () => {
     expect(graph["23"].inputs.model).toEqual(["22", 0]);
     expect(graph["3"].inputs.model).toEqual(["23", 0]); // KSampler reads the LAST chain link
     expect(graph["20"].inputs.strength_model).toBe(1); // default strength when unset
+  });
+
+  it("skips an 'isolated'-scoped LoRA on a background generation", () => {
+    const loras = [
+      { name: "white_bg.safetensors", scope: "isolated" as const },
+      { name: "detail_tweaker_xl.safetensors" }, // no scope = always applies
+    ];
+    const graph = buildWorkflow({ ...REQUEST, assetType: "background" }, "m.safetensors", { loras }) as Record<
+      string,
+      { inputs: Record<string, unknown> }
+    >;
+    // Only the unscoped LoRA chains in — the isolated-only one is skipped entirely.
+    expect(graph["20"].inputs.lora_name).toBe("detail_tweaker_xl.safetensors");
+    expect(graph["21"]).toBeUndefined();
+  });
+
+  it("skips a 'scene'-scoped LoRA on a character (isolated) generation", () => {
+    const loras = [
+      { name: "detailed_environment.safetensors", scope: "scene" as const },
+      { name: "line_art.safetensors", scope: "isolated" as const },
+    ];
+    const graph = buildWorkflow(REQUEST, "m.safetensors", { loras }) as Record<string, { inputs: Record<string, unknown> }>;
+    expect(graph["20"].inputs.lora_name).toBe("line_art.safetensors");
+    expect(graph["21"]).toBeUndefined();
+  });
+
+  it("applies an unscoped ('all') LoRA to both isolated and scene generations", () => {
+    const loras = [{ name: "always_on.safetensors", scope: "all" as const }];
+    const isolated = buildWorkflow(REQUEST, "m.safetensors", { loras }) as Record<string, { inputs: Record<string, unknown> }>;
+    const scene = buildWorkflow({ ...REQUEST, assetType: "background" }, "m.safetensors", { loras }) as Record<
+      string,
+      { inputs: Record<string, unknown> }
+    >;
+    expect(isolated["20"].inputs.lora_name).toBe("always_on.safetensors");
+    expect(scene["20"].inputs.lora_name).toBe("always_on.safetensors");
   });
 
   it("switches to img2img (LoadImage → ImageScale → VAEEncode) when an uploaded image is given, dropping EmptyLatentImage", () => {

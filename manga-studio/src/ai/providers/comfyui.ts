@@ -88,16 +88,24 @@ interface UploadedImageRef {
  * `buildWorkflow` and `buildEditWorkflow` so this wiring is written once.
  * `strength_model`/`strength_clip` are collapsed into one `strength` field
  * per entry — an intentional simplification, not the node's real
- * two-independent-strengths shape. */
+ * two-independent-strengths shape.
+ *
+ * `activeScope` filters entries first: a LoRA scoped to "isolated" (e.g. one
+ * that biases toward a plain white backdrop, good for a character/prop
+ * cutout) is skipped entirely on a "scene" generation, which wants the
+ * opposite — a full, detailed environment — and vice versa. An entry with
+ * no `scope` (or "all") always applies, matching prior behavior. */
 function addLoraChain(
   graph: Record<string, unknown>,
   loras: ComfyUiExtraConfig["loras"],
+  activeScope: "isolated" | "scene",
 ): { modelSource: [string, number]; clipSource: [string, number] } {
-  const loraIds = LORA_NODE_IDS.slice(0, loras?.length ?? 0);
+  const applicable = (loras ?? []).filter((l) => !l.scope || l.scope === "all" || l.scope === activeScope);
+  const loraIds = LORA_NODE_IDS.slice(0, applicable.length);
   let modelSource: [string, number] = ["4", 0];
   let clipSource: [string, number] = ["4", 1];
   loraIds.forEach((nodeId, index) => {
-    const entry = loras![index];
+    const entry = applicable[index];
     graph[nodeId] = {
       class_type: "LoraLoader",
       inputs: {
@@ -121,7 +129,7 @@ function addLoraChain(
  * byte-identical to v1 when `extra`/`uploadedImage` are both absent.
  */
 export function buildWorkflow(
-  request: Pick<ImageGenerationRequest, "prompt" | "negativePrompt" | "width" | "height">,
+  request: Pick<ImageGenerationRequest, "prompt" | "negativePrompt" | "width" | "height" | "assetType">,
   checkpointModel: string,
   extra?: ComfyUiExtraConfig,
   uploadedImage?: UploadedImageRef,
@@ -132,7 +140,7 @@ export function buildWorkflow(
   const graph: Record<string, unknown> = {
     "4": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: checkpointModel } },
   };
-  const { modelSource, clipSource } = addLoraChain(graph, extra?.loras);
+  const { modelSource, clipSource } = addLoraChain(graph, extra?.loras, request.assetType === "background" ? "scene" : "isolated");
 
   graph["6"] = { class_type: "CLIPTextEncode", inputs: { text: request.prompt, clip: clipSource } };
   graph["7"] = { class_type: "CLIPTextEncode", inputs: { text: request.negativePrompt ?? "", clip: clipSource } };
@@ -269,7 +277,9 @@ export function buildEditWorkflow(
   const graph: Record<string, unknown> = {
     "4": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: checkpointModel } },
   };
-  const { modelSource: loraModelSource, clipSource } = addLoraChain(graph, extra?.loras);
+  // Edits always target an existing cutout character/prop asset — never a
+  // "background" scene — so the isolated scope applies unconditionally.
+  const { modelSource: loraModelSource, clipSource } = addLoraChain(graph, extra?.loras, "isolated");
 
   let modelSource = loraModelSource;
   if (referenceImage) {

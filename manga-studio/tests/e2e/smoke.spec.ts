@@ -1366,6 +1366,54 @@ test("AI Settings: ComfyUI sampler settings and a LoRA row save wholesale with t
   await expect(imageCard.getByRole("textbox", { name: "LoRA 1 filename" })).toHaveValue("detail_tweaker_xl.safetensors");
 });
 
+test("AI Settings: a LoRA's scope (isolated/scene) saves wholesale and hydrates back on reopen", async ({ page }) => {
+  let savedPayload: Record<string, unknown> | null = null as Record<string, unknown> | null;
+
+  await page.route("**/api/provider/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        configured: Boolean(savedPayload),
+        agent: { configured: false },
+        image: savedPayload
+          ? { configured: true, source: "session", providerType: "comfyui", baseUrl: savedPayload.baseUrl, model: savedPayload.model, comfyui: savedPayload.comfyui }
+          : { configured: false },
+        background: { configured: false },
+      }),
+    });
+  });
+
+  await page.route("**/api/provider/config", async (route) => {
+    savedPayload = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ configured: true, source: "session" }) });
+  });
+
+  await page.getByRole("button", { name: "AI Settings" }).click();
+  const imageCard = page.locator("section").filter({ has: page.getByRole("heading", { name: "Image Generation" }) });
+
+  await imageCard.getByText("Advanced — API standard").click();
+  await imageCard.getByRole("combobox", { name: "API standard / protocol" }).selectOption("comfyui");
+  await imageCard.getByRole("textbox", { name: "Model" }).fill("sd_xl_base_1.0.safetensors");
+
+  await imageCard.getByText("Advanced — ComfyUI settings").click();
+  await imageCard.getByRole("button", { name: "+ Add LoRA" }).click();
+  await imageCard.getByRole("textbox", { name: "LoRA 1 filename" }).fill("white_1_0.safetensors");
+  await imageCard.getByRole("spinbutton", { name: "LoRA 1 strength" }).fill("0.3");
+  await imageCard.getByRole("combobox", { name: "LoRA 1 applies to" }).selectOption("isolated");
+
+  await imageCard.getByRole("button", { name: "Save" }).click();
+  await expect(imageCard.getByText("Saved. Credentials are stored securely for this browser session.")).toBeVisible();
+
+  expect(savedPayload?.comfyui).toEqual({
+    loras: [{ name: "white_1_0.safetensors", strength: 0.3, scope: "isolated" }],
+  });
+
+  await page.getByRole("button", { name: "Close settings" }).click();
+  await page.getByRole("button", { name: "AI Settings" }).click();
+  await expect(imageCard.getByRole("combobox", { name: "LoRA 1 applies to" })).toHaveValue("isolated");
+});
+
 test("AI Settings: Fetch LoRAs populates the LoRA filename dropdown", async ({ page }) => {
   await page.route("**/api/provider/status", async (route) => {
     await route.fulfill({

@@ -233,6 +233,23 @@ console for diagnostics.
   itself, never a bill, so there is nothing honest to convert a call count
   into.
 
+## Per-LoRA scope: "all" / "isolated" / "scene"
+
+A LoRA that biases toward a plain backdrop (e.g. a "white background" LoRA,
+useful for character/prop cutouts) is actively counterproductive on a
+`assetType: "background"` generation, which wants the opposite — a full,
+detailed environment. `ComfyUiLoraEntry` (`server/comfyui/config.ts`) gained
+an optional `scope: "all" | "isolated" | "scene"` field (omitted = "all",
+matching prior unconditional behavior). `addLoraChain` (`comfyui.ts`, shared
+by `buildWorkflow` and `buildEditWorkflow`) filters entries against the
+CURRENT request's scope before chaining — `buildWorkflow` derives it from
+`request.assetType` (`"background"` → `"scene"`, everything else →
+`"isolated"`; `buildEditWorkflow` is always `"isolated"`, since a local edit
+always targets an existing cutout asset, never a background). `AiSettingsDialog.tsx`'s
+LoRA row editor gained a third `<select>` ("All generations" / "Character/prop
+cutouts only" / "Backgrounds only") per row, alongside the existing
+filename/strength fields.
+
 ## Test generation (`/api/provider/test-generate`)
 
 "Test Connection" is deliberately status-only — it round-trips to a cheap

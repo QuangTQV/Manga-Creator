@@ -91,14 +91,19 @@ function emptyFallbackRow(providerType: string): FallbackRow {
 }
 
 /** One LoRA row for a ComfyUI provider — `strength` stays a string in local
- * state (controlled numeric input), parsed on save. Not secret. */
+ * state (controlled numeric input), parsed on save. Not secret.
+ * `scope`: "all" applies to every generation (prior behavior); "isolated"
+ * only to character/prop/pose/expression/tone cutouts; "scene" only to
+ * background generations — a LoRA biasing toward a plain backdrop is
+ * counterproductive on the opposite kind of request. */
 interface LoraRow {
   name: string;
   strength: string;
+  scope: "all" | "isolated" | "scene";
 }
 
 function emptyLoraRow(): LoraRow {
-  return { name: "", strength: "" };
+  return { name: "", strength: "", scope: "all" };
 }
 
 const MAX_COMFYUI_LORAS_CLIENT = 4;
@@ -323,6 +328,7 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
           (summary.comfyui.loras ?? []).map((l) => ({
             name: l.name,
             strength: l.strength !== undefined ? String(l.strength) : "",
+            scope: l.scope ?? "all",
           })),
         );
       }
@@ -402,7 +408,11 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
                     ipAdapterWeight: comfyUiIpAdapterWeight.trim() ? Number(comfyUiIpAdapterWeight) : undefined,
                     loras: loraRows
                       .filter((r) => r.name.trim())
-                      .map((r) => ({ name: r.name.trim(), strength: r.strength.trim() ? Number(r.strength) : undefined })),
+                      .map((r) => ({
+                        name: r.name.trim(),
+                        strength: r.strength.trim() ? Number(r.strength) : undefined,
+                        scope: r.scope !== "all" ? r.scope : undefined,
+                      })),
                   }
                 : undefined,
             ...rotation,
@@ -931,6 +941,19 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
                   placeholder="1"
                   aria-label={`LoRA ${index + 1} strength`}
                 />
+                <select
+                  className="w-28 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-1 py-1.5 text-[11px]"
+                  value={row.scope}
+                  onChange={(e) =>
+                    setLoraRows((rows) => rows.map((r, i) => (i === index ? { ...r, scope: e.target.value as LoraRow["scope"] } : r)))
+                  }
+                  aria-label={`LoRA ${index + 1} applies to`}
+                  title="Which generations chain this LoRA in — a backdrop-biasing LoRA fights the opposite kind of request"
+                >
+                  <option value="all">All generations</option>
+                  <option value="isolated">Character/prop cutouts only</option>
+                  <option value="scene">Backgrounds only</option>
+                </select>
                 <button
                   type="button"
                   className="rounded border border-zinc-700 bg-zinc-800 px-2 text-xs hover:bg-zinc-700"
