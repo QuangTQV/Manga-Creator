@@ -148,10 +148,10 @@ Bấm **Test Connection** trước khi Save.
    !git clone https://github.com/cubiq/ComfyUI_IPAdapter_plus.git ComfyUI/custom_nodes/ComfyUI_IPAdapter_plus
    # Cần thêm model IPAdapter + CLIP vision — xem README của repo trên để lấy đúng link tải theo checkpoint bạn dùng
    ```
-3. Chạy server ComfyUI ở chế độ nền:
+3. Chạy server ComfyUI ở chế độ nền. **Bắt buộc thêm `--fp32-vae`** — VAE gốc của SDXL bị tràn số (NaN) khi chạy fp16 trên GPU đời T4 (bug SDXL đã biết, không riêng gì Kumanga), sinh ra ảnh trắng/xám mờ không có nội dung thay vì lỗi rõ ràng, dễ nhầm là do prompt hay checkpoint sai:
    ```python
    import subprocess
-   subprocess.Popen(["python", "ComfyUI/main.py", "--listen", "0.0.0.0", "--port", "8188"])
+   subprocess.Popen(["python", "ComfyUI/main.py", "--listen", "0.0.0.0", "--port", "8188", "--fp32-vae"])
    ```
 4. Mở tunnel để có URL public (dùng `cloudflared`, không cần tạo tài khoản):
    ```python
@@ -206,7 +206,7 @@ Trước khi coi một thay đổi là "xong", nên chạy đủ cả 4 lệnh: 
 
 - **Cổng 3000 đã bị chiếm** — kiểm tra xem có tiến trình `next dev` nào đang chạy sẵn không, hoặc đổi cổng: `PORT=3001 npm run dev`.
 - **Không sinh được ảnh** — vào AI Settings, bấm Test Connection để xem lỗi cụ thể (sai key, sai base URL, model không tồn tại...).
-- **Lỗi "Background removal did not complete" khi tạo nhân vật bằng ComfyUI** — không phải lỗi cấu hình; checkpoint không vẽ đúng nền trắng tinh như yêu cầu. Xem phần "Chọn checkpoint/LoRA cho ComfyUI" trong mục [5b](#5b-dùng-model-ai-chạy-local--self-host-không-cần-api-cloud) ở trên.
+- **Lỗi "Background removal did not complete" khi tạo nhân vật bằng ComfyUI** — 2 nguyên nhân khác nhau, cùng một triệu chứng: (1) checkpoint không vẽ đúng nền trắng tinh như yêu cầu — xem phần "Chọn checkpoint/LoRA cho ComfyUI" trong mục [5b](#5b-dùng-model-ai-chạy-local--self-host-không-cần-api-cloud); (2) ảnh trả về **trắng/xám mờ, không có nội dung gì** (không phải nền trắng có nhân vật — mà toàn bộ ảnh gần như trống) — đây là bug VAE SDXL tràn số ở fp16 trên GPU T4, sửa bằng cờ `--fp32-vae` khi chạy ComfyUI, xem mục 5c.
 - **Muốn dùng model AI chạy trên máy (Ollama/LM Studio/Automatic1111)** — xem mục [5b](#5b-dùng-model-ai-chạy-local--self-host-không-cần-api-cloud) ở trên.
 - **Muốn dùng Azure OpenAI hoặc chạy model ảnh trên GPU free của Kaggle** — xem mục [5c](#5c-azure-openai-agent--chạy-model-ảnh-trên-kaggle-gpu-free-image-generation) ở trên.
 - **Muốn deploy lên Vercel** — xem hướng dẫn chi tiết tại [`manga-studio/docs/DEPLOYMENT.md`](../manga-studio/docs/DEPLOYMENT.md).
@@ -364,10 +364,10 @@ Click **Test Connection** before Save.
    !git clone https://github.com/cubiq/ComfyUI_IPAdapter_plus.git ComfyUI/custom_nodes/ComfyUI_IPAdapter_plus
    # Also needs an IPAdapter model + CLIP vision model — see that repo's own README for the right download link for your checkpoint
    ```
-3. Start the ComfyUI server in the background:
+3. Start the ComfyUI server in the background. **`--fp32-vae` is required** — the stock SDXL VAE overflows (NaN) running in fp16 on T4-class GPUs (a known SDXL bug, not specific to Kumanga), producing a blank/washed-out grey-white image with no real content instead of an actual error, easy to mistake for a bad prompt or checkpoint:
    ```python
    import subprocess
-   subprocess.Popen(["python", "ComfyUI/main.py", "--listen", "0.0.0.0", "--port", "8188"])
+   subprocess.Popen(["python", "ComfyUI/main.py", "--listen", "0.0.0.0", "--port", "8188", "--fp32-vae"])
    ```
 4. Open a tunnel to get a public URL (using `cloudflared`, no account needed):
    ```python
@@ -423,7 +423,7 @@ Before treating a change as done, run all four:
 
 - **Port 3000 already in use** — check for an existing `next dev` process, or use a different port: `PORT=3001 npm run dev`.
 - **Image generation fails** — open AI Settings and click Test Connection to see the exact error (bad key, wrong base URL, unknown model...).
-- **"Background removal did not complete" when generating a character with ComfyUI** — not a config error; the checkpoint isn't drawing the plain white background it was asked for. See "Picking a checkpoint/LoRA for ComfyUI" in [section 5b](#5b-using-a-localself-hosted-ai-model-no-cloud-api-needed) above.
+- **"Background removal did not complete" when generating a character with ComfyUI** — two different causes, same symptom: (1) the checkpoint isn't drawing the plain white background it was asked for — see "Picking a checkpoint/LoRA for ComfyUI" in [section 5b](#5b-using-a-localself-hosted-ai-model-no-cloud-api-needed); (2) the returned image is **blank/washed-out grey-white with no real content at all** (not "white background with a character on it" — the whole image) — this is the SDXL VAE fp16-overflow bug on T4 GPUs, fixed with the `--fp32-vae` flag when starting ComfyUI, see section 5c.
 - **Want to use a local model (Ollama/LM Studio/Automatic1111)** — see [section 5b](#5b-using-a-localself-hosted-ai-model-no-cloud-api-needed) above.
 - **Want to use Azure OpenAI, or run image models on Kaggle's free GPU** — see [section 5c](#5c-azure-openai-agent--running-image-models-on-kaggles-free-gpu-image-generation) above.
 - **Want to deploy to Vercel** — see [`manga-studio/docs/DEPLOYMENT.md`](../manga-studio/docs/DEPLOYMENT.md) for the full walkthrough.

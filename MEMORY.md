@@ -33,6 +33,26 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-17 — HOW_TO_RUN.md: `--fp32-vae` required on the Kaggle T4
+  ComfyUI launch command.** After switching to the Animagine XL 4.0
+  checkpoint (previous entry), the user hit "Background removal did not
+  complete" again — but the actual generated PNG (checked the same way:
+  read straight off `.data/generated/` via the Live AI log's URL) this
+  time was nearly blank/washed-out grey-white with no character at all,
+  a visually distinct failure from the earlier "drew a whole street scene"
+  one. This is the well-known stock-SDXL-VAE fp16 numerical-overflow bug
+  (activations exceed fp16 range → Inf → NaN → blank/grey decode),
+  specifically common on T4-class GPUs — confirmed via `WebSearch`
+  against `madebyollin/sdxl-vae-fp16-fix`'s own README before writing
+  anything down. Fixed by adding `--fp32-vae` to the `ComfyUI/main.py`
+  launch command in both §5b/5c Kaggle cells (VN+EN) rather than adding a
+  separate fixed-VAE download + VAELoader node — simpler, and our
+  ComfyUI adapter's hand-built graph doesn't have a VAELoader node to
+  wire one into anyway (`comfyui.ts` uses the checkpoint's own baked-in
+  VAE via CheckpointLoaderSimple). Also folded into the existing
+  Troubleshooting cross-reference for "Background removal did not
+  complete" as cause #2, since the two failure modes need different
+  fixes and are easy to conflate from the symptom alone.
 - **2026-09-17 — HOW_TO_RUN.md: checkpoint/LoRA guidance for ComfyUI
   character generation.** User hit "Background removal did not complete"
   on a real Kaggle ComfyUI + `sd_xl_base_1.0.safetensors` setup — confirmed
