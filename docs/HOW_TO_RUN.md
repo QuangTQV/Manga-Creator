@@ -167,9 +167,10 @@ Bấm **Test Connection** trước khi Save.
    !git clone https://github.com/cubiq/ComfyUI_IPAdapter_plus.git ComfyUI/custom_nodes/ComfyUI_IPAdapter_plus
    # Cần thêm model IPAdapter + CLIP vision — xem README của repo trên để lấy đúng link tải theo checkpoint bạn dùng
    ```
-   Muốn dùng chính ComfyUI này làm **fallback tách nền** (mục 5 dưới) khi bước tách nền tự động của Kumanga fail, cài thêm:
+   Muốn dùng chính ComfyUI này làm **fallback tách nền** (mục 5 dưới) khi bước tách nền tự động của Kumanga fail, cài thêm — **nhớ chạy cả dòng `pip install` thứ 2**, thiếu dòng đó ComfyUI báo `ModuleNotFoundError: No module named 'transparent_background'` và node bị load fail âm thầm (vẫn chạy được, chỉ riêng node tách nền không dùng được):
    ```python
    !git clone https://github.com/john-mnz/ComfyUI-Inspyrenet-Rembg.git ComfyUI/custom_nodes/ComfyUI-Inspyrenet-Rembg
+   !pip install -r ComfyUI/custom_nodes/ComfyUI-Inspyrenet-Rembg/requirements.txt -q
    # Model tự tải khi chạy lần đầu, không cần tải tay thêm gì
    ```
 3. Chạy server ComfyUI ở chế độ nền. **Bắt buộc thêm `--fp32-vae`** — VAE gốc của SDXL bị tràn số (NaN) khi chạy fp16 trên GPU đời T4 (bug SDXL đã biết, không riêng gì Kumanga), sinh ra ảnh trắng/xám mờ không có nội dung thay vì lỗi rõ ràng, dễ nhầm là do prompt hay checkpoint sai:
@@ -177,7 +178,7 @@ Bấm **Test Connection** trước khi Save.
    import subprocess
    subprocess.Popen(["python", "ComfyUI/main.py", "--listen", "0.0.0.0", "--port", "8188", "--fp32-vae"])
    ```
-   **Tận dụng GPU T4 x2:** một tiến trình ComfyUI thường chỉ dùng một GPU. Nếu Kaggle cấp hai GPU, chạy hai instance độc lập, mỗi instance ghim vào một GPU và dùng một port riêng:
+   **Tận dụng GPU T4 x2:** một tiến trình ComfyUI thường chỉ dùng một GPU. Nếu Kaggle cấp hai GPU, chạy hai instance độc lập, mỗi instance ghim vào một GPU và dùng một port riêng. **Bắt buộc thêm `--database-url` riêng cho mỗi instance** — cả 2 chạy từ cùng thư mục `ComfyUI/` nên mặc định dùng chung 1 file database, instance chạy sau sẽ báo `Database is locked` (ComfyUI báo đúng cách sửa ngay trong thông báo lỗi, nhưng nếu bỏ qua rất dễ nhầm là 2 tiến trình xung đột nhau):
    ```python
    import os, subprocess
 
@@ -187,6 +188,7 @@ Bấm **Test Connection** trước khi Save.
        return subprocess.Popen([
            "python", "ComfyUI/main.py", "--listen", "0.0.0.0",
            "--port", str(port), "--cuda-device", "0", "--fp32-vae",
+           "--database-url", f"sqlite:///comfyui_gpu{gpu}.db",
        ], env=env)
 
    comfyui_gpu0 = start_comfyui(0, 8188)
@@ -428,9 +430,10 @@ Click **Test Connection** before Save.
    !git clone https://github.com/cubiq/ComfyUI_IPAdapter_plus.git ComfyUI/custom_nodes/ComfyUI_IPAdapter_plus
    # Also needs an IPAdapter model + CLIP vision model — see that repo's own README for the right download link for your checkpoint
    ```
-   Want to use this same ComfyUI instance as a **background-removal fallback** (section 5 above) when Kumanga's built-in extraction fails? Add:
+   Want to use this same ComfyUI instance as a **background-removal fallback** (section 5 above) when Kumanga's built-in extraction fails? Add — **the 2nd `pip install` line is required**, skipping it fails the node import with `ModuleNotFoundError: No module named 'transparent_background'` (ComfyUI still starts fine; only that node fails to load):
    ```python
    !git clone https://github.com/john-mnz/ComfyUI-Inspyrenet-Rembg.git ComfyUI/custom_nodes/ComfyUI-Inspyrenet-Rembg
+   !pip install -r ComfyUI/custom_nodes/ComfyUI-Inspyrenet-Rembg/requirements.txt -q
    # Downloads its model automatically on first use — nothing else to fetch
    ```
 3. Start the ComfyUI server in the background. **`--fp32-vae` is required** — the stock SDXL VAE overflows (NaN) running in fp16 on T4-class GPUs (a known SDXL bug, not specific to Kumanga), producing a blank/washed-out grey-white image with no real content instead of an actual error, easy to mistake for a bad prompt or checkpoint:
@@ -438,7 +441,7 @@ Click **Test Connection** before Save.
    import subprocess
    subprocess.Popen(["python", "ComfyUI/main.py", "--listen", "0.0.0.0", "--port", "8188", "--fp32-vae"])
    ```
-   **Using both GPUs on a T4 x2 session:** one ComfyUI process normally uses one GPU. If Kaggle provides two GPUs, run two independent instances, pin each one to a different GPU, and give them separate ports:
+   **Using both GPUs on a T4 x2 session:** one ComfyUI process normally uses one GPU. If Kaggle provides two GPUs, run two independent instances, pin each one to a different GPU, and give them separate ports. **A separate `--database-url` per instance is required** — both run from the same `ComfyUI/` folder, so without this they default to the same database file and the second one to start fails with `Database is locked` (the error message itself names the fix; skipping it is easy to misread as the two processes genuinely conflicting):
    ```python
    import os, subprocess
 
@@ -448,6 +451,7 @@ Click **Test Connection** before Save.
        return subprocess.Popen([
            "python", "ComfyUI/main.py", "--listen", "0.0.0.0",
            "--port", str(port), "--cuda-device", "0", "--fp32-vae",
+           "--database-url", f"sqlite:///comfyui_gpu{gpu}.db",
        ], env=env)
 
    comfyui_gpu0 = start_comfyui(0, 8188)

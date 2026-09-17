@@ -33,6 +33,22 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-17 — Two real gaps in the docs, found by the user actually
+  running the exact recipes on Kaggle.** (1) The `ComfyUI-Inspyrenet-Rembg`
+  clone command had no matching `pip install -r .../requirements.txt` —
+  unlike the main ComfyUI clone, which does get one — so the node import
+  failed with `ModuleNotFoundError: No module named 'transparent_
+  background'` (ComfyUI itself still starts fine; only that one node
+  silently fails to load). Added the missing `pip install` line to both
+  §5b/§5c copies (VN+EN) of the clone command. (2) The T4 x2 multi-GPU
+  snippet (pre-existing content, not written this session, but now
+  verified against real behavior) ran both `start_comfyui` instances from
+  the same `ComfyUI/` folder with no `--database-url`, so they defaulted
+  to the same sqlite file and the second one to start failed with
+  `Database is locked` — confirmed directly from the user's pasted log,
+  not guessed; the error message itself names the exact fix. Added
+  `--database-url sqlite:///comfyui_gpu{gpu}.db` (one file per instance)
+  to both language copies of that snippet.
 - **2026-09-17 — ComfyUI as a background-removal fallback provider.** User
   asked whether ComfyUI could do background removal at all — confirmed it
   couldn't in this codebase (`assets/providers/registry.ts` only had
