@@ -125,14 +125,26 @@ Bấm **Test Connection** trước khi Save.
    !wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O cloudflared
    !chmod +x cloudflared
    import subprocess, time
-   tunnel = subprocess.Popen(["./cloudflared", "tunnel", "--url", "http://localhost:8188"],
-                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-   time.sleep(6)
-   for _ in range(20):
+
+   tunnel = subprocess.Popen(
+       ["./cloudflared", "tunnel", "--url", "http://localhost:8188"],
+       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+   )
+
+   time.sleep(3)
+   found = False
+   for _ in range(60):  # tăng số dòng đọc
        line = tunnel.stdout.readline()
-       if "trycloudflare.com" in line:
-           print(line)
+       if not line:
+           time.sleep(0.5)
+           continue
+       print(line, end="")  # in hết ra để debug
+       if "trycloudflare.com" in line and "https://" in line:
+           found = True
            break
+
+   if not found:
+       print("Chưa tìm thấy URL, kiểm tra lại log phía trên.")
    ```
    Copy URL dạng `https://xxxx-xxxx.trycloudflare.com` in ra ở bước này.
 5. Trong Kumanga: AI Settings → Image Generation → chọn **ComfyUI (local)** → Base URL = URL cloudflared vừa lấy → Model = tên file checkpoint (ví dụ `sd_xl_base_1.0.safetensors`) → **không cần** bật `ALLOW_PRIVATE_NETWORKS=1` (URL này là public thật) → Test Connection → Save.
@@ -295,14 +307,26 @@ Click **Test Connection** before Save.
    !wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O cloudflared
    !chmod +x cloudflared
    import subprocess, time
-   tunnel = subprocess.Popen(["./cloudflared", "tunnel", "--url", "http://localhost:8188"],
-                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-   time.sleep(6)
-   for _ in range(20):
+
+   tunnel = subprocess.Popen(
+       ["./cloudflared", "tunnel", "--url", "http://localhost:8188"],
+       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+   )
+
+   time.sleep(3)
+   found = False
+   for _ in range(60):  # read more lines than before
        line = tunnel.stdout.readline()
-       if "trycloudflare.com" in line:
-           print(line)
+       if not line:
+           time.sleep(0.5)
+           continue
+       print(line, end="")  # print everything, for debugging
+       if "trycloudflare.com" in line and "https://" in line:
+           found = True
            break
+
+   if not found:
+       print("URL not found yet — check the log above.")
    ```
    Copy the printed `https://xxxx-xxxx.trycloudflare.com` URL.
 5. In Kumanga: AI Settings → Image Generation → pick **ComfyUI (local)** → Base URL = the cloudflared URL you just got → Model = the checkpoint filename (e.g. `sd_xl_base_1.0.safetensors`) → **no need** to enable `ALLOW_PRIVATE_NETWORKS=1` (this is a real public URL) → Test Connection → Save.
