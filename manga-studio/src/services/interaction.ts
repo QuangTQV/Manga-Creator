@@ -20,7 +20,7 @@
  */
 
 import { generateImage, registerGeneratedAsset } from "@/services/generation";
-import { buildAssetPrompt, buildJointInteractionPrompt } from "@/ai/promptTemplates";
+import { buildAssetNegativePrompt, buildAssetPrompt, buildJointInteractionPrompt } from "@/ai/promptTemplates";
 import { assetRenderUrl } from "@/assets/renderSource";
 import { resolveCharacterIdentityReference, resolveIdentityReferences } from "@/characters/identityReference";
 import { stateFromInstance } from "@/characters/state";
@@ -401,7 +401,7 @@ export async function renderInteraction(
   const result = await generateImage({
     assetType: sceneComposite ? "background" : "character",
     prompt,
-    negativePrompt: style.profile.negativePrompt,
+    negativePrompt: buildAssetNegativePrompt({ assetType: sceneComposite ? "background" : "character", style: style.profile }),
     size: sceneComposite ? panelAspect(doc().panels[panelId]) : "portrait",
     expectMonochrome: isMonochromeStyle(style.profile),
     referenceUrls,

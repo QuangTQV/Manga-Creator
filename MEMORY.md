@@ -33,6 +33,40 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-17 — Reinforce the negative prompt against floor/shadow/
+  gradient backdrops on every foreground asset.** Continuing the same live
+  Kaggle-ComfyUI debugging session: after switching back to
+  `sd_xl_base_1.0.safetensors` + one LoRA (the checkpoint/LoRA combo that
+  actually produced good character art — see the two entries below), the
+  user's own generated image still failed "Background removal did not
+  complete" — visually clean, but with a grey-to-white gradient backdrop
+  AND a cast drop shadow under the character's feet, both explicitly
+  forbidden by the prompt's positive-phrased instruction ("no gradient...
+  no cast shadow on the background") and both explicitly rejected by
+  `validateWhiteBackground` (confirmed by reading
+  `foregroundPolicy.test.ts`'s own existing "rejects a grey backdrop" /
+  "rejects a gradient or textured backdrop" cases — this was never a loose
+  heuristic, the validation was correctly strict the whole time). The
+  actual gap: the app only ever asked for this in the POSITIVE prompt
+  ("no floor, no cast shadow, no gradient") and never reinforced it as
+  actual NEGATIVE-PROMPT terms — the channel SD-family models respect far
+  more reliably for suppressing an unwanted element than a positively-
+  phrased negation, which is exactly the class of instruction this whole
+  debugging session kept watching these checkpoints ignore.
+  Added `backgroundNegativeTerms(policy)` to `foregroundPolicy.ts`
+  (empty for `native-alpha` — no backdrop to suppress there) and a new
+  `buildAssetNegativePrompt(input)` companion to `buildAssetPrompt` in
+  `promptTemplates.ts`, then switched every one of its 5 call sites that
+  can generate a non-"background" asset type (`services/tones.ts`,
+  `scenery.ts`, `language.ts`, `interaction.ts`, `GeneratorDialog.tsx`)
+  from reading `style.profile.negativePrompt` directly to calling the new
+  function — `sceneCamera.ts`/`panelCamera.ts` hardcode `assetType:
+  "background"` and were left alone since the function is a no-op for
+  that type anyway, not worth the diff. `AssetPromptInput.style`'s type
+  widened to also `Pick` `negativePrompt` (was missing it, a real gap
+  once a function needed to read it). New regression tests in
+  `foregroundPolicy.test.ts` for both the new function and its
+  `buildAssetNegativePrompt` companion.
 - **2026-09-17 — New "Test generation" button in AI Settings (Image
   Generation).** After a long live-debugging session on the user's real
   Kaggle ComfyUI setup (checkpoint swaps, LoRA weights, `--fp32-vae`) where

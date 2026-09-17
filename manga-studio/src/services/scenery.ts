@@ -12,7 +12,7 @@
  * generateImage / registerGeneratedAsset from GenerationService on accept.
  */
 
-import { buildAssetPrompt, defaultAspect } from "@/ai/promptTemplates";
+import { buildAssetNegativePrompt, buildAssetPrompt, defaultAspect } from "@/ai/promptTemplates";
 import { generateImage, registerGeneratedAsset, type GenerateImageRequest } from "@/services/generation";
 import { assetRenderUrl } from "@/assets/renderSource";
 import type { ID, ProjectDocument } from "@/domain/types";
@@ -37,7 +37,7 @@ export function buildSceneryRequest(
   return {
     assetType: category,
     prompt,
-    negativePrompt: style.profile.negativePrompt,
+    negativePrompt: buildAssetNegativePrompt({ assetType: category, style: style.profile }),
     size: defaultAspect(category),
     expectMonochrome: isMonochromeStyle(style.profile),
     referenceUrls: style.referenceAsset ? [assetRenderUrl(style.referenceAsset)!] : undefined,

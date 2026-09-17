@@ -17,7 +17,7 @@ import {
 } from "@/services/generation";
 import { registerMangaEffectAsset } from "@/services/language";
 import { generateTone, registerTone } from "@/services/tones";
-import { buildAssetPrompt, defaultAspect } from "@/ai/promptTemplates";
+import { buildAssetNegativePrompt, buildAssetPrompt, defaultAspect } from "@/ai/promptTemplates";
 import { summarizeCandidateOutcomes } from "@/ai/candidateBatch";
 import { DEFAULT_CHARACTER_STATE, characterIdentityDescription, characterReferenceId } from "@/characters/state";
 import { referenceOptions } from "@/characters/stateResolver";
@@ -249,7 +249,11 @@ function GeneratorDialogInner({ request, onClose }: { request: GeneratorRequest;
       const requestPayload = {
         assetType: request.assetType,
         prompt,
-        negativePrompt: style?.profile.negativePrompt,
+        negativePrompt: buildAssetNegativePrompt({
+          assetType: request.assetType,
+          style: style?.profile,
+          supportsNativeTransparency: Boolean(provider?.capabilities?.supportsTransparentBackground),
+        }),
         size: defaultAspect(request.assetType),
         expectMonochrome: isMonochromeStyle(style?.profile),
         referenceUrls: referenceAssets.length > 0 ? referenceAssets.map((asset) => assetRenderUrl(asset)!).filter(Boolean) : undefined,

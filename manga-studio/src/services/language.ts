@@ -9,7 +9,7 @@
  * apart.
  */
 
-import { buildAssetPrompt } from "@/ai/promptTemplates";
+import { buildAssetNegativePrompt, buildAssetPrompt } from "@/ai/promptTemplates";
 import { generateImage, registerGeneratedAsset, type GenerateApiResult } from "@/services/generation";
 import { assetRenderUrl } from "@/assets/renderSource";
 import type { ID, MangaLanguageCategory, ProjectDocument } from "@/domain/types";
@@ -50,7 +50,7 @@ export async function generateMangaEffectImage(
   const result = await generateImage({
     assetType: "manga-effect",
     prompt,
-    negativePrompt: style.profile.negativePrompt,
+    negativePrompt: buildAssetNegativePrompt({ assetType: "manga-effect", style: style.profile }),
     size: "square",
     expectMonochrome: isMonochromeStyle(style.profile),
     referenceUrls: style.referenceAsset ? [assetRenderUrl(style.referenceAsset)!] : undefined,

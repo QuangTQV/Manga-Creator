@@ -79,6 +79,23 @@ export function backgroundClause(policy: ForegroundAssetGenerationPolicy, subjec
 }
 
 /**
+ * Negative-prompt reinforcement for the pure-white backdrop.
+ *
+ * `backgroundClause` already asks, in the positive prompt, for none of this —
+ * but a positively-phrased negation ("no floor, no cast shadow") is honoured
+ * unreliably by image models in practice (observed: SDXL-family checkpoints
+ * repeatedly drew a floor plane, a drop shadow, or a grey-to-white gradient
+ * backdrop despite that sentence). An actual negative-prompt term is a much
+ * stronger, standard-practice signal for suppressing an unwanted element than
+ * asking for its absence in the positive prompt. `native-alpha` needs none of
+ * this — there is no backdrop to accidentally paint.
+ */
+export function backgroundNegativeTerms(policy: ForegroundAssetGenerationPolicy): string {
+  if (policy.background === "native-alpha") return "";
+  return "floor, ground plane, drop shadow, cast shadow, gradient background, vignette, studio backdrop, scenery, environment, horizon line";
+}
+
+/**
  * Colour words that must never appear in a foreground prompt.
  *
  * Asserted by tests against every generated prompt: the policy is only real if

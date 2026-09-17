@@ -14,7 +14,7 @@
  * field for texture/pattern) is owned by the server generation route.
  */
 
-import { buildAssetPrompt } from "@/ai/promptTemplates";
+import { buildAssetNegativePrompt, buildAssetPrompt } from "@/ai/promptTemplates";
 import { generateImage, registerGeneratedAsset, type GenerateApiResult } from "@/services/generation";
 import { assetRenderUrl } from "@/assets/renderSource";
 import { tonePreset, TONE_PRESETS } from "@/domain/tones";
@@ -49,7 +49,7 @@ export async function generateTone(
   const result = await generateImage({
     assetType: "tone",
     prompt,
-    negativePrompt: style.profile.negativePrompt,
+    negativePrompt: buildAssetNegativePrompt({ assetType: "tone", style: style.profile }),
     size: "square",
     expectMonochrome: isMonochromeStyle(style.profile),
     toneType: intent.toneType,

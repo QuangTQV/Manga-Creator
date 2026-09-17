@@ -16,10 +16,11 @@ import sharp from "sharp";
 import {
   FORBIDDEN_BACKDROP_TERMS,
   backgroundClause,
+  backgroundNegativeTerms,
   foregroundAssetPolicy,
   requestsColouredMatte,
 } from "./foregroundPolicy";
-import { buildAssetPrompt, buildCharacterStatePrompt } from "./promptTemplates";
+import { buildAssetNegativePrompt, buildAssetPrompt, buildCharacterStatePrompt } from "./promptTemplates";
 import { validateWhiteBackground } from "@/assets/backgroundRemoval";
 import { processAssetImage } from "@/assets/postProcessor";
 
@@ -48,6 +49,47 @@ describe("foreground asset policy", () => {
     expect(clause.toLowerCase()).toContain("no coloured rim light");
     expect(clause).toContain("clean separation");
     expect(requestsColouredMatte(clause)).toBe(false);
+  });
+});
+
+// ─── Negative-prompt reinforcement ──────────────────────────────────────────
+
+describe("backgroundNegativeTerms", () => {
+  it("targets exactly what SDXL-family checkpoints kept drawing anyway", () => {
+    const terms = backgroundNegativeTerms(foregroundAssetPolicy({}));
+    for (const term of ["floor", "shadow", "gradient", "vignette", "scenery"]) {
+      expect(terms).toContain(term);
+    }
+  });
+
+  it("is empty for a provider with real alpha — there is no backdrop to suppress", () => {
+    expect(backgroundNegativeTerms(foregroundAssetPolicy({ supportsNativeTransparency: true }))).toBe("");
+  });
+});
+
+describe("buildAssetNegativePrompt", () => {
+  const style = { name: "Test", positivePrompt: "p", negativePrompt: "photorealism, 3D render", visualProperties: {} };
+
+  it("reinforces the style's negative prompt with the backdrop terms for a foreground asset", () => {
+    const negative = buildAssetNegativePrompt({ assetType: "character", style });
+    expect(negative).toContain("photorealism, 3D render");
+    expect(negative).toContain("floor");
+    expect(negative).toContain("gradient background");
+  });
+
+  it("leaves a background asset's negative prompt untouched — it wants a full scene", () => {
+    expect(buildAssetNegativePrompt({ assetType: "background", style })).toBe("photorealism, 3D render");
+  });
+
+  it("adds nothing extra when the provider emits real alpha", () => {
+    expect(buildAssetNegativePrompt({ assetType: "character", style, supportsNativeTransparency: true })).toBe(
+      "photorealism, 3D render",
+    );
+  });
+
+  it("still returns the backdrop terms with no style configured", () => {
+    const negative = buildAssetNegativePrompt({ assetType: "prop" });
+    expect(negative).toContain("floor");
   });
 });
 

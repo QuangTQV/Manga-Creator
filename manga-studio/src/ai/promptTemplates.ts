@@ -9,6 +9,7 @@ import type { GeneratedAssetType } from "./types";
 import type { StyleProfile } from "@/domain/types";
 import {
   backgroundClause,
+  backgroundNegativeTerms,
   foregroundAssetPolicy,
   type ForegroundAssetGenerationPolicy,
 } from "./foregroundPolicy";
@@ -42,7 +43,7 @@ export interface AssetPromptInput {
   /** Tone must repeat edge to edge without a seam. */
   tileable?: boolean;
   /** Provider-neutral project art direction. */
-  style?: Pick<StyleProfile, "name" | "positivePrompt" | "visualProperties">;
+  style?: Pick<StyleProfile, "name" | "positivePrompt" | "negativePrompt" | "visualProperties">;
 }
 
 const LEGACY_STYLE = "black-and-white manga line art style, clean ink lines, screentone shading";
@@ -103,6 +104,26 @@ export function buildAssetPrompt(input: AssetPromptInput): string {
   lines.push(...(input.cameraContext ?? []));
   lines.push(styleInstruction(input.style), aspectHint(input.aspect ?? defaultAspect(input.assetType)));
   return lines.filter(Boolean).join(" ");
+}
+
+/**
+ * Companion to `buildAssetPrompt`: the negative prompt for the same request.
+ *
+ * A "background" asset wants a full opaque scene, so it gets only the
+ * project's own style negative — no isolation-related terms apply. Every
+ * other asset type goes through the same foreground/isolation policy the
+ * positive prompt used (`buildAssetPrompt`'s switch above), so its negative
+ * prompt is reinforced the same way: see `backgroundNegativeTerms`.
+ */
+export function buildAssetNegativePrompt(
+  input: Pick<AssetPromptInput, "assetType" | "supportsNativeTransparency" | "style">,
+): string | undefined {
+  const base = input.style?.negativePrompt;
+  if (input.assetType === "background") return base;
+  const policy = foregroundAssetPolicy({ supportsNativeTransparency: input.supportsNativeTransparency });
+  const extra = backgroundNegativeTerms(policy);
+  if (!extra) return base;
+  return base ? `${base}, ${extra}` : extra;
 }
 
 /** Complete prompt for one semantic character render, always identity anchored. */
