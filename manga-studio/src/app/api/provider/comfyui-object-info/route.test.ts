@@ -67,6 +67,22 @@ describe("POST /api/provider/comfyui-object-info", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("fetches and returns the checkpoint option list from ComfyUI's object_info", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      calls.push(String(input));
+      return new Response(
+        JSON.stringify({ CheckpointLoaderSimple: { input: { required: { ckpt_name: [["sd_xl_base_1.0.safetensors", "animagine-xl-4.0.safetensors"]] } } } }),
+        { status: 200 },
+      );
+    });
+    const response = await POST(
+      request({ kind: "image", nodeClass: "CheckpointLoaderSimple", inputName: "ckpt_name" }, cookieHeader(comfyUiConfig)),
+    );
+    expect(await response.json()).toEqual({ options: ["sd_xl_base_1.0.safetensors", "animagine-xl-4.0.safetensors"] });
+    expect(calls.some((url) => url.includes("/object_info/CheckpointLoaderSimple"))).toBe(true);
+  });
+
   it("fetches and returns the LoRA option list from ComfyUI's object_info", async () => {
     const calls: string[] = [];
     vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {

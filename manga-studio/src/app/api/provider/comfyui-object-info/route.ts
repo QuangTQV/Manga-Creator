@@ -7,8 +7,8 @@ export const runtime = "nodejs";
 
 const requestSchema = z.object({
   kind: z.literal("image"),
-  nodeClass: z.enum(["LoraLoader", "ControlNetLoader"]),
-  inputName: z.enum(["lora_name", "control_net_name"]),
+  nodeClass: z.enum(["LoraLoader", "ControlNetLoader", "CheckpointLoaderSimple"]),
+  inputName: z.enum(["lora_name", "control_net_name", "ckpt_name"]),
 });
 
 /**

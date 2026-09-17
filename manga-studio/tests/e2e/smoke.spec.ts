@@ -1410,6 +1410,42 @@ test("AI Settings: Fetch LoRAs populates the LoRA filename dropdown", async ({ p
   await expect(nameInput).toHaveAttribute("list", "comfyui-lora-options");
 });
 
+test("AI Settings: Fetch models populates the checkpoint filename dropdown (ComfyUI)", async ({ page }) => {
+  await page.route("**/api/provider/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        configured: true,
+        agent: { configured: false },
+        image: { configured: true, source: "session", providerType: "comfyui", baseUrl: "http://127.0.0.1:8188", model: "sd_xl_base_1.0.safetensors" },
+        background: { configured: false },
+      }),
+    });
+  });
+
+  await page.route("**/api/provider/comfyui-object-info", async (route) => {
+    const body = route.request().postDataJSON() as { nodeClass: string };
+    expect(body.nodeClass).toBe("CheckpointLoaderSimple");
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ options: ["sd_xl_base_1.0.safetensors", "animagine-xl-4.0.safetensors"] }),
+    });
+  });
+
+  await page.getByRole("button", { name: "AI Settings" }).click();
+  const imageCard = page.locator("section").filter({ has: page.getByRole("heading", { name: "Image Generation" }) });
+
+  await imageCard.getByRole("button", { name: "Fetch models" }).click();
+
+  const options = await imageCard.locator("#image-models option").evaluateAll((els) => els.map((el) => el.getAttribute("value")));
+  expect(options).toEqual(["sd_xl_base_1.0.safetensors", "animagine-xl-4.0.safetensors"]);
+
+  const modelInput = imageCard.getByRole("combobox", { name: "Model" });
+  await expect(modelInput).toHaveAttribute("list", "image-models");
+});
+
 test("AI Settings: ControlNet model/strength save wholesale and Fetch ControlNet models populates its own dropdown", async ({ page }) => {
   let savedComfyUi: Record<string, unknown> | undefined;
 

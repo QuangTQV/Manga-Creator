@@ -501,8 +501,11 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
     }
   };
 
-  const fetchComfyUiOptions = async (nodeClass: "LoraLoader" | "ControlNetLoader", inputName: "lora_name" | "control_net_name") => {
-    setBusy("loras");
+  const fetchComfyUiOptions = async (
+    nodeClass: "LoraLoader" | "ControlNetLoader" | "CheckpointLoaderSimple",
+    inputName: "lora_name" | "control_net_name" | "ckpt_name",
+  ) => {
+    setBusy(nodeClass === "CheckpointLoaderSimple" ? "models" : "loras");
     try {
       const response = await fetch("/api/provider/comfyui-object-info", {
         method: "POST",
@@ -511,7 +514,8 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
       });
       const body = await response.json();
       const options: string[] = Array.isArray(body.options) ? body.options : [];
-      (nodeClass === "LoraLoader" ? setLoraOptions : setControlNetModelOptions)(options);
+      const setter = nodeClass === "LoraLoader" ? setLoraOptions : nodeClass === "ControlNetLoader" ? setControlNetModelOptions : setModels;
+      setter(options);
       if (!options.length) setMessage({ ok: false, text: "ComfyUI didn't return a list — enter the filename manually." });
       return options;
     } finally {
@@ -626,12 +630,12 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
                 placeholder={providerType === "comfyui" ? "sd_xl_base_1.0.safetensors" : "model-name"}
                 list={models.length > 0 ? `${kind}-models` : undefined}
               />
-              {supportsModelDiscovery && providerType === "openai-compatible" && configured && (
+              {((supportsModelDiscovery && providerType === "openai-compatible") || providerType === "comfyui") && configured && (
                 <button
                   className="shrink-0 rounded border border-zinc-700 bg-zinc-800 px-2 text-xs hover:bg-zinc-700"
-                  onClick={fetchModels}
+                  onClick={providerType === "comfyui" ? () => fetchComfyUiOptions("CheckpointLoaderSimple", "ckpt_name") : fetchModels}
                   disabled={busy !== null}
-                  title="Fetch the provider's model list (optional)"
+                  title={providerType === "comfyui" ? "Fetch the list of checkpoint files ComfyUI can see (optional)" : "Fetch the provider's model list (optional)"}
                 >
                   {busy === "models" ? "…" : "Fetch models"}
                 </button>

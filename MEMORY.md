@@ -33,6 +33,16 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-17 — "Fetch models" for ComfyUI's checkpoint field.** Same live
+  Kaggle debugging session, user's own observation: the Model field (the
+  checkpoint filename) was still hand-typed free text, while LoRA/
+  ControlNet-model fields already had "Fetch ..." dropdown buttons since
+  v3 PR1. Widened `comfyui-object-info`'s zod enum to also accept
+  `CheckpointLoaderSimple`/`ckpt_name` (same generic `object_info`
+  mechanism, no new endpoint) and routed that combo's results into the
+  Model field's already-existing `models` state/datalist (it already
+  worked for the openai-compatible "Fetch models" button — ComfyUI just
+  never populated it). "Fetch models" button now shows for ComfyUI too.
 - **2026-09-17 — Reinforce the negative prompt against floor/shadow/
   gradient backdrops on every foreground asset.** Continuing the same live
   Kaggle-ComfyUI debugging session: after switching back to
