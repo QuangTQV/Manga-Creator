@@ -153,6 +153,26 @@ Bấm **Test Connection** trước khi Save.
    import subprocess
    subprocess.Popen(["python", "ComfyUI/main.py", "--listen", "0.0.0.0", "--port", "8188", "--fp32-vae"])
    ```
+   **Tận dụng GPU T4 x2:** một tiến trình ComfyUI thường chỉ dùng một GPU. Nếu Kaggle cấp hai GPU, chạy hai instance độc lập, mỗi instance ghim vào một GPU và dùng một port riêng:
+   ```python
+   import os, subprocess
+
+   def start_comfyui(gpu, port):
+       env = os.environ.copy()
+       env["CUDA_VISIBLE_DEVICES"] = str(gpu)
+       return subprocess.Popen([
+           "python", "ComfyUI/main.py", "--listen", "0.0.0.0",
+           "--port", str(port), "--cuda-device", "0", "--fp32-vae",
+       ], env=env)
+
+   comfyui_gpu0 = start_comfyui(0, 8188)
+   comfyui_gpu1 = start_comfyui(1, 8189)
+   ```
+   Hai instance này xử lý **hai request đồng thời**, không làm một ảnh đơn lẻ nhanh gấp đôi. Bước 4 đã mở tunnel cho GPU 0; sau khi tải `cloudflared` và cấp quyền thực thi, mở thêm tunnel cho GPU 1:
+   ```python
+   tunnel1 = subprocess.Popen(["./cloudflared", "tunnel", "--url", "http://localhost:8189"])
+   ```
+   Trong Kumanga, lưu URL GPU 0 làm Image Generation provider chính; thêm URL GPU 1 tại **Advanced — rotation & fallback → Add fallback provider**, chọn **ComfyUI (local)**, cùng model, rồi để chiến lược **Round robin**. Kumanga sẽ phân phối các request lần lượt qua hai instance. Hai server dùng chung thư mục model nên không cần tải checkpoint hai lần.
 4. Mở tunnel để có URL public (dùng `cloudflared`, không cần tạo tài khoản):
    ```python
    !wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O cloudflared
@@ -184,6 +204,7 @@ Bấm **Test Connection** trước khi Save.
 
 **Lưu ý quan trọng:**
 - Kaggle interactive session tự tắt sau một khoảng không hoạt động, và có giới hạn giờ GPU/tuần theo tài khoản — mỗi lần notebook restart, URL cloudflared **đổi mới hoàn toàn**, phải vào AI Settings dán lại Base URL.
+- Với T4 x2, cần giữ **cả hai** ComfyUI process và **cả hai** tunnel sống; nếu một GPU/tunnel dừng, tạm xoá fallback tương ứng hoặc chuyển về một provider.
 - Giữ tab notebook đang mở/hoạt động để Kaggle không tự ngắt session giữa lúc dùng.
 - Phù hợp để test/dùng cá nhân; Kaggle không cam kết SLA cho server chạy liên tục — không nên dùng làm hạ tầng production phục vụ nhiều người dùng thật cùng lúc.
 - Các bước/lệnh trên dựa theo giao diện Kaggle và ComfyUI tại thời điểm viết — có thể cần chỉnh nếu Kaggle đổi UI hoặc ComfyUI đổi cấu trúc thư mục.
@@ -369,6 +390,26 @@ Click **Test Connection** before Save.
    import subprocess
    subprocess.Popen(["python", "ComfyUI/main.py", "--listen", "0.0.0.0", "--port", "8188", "--fp32-vae"])
    ```
+   **Using both GPUs on a T4 x2 session:** one ComfyUI process normally uses one GPU. If Kaggle provides two GPUs, run two independent instances, pin each one to a different GPU, and give them separate ports:
+   ```python
+   import os, subprocess
+
+   def start_comfyui(gpu, port):
+       env = os.environ.copy()
+       env["CUDA_VISIBLE_DEVICES"] = str(gpu)
+       return subprocess.Popen([
+           "python", "ComfyUI/main.py", "--listen", "0.0.0.0",
+           "--port", str(port), "--cuda-device", "0", "--fp32-vae",
+       ], env=env)
+
+   comfyui_gpu0 = start_comfyui(0, 8188)
+   comfyui_gpu1 = start_comfyui(1, 8189)
+   ```
+   These two instances process **two requests concurrently**; they do not make one image render twice as fast. Step 4 already opens the tunnel for GPU 0; after downloading `cloudflared` and making it executable, open an additional tunnel for GPU 1:
+   ```python
+   tunnel1 = subprocess.Popen(["./cloudflared", "tunnel", "--url", "http://localhost:8189"])
+   ```
+   In Kumanga, save the GPU 0 URL as the primary Image Generation provider; add the GPU 1 URL under **Advanced — rotation & fallback → Add fallback provider**, choose **ComfyUI (local)** with the same model, and leave the strategy on **Round robin**. Kumanga will distribute requests across both instances. Both servers share the model directory, so the checkpoint does not need to be downloaded twice.
 4. Open a tunnel to get a public URL (using `cloudflared`, no account needed):
    ```python
    !wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O cloudflared
@@ -400,6 +441,7 @@ Click **Test Connection** before Save.
 
 **Important caveats:**
 - A Kaggle interactive session shuts down after a period of inactivity, and GPU hours are capped per week per account — every time the notebook restarts, the cloudflared URL **changes completely**, so you'll need to paste the new Base URL into AI Settings again.
+- With T4 x2, keep **both** ComfyUI processes and **both** tunnels alive; if one GPU/tunnel stops, temporarily remove that fallback or switch back to one provider.
 - Keep the notebook tab open/active so Kaggle doesn't end the session mid-use.
 - Fine for testing/personal use; Kaggle offers no SLA for running a server continuously — don't rely on this as production infrastructure serving multiple real users at once.
 - The exact steps/commands above reflect Kaggle's and ComfyUI's interfaces at the time of writing — you may need to adjust them if either changes.
