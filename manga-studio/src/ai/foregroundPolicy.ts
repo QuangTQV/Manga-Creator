@@ -79,20 +79,25 @@ export function backgroundClause(policy: ForegroundAssetGenerationPolicy, subjec
 }
 
 /**
- * Negative-prompt reinforcement for the pure-white backdrop.
+ * Negative-prompt reinforcement for the pure-white, single-subject backdrop.
  *
- * `backgroundClause` already asks, in the positive prompt, for none of this —
- * but a positively-phrased negation ("no floor, no cast shadow") is honoured
- * unreliably by image models in practice (observed: SDXL-family checkpoints
- * repeatedly drew a floor plane, a drop shadow, or a grey-to-white gradient
- * backdrop despite that sentence). An actual negative-prompt term is a much
- * stronger, standard-practice signal for suppressing an unwanted element than
- * asking for its absence in the positive prompt. `native-alpha` needs none of
- * this — there is no backdrop to accidentally paint.
+ * `backgroundClause`/`isolationInstruction` already ask, in the positive
+ * prompt, for none of this ("no floor, no cast shadow", "no frame, no
+ * border") — but a positively-phrased negation is honoured unreliably by
+ * image models in practice. Observed on SDXL-family checkpoints: a floor
+ * plane, a drop shadow, a grey (not white) or two-tone backdrop, AND —
+ * despite "no frame, no border" being right there in the positive prompt —
+ * a multi-panel "character reference sheet" layout (main figure plus
+ * zoomed-in inset crops, divided by border lines that touch the image edges
+ * and break the flood-fill's single-uniform-backdrop assumption just as
+ * badly as a real floor or shadow does). An actual negative-prompt term is
+ * a much stronger, standard-practice signal for suppressing an unwanted
+ * element than asking for its absence in the positive prompt. `native-alpha`
+ * needs none of this — there is no backdrop to accidentally paint.
  */
 export function backgroundNegativeTerms(policy: ForegroundAssetGenerationPolicy): string {
   if (policy.background === "native-alpha") return "";
-  return "floor, ground plane, drop shadow, cast shadow, gradient background, vignette, studio backdrop, scenery, environment, horizon line";
+  return "floor, ground plane, drop shadow, cast shadow, gradient background, grey background, gray background, vignette, studio backdrop, scenery, environment, horizon line, border, frame, panel border, multiple panels, panel grid, inset, close-up inset, reference sheet, turnaround sheet";
 }
 
 /**

@@ -33,6 +33,23 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-17 — Extended `backgroundNegativeTerms` with grey/two-tone
+  backdrop and multi-panel/border terms.** Continuing the same live
+  debugging: a real generated image (line-art LoRA + stock SDXL, after the
+  earlier floor/shadow/gradient fix) still failed background removal — a
+  grey-to-white two-tone backdrop AND a multi-panel "character reference
+  sheet" layout (main figure + zoomed inset crops, divided by border lines
+  touching the image edges). Notable: `isolationInstruction`'s positive
+  prompt already said "no frame, no border" explicitly, and the model
+  drew borders anyway — the exact same positive-negation-is-unreliable
+  pattern the floor/shadow fix addressed, just a different manifestation.
+  Extended `backgroundNegativeTerms` (not a new function — same gate,
+  same call sites, this is squarely the same failure family: "what
+  corrupts a clean single-subject isolated cutout") with `grey
+  background, gray background, border, frame, panel border, multiple
+  panels, panel grid, inset, close-up inset, reference sheet, turnaround
+  sheet`. No new call sites to update — every consumer of
+  `buildAssetNegativePrompt` picks this up automatically.
 - **2026-09-17 — Checked a ranked model list from another AI (ChatGPT)
   before writing it into docs — caught a real architecture trap.** User
   pasted a ChatGPT-generated ranking of manga/anime SDXL checkpoints and

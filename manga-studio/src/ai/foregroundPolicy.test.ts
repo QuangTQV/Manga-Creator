@@ -57,7 +57,7 @@ describe("foreground asset policy", () => {
 describe("backgroundNegativeTerms", () => {
   it("targets exactly what SDXL-family checkpoints kept drawing anyway", () => {
     const terms = backgroundNegativeTerms(foregroundAssetPolicy({}));
-    for (const term of ["floor", "shadow", "gradient", "vignette", "scenery"]) {
+    for (const term of ["floor", "shadow", "gradient", "vignette", "scenery", "grey background", "border", "panel", "reference sheet"]) {
       expect(terms).toContain(term);
     }
   });
