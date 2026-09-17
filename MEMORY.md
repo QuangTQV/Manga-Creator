@@ -33,6 +33,47 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-17 — Documented Azure OpenAI (Agent) + Kaggle free-GPU
+  ComfyUI (Image Generation) as a combined hosting recipe.** User asked
+  whether they could run the Manga Agent purely via a cloud API (Azure
+  OpenAI) while running image models on Kaggle's free GPU quota, exported
+  as an API. Confirmed both are achievable with ZERO new code — pure
+  documentation, added as `docs/HOW_TO_RUN.md` §5c (both VN/EN):
+  - **Azure OpenAI is NOT plug-compatible with the existing
+    "OpenAI-compatible" agent adapter** — checked
+    `agent/providers/openaiCompatible.ts` directly: it hardcodes
+    `Authorization: Bearer` and appends `/chat/completions` with no query
+    string support, but Azure needs an `api-key` header (not Bearer) and
+    a required `?api-version=...` query parameter. The already-existing
+    **Custom API** agent provider (`agent/providers/customAgent.ts`) DOES
+    work: it uses `config.baseUrl` as the literal full request URL (no
+    appending), and its `auth.mode: "header"` supports an arbitrary header
+    name — documented the exact field values (endpoint with the full
+    query string pasted in, header name `api-key`, default Chat
+    Completions request template/response path unchanged).
+  - **Kaggle + ComfyUI**: the existing ComfyUI adapter (shipped this same
+    session, v1-v3) already works against ANY reachable base URL — a
+    Kaggle notebook running ComfyUI, tunneled out via `cloudflared` (no
+    account needed, unlike ngrok) to a real public HTTPS URL, needs
+    **zero `ALLOW_PRIVATE_NETWORKS` bypass** since it's genuinely public,
+    not a private/local address — this means it also works from a
+    production deployment, not just local dev. Documented a concrete
+    notebook script (clone ComfyUI, `pip install`, download one
+    checkpoint, start the server with `subprocess.Popen` in the
+    background, start `cloudflared tunnel --url http://localhost:8188`,
+    read its printed URL) and flagged the real operational caveats
+    explicitly: Kaggle interactive sessions time out and have a weekly GPU
+    quota, the tunnel URL changes completely on every restart (must
+    re-paste into AI Settings each time), and Kaggle offers no SLA for
+    this as production infrastructure — call it out as fine for personal/
+    test use, not a real hosting story for multiple concurrent users.
+  - Not verified end-to-end against a live Kaggle notebook or a live
+    Azure OpenAI resource (none available in this environment) — the
+    Azure claim rests on checking the actual adapter source code (the
+    auth-header/URL mismatch is a real, confirmed fact from the code, not
+    a guess), while the Kaggle steps are standard/well-documented but
+    should be treated as best-effort, flagged as such in the doc itself.
+
 - **2026-09-17 — ComfyUI adapter v3 PR3: ControlNet (final PR of the
   three-PR v3 plan; backlog #47 fully done now).** Per the approved plan
   (`/Users/quang/.claude/plans/luminous-sparking-wombat.md`), user-supplied
