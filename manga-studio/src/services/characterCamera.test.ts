@@ -84,6 +84,23 @@ describe("NO-CAMERA BASELINE — character generation without a camera is unchan
     expect(request.prompt).not.toContain("camera");
     expect(request.prompt).toMatchSnapshot();
   });
+
+  it("negative prompt is reinforced against backgrounds/panels that break background removal", async () => {
+    const s = studio();
+    useEditorStore.setState({ doc: s.doc } as never);
+    await generateCharacterAssetForState({
+      characterId: s.mikaId,
+      state: { ...DEFAULT_CHARACTER_STATE, characterId: s.mikaId, pose: "walking" },
+    });
+    const request = generateImage.mock.calls[0][0];
+    // The Agent's own generation path (not just the manual Generator dialog)
+    // must get the same anti-background/anti-panel reinforcement — this
+    // regressed once already: buildAssetPrompt was wired here, but the
+    // negative prompt kept reading style.profile.negativePrompt raw.
+    for (const term of ["floor", "grey background", "border", "reference sheet"]) {
+      expect(request.negativePrompt).toContain(term);
+    }
+  });
 });
 
 describe("CASE A1 — High Angle + Medium Shot", () => {

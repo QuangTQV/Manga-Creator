@@ -1,7 +1,7 @@
 "use client";
 
 import { generateImage, registerGeneratedAsset, imageProviderCapabilities } from "@/services/generation";
-import { buildAssetPrompt, buildCharacterStatePrompt } from "@/ai/promptTemplates";
+import { buildAssetNegativePrompt, buildAssetPrompt, buildCharacterStatePrompt } from "@/ai/promptTemplates";
 import type { Character, CharacterState, ID, PanelCamera } from "@/domain/types";
 import { useEditorStore } from "@/editor/store";
 import {
@@ -113,7 +113,11 @@ export async function generateCharacterAssetForState(input: {
   const result = await generateImage({
     assetType,
     prompt,
-    negativePrompt: style.profile.negativePrompt,
+    negativePrompt: buildAssetNegativePrompt({
+      assetType,
+      style: style.profile,
+      supportsNativeTransparency: capabilities.nativeTransparency,
+    }),
     size: "portrait",
     expectMonochrome: isMonochromeStyle(style.profile),
     referenceUrls: referenceAssets.length > 0 ? referenceAssets.map((asset) => assetRenderUrl(asset)!).filter(Boolean) : undefined,

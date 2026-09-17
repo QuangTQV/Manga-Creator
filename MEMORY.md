@@ -33,6 +33,34 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-17 — Found the REAL reason the negative-prompt fix never
+  reached the Manga Agent's own generations.** User retried "Generate
+  reference for Haruto" through the actual Agent panel (not the manual
+  Generator dialog) after both negative-prompt fixes above and still got
+  a rejected background — a clean, well-drawn character, but on a
+  uniform grey backdrop. Spawned an Explore subagent to trace exactly
+  which file builds that specific request rather than guess again, since
+  guessing had already cost real time twice this session. Root cause:
+  `characters/stateRuntime.ts`'s `generateCharacterAssetForState` — the
+  actual function behind the Agent's "Generate reference"/pose/expression
+  steps (`agent-v2/process/characterProcess.ts` → `stateRuntime.ts`) —
+  was never among the 5 call sites updated earlier. Its positive prompt
+  correctly went through `buildAssetPrompt`/`buildCharacterStatePrompt`,
+  but its negative prompt still read `style.profile.negativePrompt` raw,
+  completely bypassing every anti-background/anti-panel term added so
+  far. This means the ENTIRE two-part negative-prompt fix had zero effect
+  on real Agent-driven character generation the whole time — only the
+  manual "Generator" dialog and a few secondary flows (tones, scenery,
+  language, interaction) ever actually benefited. Fixed the one missed
+  call site; added a regression test in the existing
+  `characterCamera.test.ts` (extends its already-mocked
+  `generateCharacterAssetForState` harness rather than building new
+  mocking infrastructure) asserting the Agent's own request carries the
+  reinforced terms. Also confirmed via the same trace that
+  `panelCamera.ts`/`sceneCamera.ts` have the identical raw-read pattern
+  but are genuinely harmless: both hardcode `assetType: "background"`,
+  which `buildAssetNegativePrompt` already no-ops for — left alone,
+  matching the original decision to skip them.
 - **2026-09-17 — Extended `backgroundNegativeTerms` with grey/two-tone
   backdrop and multi-panel/border terms.** Continuing the same live
   debugging: a real generated image (line-art LoRA + stock SDXL, after the
