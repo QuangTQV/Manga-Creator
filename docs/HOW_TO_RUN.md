@@ -141,9 +141,20 @@ Bấm **Test Connection** trước khi Save.
 
    !wget -q -O ComfyUI/models/checkpoints/sd_xl_base_1.0.safetensors \
      "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors"
-   # RouWei 0.8 (bản epsilon, không phải vpred): Minthy/RouWei-0.8/resolve/main/rouwei_080_epsilon_fp16.safetensors
-   # Animagine XL 4.0 (xem cảnh báo LoRA ở bảng trên): cagliostrolab/animagine-xl-4.0/resolve/main/animagine-xl-4.0.safetensors
-   # Hệ LoRA Illustrious: OnomaAIResearch/Illustrious-XL-v2.0/resolve/main/Illustrious-XL-v2.0.safetensors
+
+   # Model khác — bỏ dấu # ở 2 dòng tương ứng nếu muốn dùng cái đó thay vì bản gốc trên:
+
+   # RouWei 0.8 (bản epsilon, không phải vpred)
+   # !wget -q -O ComfyUI/models/checkpoints/rouwei_080_epsilon_fp16.safetensors \
+   #   "https://huggingface.co/Minthy/RouWei-0.8/resolve/main/rouwei_080_epsilon_fp16.safetensors"
+
+   # Animagine XL 4.0 (xem cảnh báo LoRA ở bảng trên)
+   # !wget -q -O ComfyUI/models/checkpoints/animagine-xl-4.0.safetensors \
+   #   "https://huggingface.co/cagliostrolab/animagine-xl-4.0/resolve/main/animagine-xl-4.0.safetensors"
+
+   # Hệ LoRA Illustrious
+   # !wget -q -O ComfyUI/models/checkpoints/Illustrious-XL-v2.0.safetensors \
+   #   "https://huggingface.co/OnomaAIResearch/Illustrious-XL-v2.0/resolve/main/Illustrious-XL-v2.0.safetensors"
    ```
    Nhớ đổi **Model** trong AI Settings khớp đúng tên file bạn vừa tải (ví dụ `sd_xl_base_1.0.safetensors`).
 
@@ -382,9 +393,20 @@ Click **Test Connection** before Save.
 
    !wget -q -O ComfyUI/models/checkpoints/sd_xl_base_1.0.safetensors \
      "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors"
-   # RouWei 0.8 (the epsilon file, not vpred): Minthy/RouWei-0.8/resolve/main/rouwei_080_epsilon_fp16.safetensors
-   # Animagine XL 4.0 (see the LoRA warning in the table above): cagliostrolab/animagine-xl-4.0/resolve/main/animagine-xl-4.0.safetensors
-   # Illustrious LoRA ecosystem: OnomaAIResearch/Illustrious-XL-v2.0/resolve/main/Illustrious-XL-v2.0.safetensors
+
+   # A different checkpoint — uncomment the matching two lines below instead of the stock one above:
+
+   # RouWei 0.8 (the epsilon file, not vpred)
+   # !wget -q -O ComfyUI/models/checkpoints/rouwei_080_epsilon_fp16.safetensors \
+   #   "https://huggingface.co/Minthy/RouWei-0.8/resolve/main/rouwei_080_epsilon_fp16.safetensors"
+
+   # Animagine XL 4.0 (see the LoRA warning in the table above)
+   # !wget -q -O ComfyUI/models/checkpoints/animagine-xl-4.0.safetensors \
+   #   "https://huggingface.co/cagliostrolab/animagine-xl-4.0/resolve/main/animagine-xl-4.0.safetensors"
+
+   # Illustrious LoRA ecosystem
+   # !wget -q -O ComfyUI/models/checkpoints/Illustrious-XL-v2.0.safetensors \
+   #   "https://huggingface.co/OnomaAIResearch/Illustrious-XL-v2.0/resolve/main/Illustrious-XL-v2.0.safetensors"
    ```
    Make sure **Model** in AI Settings matches whatever filename you actually downloaded (e.g. `sd_xl_base_1.0.safetensors`).
 
