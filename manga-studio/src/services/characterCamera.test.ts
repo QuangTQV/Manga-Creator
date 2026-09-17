@@ -17,6 +17,9 @@ const registerGeneratedAsset = vi.fn();
 
 vi.mock("@/services/generation", () => ({
   generateImage: (...args: unknown[]) => generateImage(...args),
+  // These tests exercise prompt/reference content, not the generation
+  // cache — pass straight through, ignoring whatever cache arg is given.
+  generateImageCached: (...args: unknown[]) => generateImage(args[0]),
   registerGeneratedAsset: (...args: unknown[]) => registerGeneratedAsset(...args),
   imageProviderCapabilities: async () => ({ referenceImage: true, nativeTransparency: false }),
 }));

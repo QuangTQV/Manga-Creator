@@ -10,7 +10,7 @@
  */
 
 import { executePlan } from "@/agent-v2";
-import type { ExecutionSummary, RunGuards, StepStatus } from "@/agent-v2/types";
+import type { ExecutionSummary, RunContext, RunGuards, StepStatus } from "@/agent-v2/types";
 import type { AgentPlan } from "@/agent/tools/schemas";
 import type { ProjectDocument } from "@/domain/types";
 import { useEditorStore } from "@/editor/store";
@@ -107,6 +107,10 @@ export async function executeCreativeRun(
   prepared: { plan: AgentPlan; guards: RunGuards; map: CreativeTaskMap; resolution: Resolution },
   onProgress: (index: number, status: StepStatus, detail?: string) => void,
   sink: RunV3Sink = {},
+  /** See `RunContext.generationCache` — undefined unless the caller opted in
+   * (AgentPanel's "Retry (same plan)" passes the same instance across
+   * attempts of one prepared plan). */
+  generationCache?: RunContext["generationCache"],
 ): Promise<RunV3Result> {
   const state = useEditorStore.getState();
   const before = state.doc;
@@ -114,7 +118,7 @@ export async function executeCreativeRun(
   const beforeFingerprints = panelScopeFingerprints(before);
 
   sink.activity?.("Composing panel");
-  const summary = await executePlan(prepared.plan, onProgress, prepared.guards);
+  const summary = await executePlan(prepared.plan, onProgress, prepared.guards, undefined, generationCache);
 
   sink.activity?.("Checking result");
   const after = useEditorStore.getState().doc;

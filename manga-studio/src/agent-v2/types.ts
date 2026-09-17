@@ -3,6 +3,7 @@
 import { type CompositionIssue } from "@/domain/compositionValidation";
 import type { ID, InteractionParameters, InteractionType } from "@/domain/types";
 import { type FallbackUse, type RunStatus, type StepFailure } from "@/agent/stepPolicy";
+import type { GenerationCache } from "@/services/generation";
 
 export type StepStatus = "pending" | "running" | "done" | "failed";
 
@@ -98,6 +99,13 @@ export interface RunContext {
   guards: RunGuards;
   createdCharacterIds: ID[];
   lastLanguageAction: string | undefined;
+  /**
+   * Opt-in per-run generation cache (see `services/generation.ts`'s
+   * `GenerationCache`). Undefined unless the caller explicitly supplied one
+   * (e.g. AgentPanel's "Retry (same plan)") — a plain `executePlan` call
+   * (tests, any caller with no retry concept) generates fresh every time.
+   */
+  generationCache?: GenerationCache;
   /**
    * Runtime entity bindings — the single place a planning-stage placeholder
    * ID becomes a real domain ID. A placeholder (NEW_*_PLACEHOLDER and friends)

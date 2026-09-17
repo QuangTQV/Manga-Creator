@@ -1,6 +1,6 @@
 "use client";
 
-import { generateImage, registerGeneratedAsset, imageProviderCapabilities } from "@/services/generation";
+import { generateImageCached, registerGeneratedAsset, imageProviderCapabilities, type GenerationCache } from "@/services/generation";
 import { buildAssetNegativePrompt, buildAssetPrompt, buildCharacterStatePrompt } from "@/ai/promptTemplates";
 import type { Character, CharacterState, ID, PanelCamera } from "@/domain/types";
 import { useEditorStore } from "@/editor/store";
@@ -47,6 +47,10 @@ export async function generateCharacterAssetForState(input: {
    */
   cameraContext?: string[];
   camera?: PanelCamera;
+  /** Opt-in — see `services/generation.ts`'s `GenerationCache`. Only the
+   * Agent's execution path (via `RunContext.generationCache`) supplies one;
+   * a manual UI regeneration never does, so it always generates fresh. */
+  generationCache?: GenerationCache;
 }): Promise<ID> {
   const doc = useEditorStore.getState().doc;
   const character = doc?.characters[input.characterId];
@@ -110,18 +114,21 @@ export async function generateCharacterAssetForState(input: {
           cameraContext: input.cameraContext,
         });
 
-  const result = await generateImage({
-    assetType,
-    prompt,
-    negativePrompt: buildAssetNegativePrompt({
+  const result = await generateImageCached(
+    {
       assetType,
-      style: style.profile,
-      supportsNativeTransparency: capabilities.nativeTransparency,
-    }),
-    size: "portrait",
-    expectMonochrome: isMonochromeStyle(style.profile),
-    referenceUrls: referenceAssets.length > 0 ? referenceAssets.map((asset) => assetRenderUrl(asset)!).filter(Boolean) : undefined,
-  });
+      prompt,
+      negativePrompt: buildAssetNegativePrompt({
+        assetType,
+        style: style.profile,
+        supportsNativeTransparency: capabilities.nativeTransparency,
+      }),
+      size: "portrait",
+      expectMonochrome: isMonochromeStyle(style.profile),
+      referenceUrls: referenceAssets.length > 0 ? referenceAssets.map((asset) => assetRenderUrl(asset)!).filter(Boolean) : undefined,
+    },
+    input.generationCache,
+  );
   return registerGeneratedAsset({
     result,
     assetType,
@@ -164,6 +171,8 @@ export async function applyCharacterStateToInstance(input: {
   cameraContext?: string[];
   camera?: PanelCamera;
   onProgress?: (progress: CharacterGenerationProgress) => void;
+  /** Opt-in — see generateCharacterAssetForState. */
+  generationCache?: GenerationCache;
 }): Promise<{
   assetId: ID;
   state: CharacterState;
@@ -213,6 +222,7 @@ export async function applyCharacterStateToInstance(input: {
       referenceOverride: input.referenceOverride,
       cameraContext: input.cameraContext,
       camera: input.camera,
+      generationCache: input.generationCache,
     });
     source = "generated";
     input.onProgress?.({ stage: "saving", state: desired });

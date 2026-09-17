@@ -155,12 +155,13 @@ function findTargetInstance(
  * can never read a stale authorization from a previous run because the context
  * is created by the orchestrator and passed down explicitly.
  */
-export function createRunContext(guards: RunGuards): RunContext {
+export function createRunContext(guards: RunGuards, generationCache?: RunContext["generationCache"]): RunContext {
   ctxGuards = guards;
   const ctx: RunContext = {
     guards,
     createdCharacterIds: [],
     lastLanguageAction: undefined,
+    generationCache,
     bindings: new Map(),
     pendingPlaceholders: new Map(),
     bindCreatedCharacter(name, id) {

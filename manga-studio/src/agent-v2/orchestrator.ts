@@ -141,6 +141,8 @@ export async function executePlan(
   guards: RunGuards = DENY_ALL_CREATION,
   /** The enforced semantic structure, when the request had one. */
   sequence?: SequencePlan,
+  /** See `RunContext.generationCache` — undefined unless the caller opted in. */
+  generationCache?: RunContext["generationCache"],
 ): Promise<ExecutionSummary> {
   const store = useEditorStore.getState();
   const before = store.doc;
@@ -151,7 +153,7 @@ export async function executePlan(
   const fallbacks: FallbackUse[] = [];
   const skippedSteps: StepFailure[] = [];
 
-  const ctx = createRunContext(guards);
+  const ctx = createRunContext(guards, generationCache);
 
   /**
    * Snapshot → execute → validate → commit OR roll back.

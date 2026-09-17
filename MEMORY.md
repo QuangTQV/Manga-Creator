@@ -33,6 +33,39 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-17 — Generation cache so "Retry (same plan)" doesn't re-pay for
+  already-succeeded steps.** Real usage exposed the gap in the previous
+  entry immediately: a run that got past `create_character Haruto` and
+  `Haruto`/`Hina`'s reference generation, then failed on `monster`, still
+  regenerated Haruto AND Hina's images all over again on "Retry (same
+  plan)" — because the whole-transaction rollback (deliberately kept, per
+  the previous entry's decision) undoes the DOCUMENT, and nothing preserved
+  the actual expensive provider calls. Real GPU/API cost, not just
+  annoyance. Fixed WITHOUT touching the rollback/Undo invariant — added
+  `GenerationCache` (`services/generation.ts`, a plain `Map<string,
+  Promise<GenerateApiResult>>`) and `generateImageCached(request, cache)`:
+  a cache hit needs a byte-identical JSON request, and a failed call is
+  evicted (never caches a rejection). Threaded an optional
+  `generationCache` through `RunContext` (`agent-v2/types.ts` →
+  `createRunContext` → `executePlan`'s new 5th param → `executeCreativeRun`'s
+  new 4th param) down to every agent-driven character-generation call site
+  (`characterProcess.ts`'s `doGenerateCharacterAsset`/
+  `resolveOrGenerateState`/both `applyCharacterStateToInstance` calls →
+  `characters/stateRuntime.ts`'s `generateCharacterAssetForState`/
+  `applyCharacterStateToInstance`, which now call `generateImageCached`
+  instead of `generateImage` directly). Deliberately NOT wired into the
+  manual UI paths (`services/characters.ts`, `characterCamera.ts`'s
+  camera-redraw, or any of the tones/scenery/language/interaction services)
+  — undefined there means "always generate fresh," so a manual "regenerate
+  this" click is never surprised by a stale cached image; only
+  `AgentPanel.tsx` explicitly creates and passes one, in a `useRef` reset at
+  the top of `run()` (a genuinely new run/plan starts empty) but left alone
+  across `execute(prepared)` calls (both "Continue" and the new "Retry
+  (same plan)" button reuse it). New `services/generation.test.ts`
+  (hit/miss/eviction-on-failure) plus a mock fix in every existing test that
+  stubbed `@/services/generation` for `generateImage` alone
+  (`characterCamera.test.ts`) — `generateImageCached` needed the same stub
+  or the real (unmocked, undefined-in-the-mock) export would throw.
 - **2026-09-17 — Two Retry options on a failed Agent run: same plan vs. new
   plan.** User asked why "Retry" always seemed to restart from scratch, and
   proposed there should be two choices: retry just the failed step, or

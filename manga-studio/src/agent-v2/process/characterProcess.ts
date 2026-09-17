@@ -79,6 +79,7 @@ export async function doGenerateCharacterAsset(ctx: RunContext,
     role: args.kind === "reference" ? "canonical" : "state",
     instruction: args.instruction,
     state: desired,
+    generationCache: ctx.generationCache,
   });
   ctx.stageOnWorkspace(assetId);
 }
@@ -129,6 +130,7 @@ export async function resolveOrGenerateState(ctx: RunContext,
         role: "state",
         state: desired,
         instruction,
+        generationCache: ctx.generationCache,
       });
       doc = ctx.currentDoc();
       asset = doc.assets[assetId] ?? null;
@@ -247,6 +249,7 @@ export async function doSetCharacterSlot(ctx: RunContext,
     instanceId: instance.id,
     patch: { pose: args.pose, expression: args.expression, outfit: args.outfit, view: args.view },
     generateIfMissing: args.generateIfMissing,
+    generationCache: ctx.generationCache,
   });
 }
 
@@ -281,5 +284,5 @@ export async function doSetCharacterPoseRig(ctx: RunContext, args: {
     );
   }
 
-  await applyCharacterStateToInstance({ instanceId: instance.id, patch: { poseRig: intent } });
+  await applyCharacterStateToInstance({ instanceId: instance.id, patch: { poseRig: intent }, generationCache: ctx.generationCache });
 }

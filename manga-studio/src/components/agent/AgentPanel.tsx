@@ -9,7 +9,7 @@
  * and per-step status stay visible, and one Undo reverts the whole run.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { countGenerations, describeStep, type ExecutionSummary, type StepProgress } from "@/agent-v2";
 import type { AgentPlan } from "@/agent/tools/schemas";
 import {
@@ -20,7 +20,7 @@ import {
 import type { VerificationIssue } from "@/agent-v3/verification/deterministicVerifier";
 import { useEditorStore } from "@/editor/store";
 import { useUiStore } from "@/editor/uiStore";
-import { fetchProviderStatus } from "@/services/generation";
+import { fetchProviderStatus, type GenerationCache } from "@/services/generation";
 import {
   AlertIcon,
   CheckIcon,
@@ -72,6 +72,13 @@ export function AgentPanel() {
   const [runSummary, setRunSummary] = useState<ExecutionSummary | null>(null);
   const [issues, setIssues] = useState<VerificationIssue[]>([]);
   const [agentConfigured, setAgentConfigured] = useState<boolean | null>(null);
+  // Lives across "Retry (same plan)" attempts of the SAME prepared plan (the
+  // ref is only reset at the top of a genuinely new run() call, never by
+  // execute() alone) — see services/generation.ts's GenerationCache. A run
+  // that fails partway rolls the document back, but an earlier step's
+  // successful generation stays cached here, so re-executing the same plan
+  // reuses it instead of paying for the provider call again.
+  const generationCacheRef = useRef<GenerationCache>(new Map());
   const settingsOpen = useUiStore((s) => s.settingsOpen);
   const openSettings = useUiStore((s) => s.openSettings);
 
@@ -93,6 +100,7 @@ export function AgentPanel() {
       initial.setCurrentPage(targetPageId);
     }
     setTargetPageId(null); // the picked page is now the open page; back to "follow"
+    generationCacheRef.current = new Map(); // a genuinely new run never reuses a prior scene's cached generations
 
     const state = useEditorStore.getState();
     const activePage = state.currentPageId ? state.doc?.pages[state.currentPageId] : undefined;
@@ -158,6 +166,7 @@ export function AgentPanel() {
         if (status === "running") setStatusLine(describeStep(toRun.plan.steps[index]) + "…");
       },
       { activity: (label) => setActivity((current) => [...current, label]) },
+      generationCacheRef.current,
     );
     setIssues(result.issues);
     setRunSummary(result.execution);
