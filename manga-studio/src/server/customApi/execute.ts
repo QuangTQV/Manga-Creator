@@ -11,7 +11,7 @@ import type { CustomApiConfig } from "./config";
 
 const REQUEST_TIMEOUT_MS = 90_000;
 export const MAX_RESPONSE_BYTES = 40 * 1024 * 1024;
-const MAX_ERROR_BODY_BYTES = 64 * 1024;
+export const MAX_ERROR_BODY_BYTES = 64 * 1024;
 
 export class CustomApiError extends Error {
   readonly safeMessage: string;
@@ -82,8 +82,13 @@ export async function customErrorFrom(response: Response, apiKey?: string): Prom
     return new CustomApiError("Endpoint or model not found — check the URL and model name", 404);
   }
   const text = await readBodyText(response, MAX_ERROR_BODY_BYTES).catch(() => "");
+  return customErrorFromText(response.status, text, apiKey);
+}
+
+/** Same mapping as {@link customErrorFrom}, for a body already read once (e.g. inspected for a retry decision). */
+export function customErrorFromText(status: number, text: string, apiKey?: string): CustomApiError {
   return new CustomApiError(
-    `Provider error (HTTP ${response.status})${text ? `: ${scrub(text, apiKey).slice(0, 200)}` : ""}`,
+    `Provider error (HTTP ${status})${text ? `: ${scrub(text, apiKey).slice(0, 200)}` : ""}`,
   );
 }
 

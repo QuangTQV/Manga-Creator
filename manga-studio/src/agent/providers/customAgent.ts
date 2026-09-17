@@ -12,14 +12,25 @@ import {
   buildHeaders,
   CustomApiError,
   customErrorFrom,
+  customErrorFromText,
   customFetch,
+  MAX_ERROR_BODY_BYTES,
   readJsonBounded,
 } from "@/server/customApi/execute";
+import { readBodyText } from "@/server/outboundFetch";
 import type { ProviderConfig } from "@/server/providerSession";
 import { AGENT_REQUEST_TIMEOUT_MS, AgentModelError, type AgentCompletionOptions, type AgentModelProvider } from "./types";
 import { normalizeMessage, readOpenAiCompletion } from "./openaiResponse";
 
 const DEFAULT_TEXT_PATH = "choices[0].message.content";
+
+// Newer reasoning-family models (o1/o3/gpt-5, and whatever a user's Azure
+// deployment happens to be named — deployment names are arbitrary, so this
+// can't be detected from the model name) reject `max_tokens` and require
+// `max_completion_tokens` instead. Self-heal by retrying once with the
+// param renamed, rather than guessing from a model-name pattern list that
+// will always be behind the next model family.
+const MAX_TOKENS_UNSUPPORTED_RE = /max_completion_tokens/i;
 
 export function createCustomAgentProvider(config: ProviderConfig): AgentModelProvider {
   const custom = config.custom;
@@ -58,6 +69,24 @@ export function createCustomAgentProvider(config: ProviderConfig): AgentModelPro
       }, { signal: options.signal, timeoutMs: options.timeoutMs ?? AGENT_REQUEST_TIMEOUT_MS });
     } catch (error) {
       throw toAgentError(error);
+    }
+    if (!response.ok && response.status === 400 && openAiChatShape && isRecordWithMaxTokens(body)) {
+      const text = await readBodyText(response, MAX_ERROR_BODY_BYTES).catch(() => "");
+      if (MAX_TOKENS_UNSUPPORTED_RE.test(text)) {
+        const { max_tokens, ...rest } = body;
+        const retryBody = { ...rest, max_completion_tokens: max_tokens };
+        try {
+          response = await customFetch(config.baseUrl, {
+            method: custom.method,
+            headers: buildHeaders(config, custom),
+            body: custom.method === "POST" ? JSON.stringify(retryBody) : undefined,
+          }, { signal: options.signal, timeoutMs: options.timeoutMs ?? AGENT_REQUEST_TIMEOUT_MS });
+        } catch (error) {
+          throw toAgentError(error);
+        }
+      } else {
+        throw toAgentError(customErrorFromText(400, text, config.apiKey));
+      }
     }
     if (!response.ok) throw toAgentError(await customErrorFrom(response, config.apiKey));
 
@@ -115,6 +144,10 @@ function toAgentError(error: unknown): AgentModelError {
     return new AgentModelError(message, error.status);
   }
   return new AgentModelError("Endpoint unreachable");
+}
+
+function isRecordWithMaxTokens(body: unknown): body is Record<string, unknown> & { max_tokens: unknown } {
+  return typeof body === "object" && body !== null && !Array.isArray(body) && "max_tokens" in body;
 }
 
 function isOpenAiChatShape(url: string, body: unknown): boolean {

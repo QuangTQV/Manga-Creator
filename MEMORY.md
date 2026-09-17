@@ -33,6 +33,26 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-17 — Custom API agent: self-heal `max_tokens` →
+  `max_completion_tokens`.** User was configuring Azure OpenAI as the
+  Manga Agent via the Custom API protocol (following `docs/HOW_TO_RUN.md`
+  §5c) and hit a real bug, not a config mistake: `customAgent.ts`'s
+  `isOpenAiChatShape` heuristic (URL path ends in `/chat/completions` +
+  body has a `messages` array) silently injects `max_tokens: 2048` into
+  the request **outside** the user's editable Request template — there
+  was no way to remove or override it from the UI. Newer reasoning-family
+  models (o1/o3/gpt-5-class — the user's Azure deployment was one) reject
+  `max_tokens` and require `max_completion_tokens` instead, so every
+  request 400'd with Azure's own "Use 'max_completion_tokens' instead"
+  error. Fixed by self-healing rather than model-name sniffing (deployment
+  names are arbitrary, so a name-pattern list would always be behind the
+  next model family): on a 400 whose body actually mentions
+  `max_completion_tokens`, retry once with that key swapped in for
+  `max_tokens`, same body otherwise. Added `customErrorFromText` to
+  `execute.ts` (extracted from `customErrorFrom`, for a body already read
+  once during the retry check) and two regression tests in
+  `customAgent.test.ts` (retry-and-succeed; a same-shaped-but-unrelated
+  400 must NOT trigger a wasted retry).
 - **2026-09-17 — Fork attribution + README overhaul.** User asked to
   remove "Created and maintained by BotTony329" from README.md, saying
   this is now their own project. Flagged before acting: the LICENSE's own

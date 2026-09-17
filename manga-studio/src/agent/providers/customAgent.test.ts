@@ -28,6 +28,42 @@ describe("custom OpenAI-style agent adapter", () => {
     expect(requestBody).toMatchObject({ stream: true, enable_thinking: false, max_tokens: 2048 });
   });
 
+  it("retries with max_completion_tokens when the provider rejects max_tokens", async () => {
+    const requestBodies: Record<string, unknown>[] = [];
+    let call = 0;
+    vi.stubGlobal("fetch", vi.fn(async (_url, init: RequestInit) => {
+      requestBodies.push(JSON.parse(String(init.body)));
+      call += 1;
+      if (call === 1) {
+        return new Response(
+          '{"error":{"message":"Unsupported parameter: \'max_tokens\' is not supported with this model. Use \'max_completion_tokens\' instead.","type":"invalid_request_error","param":"max_tokens"}}',
+          { status: 400, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"summary":"ok","steps":[]}' }, finish_reason: "stop" }] }), {
+        headers: { "content-type": "application/json" },
+      });
+    }));
+    const result = await createCustomAgentProvider(config()).completeJson("Return JSON", "Plan this");
+    expect(result.text).toBe('{"summary":"ok","steps":[]}');
+    expect(requestBodies).toHaveLength(2);
+    expect(requestBodies[0]).toMatchObject({ max_tokens: 2048 });
+    expect(requestBodies[1]).toMatchObject({ max_completion_tokens: 2048 });
+    expect(requestBodies[1]).not.toHaveProperty("max_tokens");
+  });
+
+  it("does not retry a max_tokens-shaped 400 that isn't the max_completion_tokens hint", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      new Response('{"error":{"message":"Invalid request","type":"invalid_request_error"}}', {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      }),
+    ));
+    await expect(createCustomAgentProvider(config()).completeJson("Return JSON", "Plan this")).rejects.toMatchObject({
+      safeMessage: expect.stringContaining("Invalid request"),
+    });
+  });
+
   it("normalizes its historical CustomApiError timeout", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("fetch", vi.fn((_url, init: RequestInit) => new Promise((_resolve, reject) => {
