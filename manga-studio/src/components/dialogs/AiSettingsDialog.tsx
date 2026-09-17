@@ -696,7 +696,13 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
         <details
           className="mt-2"
           open={Boolean(
-            comfyUiSteps || comfyUiCfg || comfyUiSampler || comfyUiScheduler || comfyUiControlNetModel || loraRows.length,
+            comfyUiSteps ||
+              comfyUiCfg ||
+              comfyUiSampler ||
+              comfyUiScheduler ||
+              comfyUiControlNetModel ||
+              comfyUiControlNetStrength ||
+              loraRows.length,
           )}
         >
           <summary className="cursor-pointer select-none text-[10px] uppercase tracking-wider text-zinc-500">
