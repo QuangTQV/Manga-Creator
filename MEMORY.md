@@ -33,6 +33,29 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-17 — New "Test generation" button in AI Settings (Image
+  Generation).** After a long live-debugging session on the user's real
+  Kaggle ComfyUI setup (checkpoint swaps, LoRA weights, `--fp32-vae`) where
+  the only way to see the provider's *raw* output was for me to read the
+  saved file straight off `.data/generated/` via the Live AI log's URL, the
+  user asked for a real in-app way to do this themselves. Added `POST
+  /api/provider/test-generate`
+  ([route.ts](manga-studio/src/app/api/provider/test-generate/route.ts)):
+  builds one representative character prompt via the existing
+  `buildAssetPrompt` (isomorphic, already used by both the client preview
+  and the agent) with the default "Minimal Line Manga" style profile, calls
+  `createImageProvider(config).generateImage()` **directly** — deliberately
+  bypassing `generateAssetImage`'s background-removal/`characterAssetContract`
+  pipeline, since the entire point is to see what the provider drew BEFORE
+  that gate can reject it — saves the raw bytes via `putObject`, and logs
+  the call to Live AI (`recordLiveCall`, `route: "test-generate"`) so it's
+  inspectable the same way any other generation is. Distinct from the
+  existing "Test Connection" (status-only, `/api/provider/test`, explicitly
+  "never a full generation") — this new button is a real, costly generation,
+  gated behind `configured` exactly like Test Connection is, shown only for
+  the image-kind card. `SIZE_MAP` in `ai/generate.ts` exported (was a private
+  const) so this route reuses the exact same portrait dimensions real
+  generations use, rather than duplicating the constant.
 - **2026-09-17 — HOW_TO_RUN.md: `--fp32-vae` required on the Kaggle T4
   ComfyUI launch command.** After switching to the Animagine XL 4.0
   checkpoint (previous entry), the user hit "Background removal did not

@@ -51,7 +51,7 @@ export interface GenerateResult {
   referenceUsed: boolean;
 }
 
-const SIZE_MAP: Record<string, { width: number; height: number }> = {
+export const SIZE_MAP: Record<string, { width: number; height: number }> = {
   portrait: { width: 832, height: 1216 },
   landscape: { width: 1216, height: 832 },
   square: { width: 1024, height: 1024 },

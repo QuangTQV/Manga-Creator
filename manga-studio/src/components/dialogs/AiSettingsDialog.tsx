@@ -287,10 +287,11 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
   const [comfyUiIpAdapterWeight, setComfyUiIpAdapterWeight] = useState("");
   const [loraRows, setLoraRows] = useState<LoraRow[]>([]);
   const [loraOptions, setLoraOptions] = useState<string[]>([]);
-  const [busy, setBusy] = useState<"save" | "test" | "forget" | "models" | "loras" | null>(null);
+  const [busy, setBusy] = useState<"save" | "test" | "testGenerate" | "forget" | "models" | "loras" | null>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [preview, setPreview] = useState<Record<string, unknown> | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const [testImage, setTestImage] = useState<{ url: string; prompt: string } | null>(null);
 
   const isCustom = providerType === "custom";
 
@@ -442,6 +443,25 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
           : { ok: false, text: body.error ?? "Connection failed" },
       );
       if (body.preview) setPreview(body.preview);
+    } catch {
+      setMessage({ ok: false, text: "Endpoint unreachable" });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const testGenerate = async () => {
+    setBusy("testGenerate");
+    setMessage(null);
+    setTestImage(null);
+    try {
+      const response = await fetch("/api/provider/test-generate", { method: "POST" });
+      const body = await response.json();
+      if (body.ok) {
+        setTestImage({ url: body.url, prompt: body.prompt });
+      } else {
+        setMessage({ ok: false, text: body.error ?? "Generation failed" });
+      }
     } catch {
       setMessage({ ok: false, text: "Endpoint unreachable" });
     } finally {
@@ -953,6 +973,16 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
         >
           {busy === "test" ? "Testing…" : "Test Connection"}
         </button>
+        {kind === "image" && (
+          <button
+            className="rounded border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs hover:bg-zinc-700 disabled:opacity-40"
+            onClick={testGenerate}
+            disabled={busy !== null || !configured}
+            title="Runs one real generation with the current settings (checkpoint, LoRA, CFG, ...) and shows the raw image — before background removal or any validation"
+          >
+            {busy === "testGenerate" ? "Generating…" : "Test generation"}
+          </button>
+        )}
         <div className="flex-1" />
         {configured && summary?.source === "session" && (
           <button className="text-xs text-zinc-500 hover:text-red-400" onClick={forget} disabled={busy !== null}>
@@ -963,6 +993,19 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
 
       {message && (
         <p className={`mt-2 text-xs ${message.ok ? "text-emerald-400" : "text-red-400"}`}>{message.text}</p>
+      )}
+      {testImage && (
+        <div className="mt-2">
+          {/* eslint-disable-next-line @next/next/no-img-element -- provider-hosted/local dev URL, not a static asset */}
+          <img
+            src={testImage.url}
+            alt="Test generation — raw provider output, not yet background-removed or validated"
+            className="max-h-64 rounded-md border border-zinc-700"
+          />
+          <p className="mt-1 text-[10px] text-zinc-500">
+            Raw output — background removal and asset validation were not run on this image.
+          </p>
+        </div>
       )}
       {preview && (
         <details className="mt-2 rounded-md bg-[var(--bg-elevated)] p-2">

@@ -188,10 +188,11 @@ Recognized hybrid Qwen models use non-thinking mode for latency-sensitive routin
 A "Live AI" panel (top bar → `LiveAiPanel.tsx`) shows the actual request sent
 to whichever provider handled a call and the actual response — for image
 generation (`/api/generate`, `assets/edit`, `assets/upload`,
-`assets/remove-background`, `puppet/reconstruct`) and both agent planning
-paths (`/api/agent`, `/api/agent/direct`, `/api/agent/parse-novel`) — the
-exact prompt/system-prompt text, not just the stage-timing metadata
-`trace`/`AgentTrace` already logged to the server console for diagnostics.
+`assets/remove-background`, `puppet/reconstruct`, `provider/test-generate`)
+and both agent planning paths (`/api/agent`, `/api/agent/direct`,
+`/api/agent/parse-novel`) — the exact prompt/system-prompt text, not just
+the stage-timing metadata `trace`/`AgentTrace` already logged to the server
+console for diagnostics.
 
 - **Capture point**: each of those routes calls `recordLiveCall`
   (`src/server/callLog.ts`) with a redacted/truncated summary of what it
@@ -230,6 +231,31 @@ exact prompt/system-prompt text, not just the stage-timing metadata
   never a dollar figure — BYOK means this process only ever sees the call
   itself, never a bill, so there is nothing honest to convert a call count
   into.
+
+## Test generation (`/api/provider/test-generate`)
+
+"Test Connection" is deliberately status-only — it round-trips to a cheap
+endpoint (model listing, `/system_stats`, etc.) and explicitly never runs a
+full generation. That leaves no way to see what an image provider's
+current *config* — checkpoint, LoRA weights, CFG, ControlNet, IPAdapter,
+whatever the protocol exposes — actually produces, short of running a real
+character-asset generation and reading the raw file off disk when
+background removal rejects it (exactly what tuning a fresh ComfyUI setup
+looks like in practice).
+
+`POST /api/provider/test-generate` closes that gap: it builds one
+representative character prompt via `buildAssetPrompt` (the same
+isomorphic prompt builder the client preview and the agent both use,
+with the default "Minimal Line Manga" style profile), calls
+`createImageProvider(config).generateImage()` directly, and returns the
+raw image URL — **skipping** `generateAssetImage`'s background-removal and
+`characterAssetContract` validation entirely, since the whole point is
+seeing the provider's output before that gate can reject it. The call is
+still logged to Live AI (`route: "test-generate"`) so the raw prompt/result
+is inspectable the same way any other generation is, and it is a real,
+billable/costly generation — gated behind `configured` in the UI exactly
+like Test Connection, but shown only on the image-provider card ("Test
+generation", next to "Test Connection").
 
 ## Generation rules
 
