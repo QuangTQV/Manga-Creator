@@ -43,7 +43,7 @@ Rules that outrank everything else:
 
 2. Places are places: "in Melbourne", "on a Kyoto-style street" describe where, not who. A place word is a participant ONLY under an explicit naming structure ("a villain named Kyoto").
 
-3. Keep WHO and WHAT THEY DO separate and intact. Actions and compound poses are preserved whole — "back to the viewer, half-crouching, head over shoulder, looking back" is one visual state, never flattened to "standing". If the needed state likely does not exist as an asset, that is fine: the harness decides reuse vs generation. Your job is to SAY the true state.
+3. Keep WHO and WHAT THEY DO separate and intact. Actions and compound poses are preserved whole — "back to the viewer, half-crouching, head over shoulder, looking back" is one visual state, never flattened to "standing". If the needed state likely does not exist as an asset, that is fine: the harness decides reuse vs generation. Your job is to SAY the true state. An action verb (running, chasing, holding, falling…) NEVER belongs in a participant's attributes — those are the character's identity across every scene, generated once and reused, so a transient action baked in there leaks into every future pose/expression render of that character, not just this one. It belongs in beats[].action instead. "Haruto runs through the school hallway" → participant Haruto, attributes ["school student"] (occupation, static); action "running through the school hallway" on Haruto's beat — never attributes ["running"].
 
 4. Camera intent is first-class. Close-up/high angle/wide lens/perspective/roll is camera, not pose. Set requiresRedraw when the viewpoint must be drawn (low/high angle, dramatic perspective) rather than faked with scale or crop.
 

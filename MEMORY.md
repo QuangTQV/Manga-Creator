@@ -33,6 +33,46 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-17 — Traced a "still draws a street scene" failure past the
+  prompt-building layer into the Creative Director's own output.** After
+  the `stateRuntime.ts` fix (previous entry) was confirmed live via Live
+  AI (negative prompt now correctly carries every reinforced term), the
+  user's real Agent run still failed — but the actual generated image
+  was clean line art of "Haruto" running down a city street, not a
+  background/panel-layout artifact at all. The Live AI PROMPT field
+  showed why: `"Appearance: running, school student Standing neutral
+  pose..."` — the character's own stored identity ("appearance") field
+  literally contains the transient action "running", contradicting the
+  very next sentence ("Standing neutral pose") in the same prompt, and
+  plausibly biasing the model toward an outdoor/action scene despite the
+  isolation instruction and every negative-prompt term. Traced the data
+  flow: `characterIdentityDescription` (`characters/state.ts:118-125`)
+  renders `character.appearance` verbatim → that field is set by
+  `doCreateCharacter` (`agent-v2/process/characterProcess.ts:43-47`) from
+  `args.appearance` → which `agent-v3/routing/capabilityRouter.ts:54`
+  builds as `binding.attributes.join(", ")` — i.e. this is the Creative
+  Director LLM's own `participant.attributes` array
+  (`agent-v3/contract/creativeTaskMap.ts:26`), meant for STATIC identity
+  traits only. The Director's system prompt's own Rule 3
+  (`agent-v3/director/systemPrompt.ts`) already says to keep WHO and
+  WHAT-THEY-DO separate — action belongs in `beats[].action`, not
+  `participant.attributes` — but had no explicit example forbidding an
+  action verb from landing in `attributes` specifically, and the model
+  put "running" there anyway. This is a permanent character-identity
+  pollution bug, not a one-off: once "running" is baked into
+  `character.appearance`, it leaks into every future pose/expression
+  render of that character, not just this generation. Added a concrete
+  corrective example to Rule 3 (an action-verb blocklist framing plus
+  the exact "Haruto runs through the school hallway" case, mirroring the
+  real failure) — text-only change to the system prompt, no schema/logic
+  change, verified `services/architecture.test.ts`'s "exactly one
+  canonical system prompt" check still passes (it only checks the SYMBOL
+  isn't duplicated, not prompt content/length). Caught a self-inflicted
+  syntax bug while editing: `CREATIVE_DIRECTOR_SYSTEM_PROMPT` is a
+  template literal, and backticks in the added example text (`` `attributes` ``,
+  `` `beats[].action` ``) terminated the string early — `tsc` caught it
+  immediately; fixed by dropping the backticks (plain text, no markdown
+  code-span styling inside a prompt string anyway).
 - **2026-09-17 — Found the REAL reason the negative-prompt fix never
   reached the Manga Agent's own generations.** User retried "Generate
   reference for Haruto" through the actual Agent panel (not the manual
