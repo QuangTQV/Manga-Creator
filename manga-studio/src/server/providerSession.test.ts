@@ -131,6 +131,26 @@ describe("buildProviderConfig", () => {
     expect(config.comfyui).toEqual({ controlNetModel: "control_v11p_sd15_openpose.pth" });
   });
 
+  it("comfyui: a config with ONLY ipAdapterWeight set is not dropped as 'empty' either", () => {
+    // Same regression as above, for the IPAdapter fields specifically —
+    // normalizeComfyUiConfig was rewritten to check every scalar field
+    // generically after this exact bug happened twice by hand-enumeration,
+    // so THIS test is really pinning that the generic rewrite still works,
+    // not re-litigating the same enumerated-list bug a third time.
+    process.env.ALLOW_PRIVATE_NETWORKS = "1";
+    const config = buildProviderConfig(
+      {
+        kind: "image",
+        providerType: "comfyui",
+        apiKey: undefined,
+        model: "sd_xl_base_1.0.safetensors",
+        comfyui: { ipAdapterWeight: 0.6 },
+      },
+      null,
+    );
+    expect(config.comfyui).toEqual({ ipAdapterWeight: 0.6 });
+  });
+
   it("SSRF-guards user endpoints", () => {
     delete process.env.ALLOW_PRIVATE_NETWORKS;
     expect(() => buildProviderConfig({ ...payload, baseUrl: "https://169.254.169.254" }, null)).toThrow(

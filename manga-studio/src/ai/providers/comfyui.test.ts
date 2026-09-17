@@ -240,6 +240,65 @@ describe("buildEditWorkflow", () => {
     }) as Record<string, { inputs: Record<string, unknown> }>;
     expect(graph["3"].inputs).toMatchObject({ steps: 30, cfg: 4.5, sampler_name: "dpmpp_2m", scheduler: "karras" });
   });
+
+  it("with an extra reference image: wires IPAdapterUnifiedLoader + IPAdapterAdvanced, defaulting to the architecture-agnostic preset", () => {
+    const reference = { name: "canonical.png", subfolder: "", type: "input" };
+    const graph = buildEditWorkflow("add a hat", "m.safetensors", SOURCE, undefined, undefined, reference) as Record<
+      string,
+      { class_type: string; inputs: Record<string, unknown> }
+    >;
+    expect(graph["50"]).toMatchObject({ class_type: "LoadImage", inputs: { image: "canonical.png" } });
+    expect(graph["51"]).toMatchObject({
+      class_type: "IPAdapterUnifiedLoader",
+      inputs: { model: ["4", 0], preset: "STANDARD (medium strength)" },
+    });
+    expect(graph["52"]).toMatchObject({
+      class_type: "IPAdapterAdvanced",
+      inputs: {
+        model: ["51", 0],
+        ipadapter: ["51", 1],
+        image: ["50", 0],
+        weight: 1,
+        weight_type: "linear",
+        combine_embeds: "concat",
+        start_at: 0,
+        end_at: 1,
+        embeds_scaling: "V only",
+      },
+    });
+    expect(graph["3"].inputs.model).toEqual(["52", 0]); // KSampler reads the IPAdapter-wrapped model
+  });
+
+  it("respects ipAdapterPreset/ipAdapterWeight overrides", () => {
+    const reference = { name: "canonical.png" };
+    const graph = buildEditWorkflow("add a hat", "m.safetensors", SOURCE, undefined, {
+      ipAdapterPreset: "PLUS (high strength)",
+      ipAdapterWeight: 0.6,
+    }, reference) as Record<string, { inputs: Record<string, unknown> }>;
+    expect(graph["51"].inputs.preset).toBe("PLUS (high strength)");
+    expect(graph["52"].inputs.weight).toBe(0.6);
+  });
+
+  it("chains LoRA before IPAdapter: the LoRA-chain output feeds IPAdapterUnifiedLoader, not the raw checkpoint", () => {
+    const reference = { name: "canonical.png" };
+    const graph = buildEditWorkflow(
+      "add a hat",
+      "m.safetensors",
+      SOURCE,
+      undefined,
+      { loras: [{ name: "detail.safetensors", strength: 0.7 }] },
+      reference,
+    ) as Record<string, { inputs: Record<string, unknown> }>;
+    expect(graph["51"].inputs.model).toEqual(["20", 0]); // the LoRA chain's output, not ["4", 0]
+    expect(graph["3"].inputs.model).toEqual(["52", 0]); // IPAdapter still wins as KSampler's final model source
+  });
+
+  it("without a reference image: no IPAdapter nodes at all, KSampler reads the plain model source", () => {
+    const graph = buildEditWorkflow("add a hat", "m.safetensors", SOURCE, undefined) as Record<string, unknown>;
+    expect(graph["50"]).toBeUndefined();
+    expect(graph["51"]).toBeUndefined();
+    expect(graph["52"]).toBeUndefined();
+  });
 });
 
 describe("createComfyUiProvider", () => {
@@ -463,6 +522,53 @@ describe("createComfyUiProvider", () => {
     expect(submittedWorkflow["30"]).toMatchObject({ class_type: "LoadImage", inputs: { image: sourceName } });
     expect(submittedWorkflow["33"]).toMatchObject({ class_type: "LoadImageMask", inputs: { image: maskName, channel: "red" } });
     expect(submittedWorkflow["3"].inputs.denoise).toBe(1);
+  });
+
+  it("editImage uploads source, mask, AND an extra identity reference separately, wiring IPAdapter with each upload's own server name", async () => {
+    const sourceName = "server-source.png";
+    const maskName = "server-mask.png";
+    const referenceName = "server-reference.png";
+    const names = [sourceName, maskName, referenceName];
+    let uploadCount = 0;
+    const calls = stubFetch((url) => {
+      if (url.includes("/upload/image")) {
+        const name = names[uploadCount];
+        uploadCount += 1;
+        return new Response(JSON.stringify({ name, subfolder: "", type: "input" }), { status: 200 });
+      }
+      if (url.includes("/prompt")) return new Response(JSON.stringify({ prompt_id: PROMPT_ID }), { status: 200 });
+      if (url.includes("/history/")) {
+        return new Response(
+          JSON.stringify({
+            [PROMPT_ID]: { status: { completed: true }, outputs: { "9": { images: [{ filename: "edited.png", type: "output" }] } } },
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("/view")) return new Response(PNG_BYTES, { status: 200 });
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const provider = createComfyUiProvider({ baseUrl: "https://comfy.example.com", model: "m.safetensors", ...FAST_POLL });
+    const result = await provider.editImage!({
+      instruction: "add a hat",
+      image: { mimeType: "image/png", data: Buffer.from([10, 20, 30]) },
+      mask: { mimeType: "image/png", data: Buffer.from([40, 50, 60]) },
+      referenceImages: [{ mimeType: "image/png", data: Buffer.from([70, 80, 90]) }],
+    });
+
+    expect(result.mimeType).toBe("image/png");
+    expect(calls.filter((c) => c.url.includes("/upload/image"))).toHaveLength(3);
+
+    const promptCall = calls.find((c) => c.url.includes("/prompt"));
+    const submittedWorkflow = JSON.parse(String(promptCall!.init!.body)).prompt as Record<
+      string,
+      { class_type: string; inputs: Record<string, unknown> }
+    >;
+    expect(submittedWorkflow["50"]).toMatchObject({ class_type: "LoadImage", inputs: { image: referenceName } });
+    expect(submittedWorkflow["51"].class_type).toBe("IPAdapterUnifiedLoader");
+    expect(submittedWorkflow["52"].class_type).toBe("IPAdapterAdvanced");
+    expect(submittedWorkflow["3"].inputs.model).toEqual(["52", 0]);
   });
 
   it("generateImage uploads the control image and submits a ControlNet-wired workflow using its own server name", async () => {

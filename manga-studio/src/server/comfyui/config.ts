@@ -18,6 +18,21 @@ const comfyUiLoraSchema = z.object({
   strength: z.number().min(0).max(2).optional(),
 });
 
+/** The exact, current preset strings `IPAdapterUnifiedLoader` accepts —
+ * verified against `cubiq/ComfyUI_IPAdapter_plus`'s own source
+ * (`IPAdapterPlus.py`), not guessed. Two of the six are SD1.5-only and
+ * will fail ("IPAdapter model not found") on an SDXL checkpoint — the
+ * other four resolve per-architecture automatically. */
+export const IP_ADAPTER_PRESETS = [
+  "LIGHT - SD1.5 only (low strength)",
+  "STANDARD (medium strength)",
+  "VIT-G (medium strength)",
+  "PLUS (high strength)",
+  "PLUS FACE (portraits)",
+  "FULL FACE - SD1.5 only (portraits stronger)",
+] as const;
+export const DEFAULT_IP_ADAPTER_PRESET: (typeof IP_ADAPTER_PRESETS)[number] = "STANDARD (medium strength)";
+
 export const comfyUiConfigSchema = z.object({
   steps: z.number().int().min(1).max(150).optional(),
   cfg: z.number().min(0).max(30).optional(),
@@ -30,6 +45,13 @@ export const comfyUiConfigSchema = z.object({
    * a deliberate scope cut for the first pass of ControlNet support. */
   controlNetModel: z.string().min(1).max(200).optional(),
   controlNetStrength: z.number().min(0).max(2).optional(),
+  /** Overrides the default IPAdapter preset used when a local edit carries
+   * an extra identity reference — see `IP_ADAPTER_PRESETS`. Unlike
+   * ControlNet, this needs no required config to activate: a sensible
+   * architecture-agnostic default (`DEFAULT_IP_ADAPTER_PRESET`) applies
+   * automatically whenever a reference is present. */
+  ipAdapterPreset: z.enum(IP_ADAPTER_PRESETS).optional(),
+  ipAdapterWeight: z.number().min(-1).max(5).optional(),
 });
 
 export type ComfyUiLoraEntry = z.infer<typeof comfyUiLoraSchema>;

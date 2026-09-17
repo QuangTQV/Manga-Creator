@@ -103,6 +103,20 @@ function emptyLoraRow(): LoraRow {
 
 const MAX_COMFYUI_LORAS_CLIENT = 4;
 
+// Mirrors server/comfyui/config.ts's IP_ADAPTER_PRESETS — a fixed, small,
+// version-pinned list (not a per-install file listing like LoRA/ControlNet
+// models), so a plain <select> is more honest here than a "Fetch" round
+// trip. Kept as a local client constant rather than importing the server
+// module, matching this file's existing MAX_COMFYUI_LORAS_CLIENT precedent.
+const IP_ADAPTER_PRESETS_CLIENT = [
+  "LIGHT - SD1.5 only (low strength)",
+  "STANDARD (medium strength)",
+  "VIT-G (medium strength)",
+  "PLUS (high strength)",
+  "PLUS FACE (portraits)",
+  "FULL FACE - SD1.5 only (portraits stronger)",
+];
+
 export function AiSettingsDialog() {
   const open = useUiStore((s) => s.settingsOpen);
   const close = useUiStore((s) => s.closeSettings);
@@ -266,6 +280,11 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
   const [comfyUiControlNetModel, setComfyUiControlNetModel] = useState("");
   const [comfyUiControlNetStrength, setComfyUiControlNetStrength] = useState("");
   const [controlNetModelOptions, setControlNetModelOptions] = useState<string[]>([]);
+  // Used automatically (no config required) whenever a local edit carries
+  // an extra identity reference — these only override the built-in default
+  // preset/weight, so blank is a legitimate, common value, not "unset".
+  const [comfyUiIpAdapterPreset, setComfyUiIpAdapterPreset] = useState("");
+  const [comfyUiIpAdapterWeight, setComfyUiIpAdapterWeight] = useState("");
   const [loraRows, setLoraRows] = useState<LoraRow[]>([]);
   const [loraOptions, setLoraOptions] = useState<string[]>([]);
   const [busy, setBusy] = useState<"save" | "test" | "forget" | "models" | "loras" | null>(null);
@@ -297,6 +316,8 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
         setComfyUiScheduler(summary.comfyui.scheduler ?? "");
         setComfyUiControlNetModel(summary.comfyui.controlNetModel ?? "");
         setComfyUiControlNetStrength(summary.comfyui.controlNetStrength !== undefined ? String(summary.comfyui.controlNetStrength) : "");
+        setComfyUiIpAdapterPreset(summary.comfyui.ipAdapterPreset ?? "");
+        setComfyUiIpAdapterWeight(summary.comfyui.ipAdapterWeight !== undefined ? String(summary.comfyui.ipAdapterWeight) : "");
         setLoraRows(
           (summary.comfyui.loras ?? []).map((l) => ({
             name: l.name,
@@ -376,6 +397,8 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
                     scheduler: comfyUiScheduler.trim() || undefined,
                     controlNetModel: comfyUiControlNetModel.trim() || undefined,
                     controlNetStrength: comfyUiControlNetStrength.trim() ? Number(comfyUiControlNetStrength) : undefined,
+                    ipAdapterPreset: comfyUiIpAdapterPreset.trim() || undefined,
+                    ipAdapterWeight: comfyUiIpAdapterWeight.trim() ? Number(comfyUiIpAdapterWeight) : undefined,
                     loras: loraRows
                       .filter((r) => r.name.trim())
                       .map((r) => ({ name: r.name.trim(), strength: r.strength.trim() ? Number(r.strength) : undefined })),
@@ -693,18 +716,13 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
       </details>
 
       {providerType === "comfyui" && (
-        <details
-          className="mt-2"
-          open={Boolean(
-            comfyUiSteps ||
-              comfyUiCfg ||
-              comfyUiSampler ||
-              comfyUiScheduler ||
-              comfyUiControlNetModel ||
-              comfyUiControlNetStrength ||
-              loraRows.length,
-          )}
-        >
+        // `open` used to be a hand-enumerated OR-chain of every ComfyUI
+        // field — it silently went stale THREE times as fields were added
+        // (controlNetStrength, then this whole section). `configured`
+        // (already saved at least once) is what actually correlates with
+        // "there's probably something worth showing" and needs no upkeep
+        // when a future field is added.
+        <details className="mt-2" open={configured}>
           <summary className="cursor-pointer select-none text-[10px] uppercase tracking-wider text-zinc-500">
             Advanced — ComfyUI settings
           </summary>
@@ -802,6 +820,45 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
             </div>
             <p className="mt-1 text-[10px] leading-4 text-zinc-600">
               Only applies when a generation actually attaches a control image. Leave the model blank to disable ControlNet.
+            </p>
+          </div>
+
+          <div className="mt-3 border-t border-zinc-800 pt-3">
+            <span className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">
+              Identity reference on local edits (IPAdapter) — requires the ComfyUI_IPAdapter_plus custom node pack
+            </span>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Preset">
+                <select
+                  className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1.5 text-xs"
+                  value={comfyUiIpAdapterPreset}
+                  onChange={(e) => setComfyUiIpAdapterPreset(e.target.value)}
+                >
+                  <option value="">Default (STANDARD — works on SD1.5 and SDXL)</option>
+                  {IP_ADAPTER_PRESETS_CLIENT.map((preset) => (
+                    <option key={preset} value={preset}>
+                      {preset}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Weight">
+                <input
+                  type="number"
+                  min={-1}
+                  max={5}
+                  step={0.05}
+                  className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1.5 font-mono text-xs"
+                  value={comfyUiIpAdapterWeight}
+                  onChange={(e) => setComfyUiIpAdapterWeight(e.target.value)}
+                  placeholder="1"
+                />
+              </Field>
+            </div>
+            <p className="mt-1 text-[10px] leading-4 text-zinc-600">
+              Automatically used whenever a local edit (in the character/asset library) carries an extra identity
+              reference — no setup required beyond installing the node pack. The two &ldquo;SD1.5 only&rdquo; presets
+              fail on an SDXL checkpoint; leave blank if unsure.
             </p>
           </div>
 

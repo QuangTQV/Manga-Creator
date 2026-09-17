@@ -285,13 +285,13 @@ function buildFallbackProviderConfig(kind: ProviderKind, payload: FallbackProvid
 function normalizeComfyUiConfig(raw: ComfyUiExtraConfig | undefined): ComfyUiExtraConfig | undefined {
   if (!raw) return undefined;
   const loras = raw.loras?.filter((l) => l.name.trim()) ?? [];
-  const hasScalar =
-    raw.steps !== undefined ||
-    raw.cfg !== undefined ||
-    raw.samplerName !== undefined ||
-    raw.scheduler !== undefined ||
-    raw.controlNetModel !== undefined ||
-    raw.controlNetStrength !== undefined;
+  // Generic over every OTHER field (not a hand-enumerated list) — this
+  // exact "enumerated emptiness check goes stale when a field is added"
+  // bug already happened twice for this function (see MEMORY.md); check
+  // every scalar automatically instead of patching this list a third time.
+  const scalars = { ...raw };
+  delete scalars.loras;
+  const hasScalar = Object.values(scalars).some((v) => v !== undefined);
   if (!hasScalar && loras.length === 0) return undefined;
   return { ...raw, loras: loras.length > 0 ? loras : undefined };
 }

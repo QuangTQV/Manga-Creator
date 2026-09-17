@@ -24,10 +24,15 @@
  *         reuse across the two functions is not a real collision.
  *   40-42 ControlNet (v3 PR3, generation path only) — LoadImage/
  *         ControlNetLoader/ControlNetApplyAdvanced.
- *   43+   reserved for any future stage.
+ *   50-52 IPAdapter (edit path only) — LoadImage/IPAdapterUnifiedLoader/
+ *         IPAdapterAdvanced, from the `ComfyUI_IPAdapter_plus` custom node
+ *         pack (NOT part of a vanilla ComfyUI install — see comment at
+ *         its use site). Wraps the LoRA-chained model so KSampler reads
+ *         an IPAdapter-conditioned model instead of the raw chain output.
+ *   43-49, 53+ reserved for any future stage.
  */
 
-import type { ComfyUiExtraConfig } from "@/server/comfyui/config";
+import { DEFAULT_IP_ADAPTER_PRESET, type ComfyUiExtraConfig } from "@/server/comfyui/config";
 import { assertSafeProviderUrl, redactSecrets } from "../security";
 import { outboundFetch, readBodyBytes, readBodyText, UnsafeOutboundUrlError } from "@/server/outboundFetch";
 import { detectImageType } from "@/storage/imageValidation";
@@ -235,6 +240,21 @@ export function buildWorkflow(
  * mask (a gentler whole-image nudge; only reachable if some future caller
  * of `editImage` other than `/api/assets/edit` omits a mask, since that
  * route always supplies one today).
+ *
+ * When `referenceImage` is present (an extra identity reference sent
+ * alongside the edit source, e.g. a character's canonical render): wired
+ * through `IPAdapterUnifiedLoader` + `IPAdapterAdvanced`, from the
+ * `ComfyUI_IPAdapter_plus` custom node pack. **This is NOT part of a
+ * vanilla ComfyUI install** — a user without it gets a clear `/prompt`
+ * rejection (ComfyUI's own "unknown node type" error), not silent wrong
+ * output, same safety net as every other unverified-node-shape risk in
+ * this file. Node names/inputs verified directly against that pack's
+ * source (`IPAdapterPlus.py`), not guessed. Unlike ControlNet, no
+ * required config: `extra?.ipAdapterPreset` defaults to
+ * `DEFAULT_IP_ADAPTER_PRESET` ("STANDARD (medium strength)", the one
+ * preset choice that resolves correctly on both SD1.5 and SDXL
+ * checkpoints — two of the six real presets are SD1.5-only and fail on
+ * SDXL) so this activates automatically whenever a reference is given.
  */
 export function buildEditWorkflow(
   instruction: string,
@@ -242,13 +262,42 @@ export function buildEditWorkflow(
   sourceImage: UploadedImageRef,
   maskImage: UploadedImageRef | undefined,
   extra?: ComfyUiExtraConfig,
+  referenceImage?: UploadedImageRef,
 ): Record<string, unknown> {
   const seed = Math.floor(Math.random() * 2 ** 31);
 
   const graph: Record<string, unknown> = {
     "4": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: checkpointModel } },
   };
-  const { modelSource, clipSource } = addLoraChain(graph, extra?.loras);
+  const { modelSource: loraModelSource, clipSource } = addLoraChain(graph, extra?.loras);
+
+  let modelSource = loraModelSource;
+  if (referenceImage) {
+    const referencePath = referenceImage.subfolder ? `${referenceImage.subfolder}/${referenceImage.name}` : referenceImage.name;
+    graph["50"] = { class_type: "LoadImage", inputs: { image: referencePath } };
+    graph["51"] = {
+      class_type: "IPAdapterUnifiedLoader",
+      inputs: { model: loraModelSource, preset: extra?.ipAdapterPreset ?? DEFAULT_IP_ADAPTER_PRESET },
+    };
+    graph["52"] = {
+      class_type: "IPAdapterAdvanced",
+      inputs: {
+        model: ["51", 0],
+        ipadapter: ["51", 1],
+        image: ["50", 0],
+        weight: extra?.ipAdapterWeight ?? 1,
+        // Defaults verified from IPAdapterAdvanced's own Python function
+        // signature — not exposed as config, a single reference image
+        // doesn't need combine_embeds/embeds_scaling tuning.
+        weight_type: "linear",
+        combine_embeds: "concat",
+        start_at: 0,
+        end_at: 1,
+        embeds_scaling: "V only",
+      },
+    };
+    modelSource = ["52", 0];
+  }
 
   graph["6"] = { class_type: "CLIPTextEncode", inputs: { text: instruction, clip: clipSource } };
   graph["7"] = { class_type: "CLIPTextEncode", inputs: { text: "", clip: clipSource } };
@@ -493,25 +542,30 @@ export function createComfyUiProvider(config: ComfyUiConfig): ImageGenerationPro
     },
 
     async editImage(request: ImageEditRequest): Promise<ImageGenerationResult> {
-      // request.referenceImages (extra identity references alongside the
-      // edit source) is intentionally NOT used here: the edit graph's one
-      // image-input slot already goes to the edit source itself via
-      // VAEEncode. Blending in a SEPARATE identity reference during an
-      // edit would need model composition (e.g. an IPAdapter node) this
-      // adapter doesn't build — a real capability gap, not an oversight;
-      // Gemini/customImage use it (see their own editImage), ComfyUI's
-      // edit path does not yet.
+      // Only the FIRST extra reference is used (IPAdapterAdvanced takes one
+      // image input) — a batch of identity references is a possible future
+      // enhancement, not built now.
+      const reference = request.referenceImages?.[0];
       request.trace?.("outbound_request_start", {
         provider: "comfyui",
         operation: "edit_image",
         endpointPath: "/prompt",
         model: config.model,
         maskAttached: Boolean(request.mask),
+        referenceAttached: Boolean(reference),
       });
       const started = Date.now();
       const uploadedSource = await uploadImage(base, config.apiKey, request.image);
       const uploadedMask = request.mask ? await uploadImage(base, config.apiKey, request.mask) : undefined;
-      const workflow = buildEditWorkflow(request.instruction, config.model, uploadedSource, uploadedMask, config.comfyui);
+      const uploadedReference = reference ? await uploadImage(base, config.apiKey, reference) : undefined;
+      const workflow = buildEditWorkflow(
+        request.instruction,
+        config.model,
+        uploadedSource,
+        uploadedMask,
+        config.comfyui,
+        uploadedReference,
+      );
       const promptId = await submitPrompt(base, config.apiKey, workflow);
       const imageRef = await pollHistory(
         base,

@@ -33,6 +33,76 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-17 — Added IPAdapter support to ComfyUI's edit path, closing
+  the capability gap the previous fix (below) had documented but not
+  built.** User asked to "add IPAdapter" right after that fix shipped.
+  Given real uncertainty about the exact current node API for
+  `ComfyUI_IPAdapter_plus` (a THIRD-PARTY custom node pack, not part of a
+  vanilla ComfyUI install — a real new external dependency, not just
+  another core-node feature like LoRA/ControlNet/mask were), ran a
+  Plan-agent verification pass that read the actual `IPAdapterPlus.py`
+  source directly (not docs) before writing any code — confirmed exact
+  node names (`IPAdapterUnifiedLoader`, `IPAdapterAdvanced` — NOT the
+  deprecated `IPAdapterApply` or the stripped-down `IPAdapterSimple`),
+  exact required input names/types, and every COMBO/enum's real valid
+  string values (`preset`'s 6 real strings, `weight_type`'s 15 real
+  values, `combine_embeds`'s 5, `embeds_scaling`'s 4) plus their function
+  defaults. This is the 4th time this session a second-opinion pass over
+  a ComfyUI graph shape (LoadImageMask channel, ControlNetApplyAdvanced
+  required fields, and now IPAdapter's whole node pair) caught or
+  confirmed something non-obvious before shipping, given zero live
+  ComfyUI access throughout.
+  `ComfyUiExtraConfig` gains `ipAdapterPreset`/`ipAdapterWeight` — unlike
+  ControlNet, NO required config: `ipAdapterPreset` defaults to
+  `DEFAULT_IP_ADAPTER_PRESET` ("STANDARD (medium strength)", the
+  architecture-agnostic one of the 6 real presets — 2 others are SD1.5-only
+  and fail on SDXL) whenever an edit carries an extra reference, so this
+  activates automatically the moment the capability gap it fixes would
+  otherwise recur. `buildEditWorkflow` wires `IPAdapterUnifiedLoader` →
+  `IPAdapterAdvanced` at node ids `50`-`52` (edit path only), replacing the
+  LoRA chain's model output as KSampler's `model` input — confirmed
+  composes correctly with LoRA (wraps the LoRA-chained model, not the raw
+  checkpoint) and is orthogonal to the mask/`SetLatentNoiseMask` machinery.
+  `AiSettingsDialog.tsx` gets a plain `<select>` with the 6 hardcoded
+  preset strings (deliberately NOT a "Fetch"-button dropdown like LoRA/
+  ControlNet — presets are a small, fixed, version-pinned list, not a
+  per-install file listing, so a network round trip would be pointless).
+  **Fixed the SAME recurring bug class a third time, then eliminated it
+  at the root instead of patching it again**: `normalizeComfyUiConfig`'s
+  emptiness check (already patched once for `controlNetModel`/
+  `controlNetStrength` after going stale for THOSE fields) would have
+  gone stale a second time for these two new fields too. Rewrote it to be
+  generic (`Object.values(scalars).some(v => v !== undefined)`, checking
+  every field automatically) instead of patching the hand-enumerated list
+  a third time. Found the SAME category of bug in a second place while
+  fixing this one: `AiSettingsDialog.tsx`'s "should the Advanced ComfyUI
+  settings section start open" check was ALSO a hand-enumerated OR-chain,
+  missing `comfyUiControlNetStrength` (already caught and fixed earlier
+  today) and would have needed the same treatment for the 2 new IPAdapter
+  fields. Simplified to `open={configured}` — "already saved once" is
+  what actually correlates with "something's probably in here," and
+  needs no upkeep when yet another field is added later. **This
+  simplification broke 2 existing e2e tests** that unconditionally
+  clicked the section's summary regardless of its already-open state —
+  a native `<details>` click always inverts current state, so clicking
+  an already-open section (now open because `configured` was already
+  true in those tests' mocks) closed it instead. Fixed by removing the
+  now-redundant clicks, with a comment explaining why, rather than
+  reverting the simplification — this is the exact same "don't blindly
+  click a disclosure whose open state depends on data" lesson already
+  learned and documented earlier this same day, now applied a second time.
+  New tests: `buildEditWorkflow` gets 4 IPAdapter cases (default preset
+  applied automatically, preset/weight overrides, LoRA-then-IPAdapter
+  composition, and a no-reference case proving zero IPAdapter nodes are
+  added when there's nothing to blend in). `editImage` end-to-end test
+  extended to upload source+mask+reference as 3 separate calls and assert
+  the IPAdapter nodes use the reference upload's own server-returned name.
+  New `providerSession.test.ts` case pins the generic-rewrite fix with an
+  ipAdapterWeight-only config. New e2e test covers the preset/weight
+  select+number-input save/hydrate round trip.
+  Verified: `npm test` → 1504/1504; typecheck/lint/build clean; full
+  Playwright suite (37 tests) passing after the 2 test fixes above.
+
 - **2026-09-17 — Fixed local-edit identity references being silently
   dropped, plus a smaller same-session-pattern bug.** Found during a
   requested code review pass over the ComfyUI v3 work, not by the user

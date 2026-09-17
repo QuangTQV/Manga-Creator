@@ -1393,7 +1393,10 @@ test("AI Settings: Fetch LoRAs populates the LoRA filename dropdown", async ({ p
   await page.getByRole("button", { name: "AI Settings" }).click();
   const imageCard = page.locator("section").filter({ has: page.getByRole("heading", { name: "Image Generation" }) });
 
-  await imageCard.getByText("Advanced — ComfyUI settings").click();
+  // Already open: the section's `open` prop tracks `configured`, which the
+  // mocked status above already reports true — clicking the summary here
+  // would TOGGLE IT CLOSED instead (a native <details> click always
+  // inverts current state, regardless of why it was open).
   await imageCard.getByRole("button", { name: "+ Add LoRA" }).click();
   await imageCard.getByRole("button", { name: "Fetch LoRAs" }).click();
 
@@ -1449,7 +1452,8 @@ test("AI Settings: ControlNet model/strength save wholesale and Fetch ControlNet
   await page.getByRole("button", { name: "AI Settings" }).click();
   const imageCard = page.locator("section").filter({ has: page.getByRole("heading", { name: "Image Generation" }) });
 
-  await imageCard.getByText("Advanced — ComfyUI settings").click();
+  // Already open (same reasoning as the Fetch LoRAs test above): `open`
+  // tracks `configured`, already true in the mocked status.
   await imageCard.getByRole("button", { name: "Fetch ControlNet models" }).click();
 
   const options = await imageCard
@@ -1474,4 +1478,50 @@ test("AI Settings: ControlNet model/strength save wholesale and Fetch ControlNet
   await page.getByRole("button", { name: "AI Settings" }).click();
   await expect(imageCard.getByRole("textbox", { name: "ControlNet model" })).toHaveValue("control_v11p_sd15_openpose.pth");
   await expect(imageCard.getByRole("spinbutton", { name: "Strength" })).toHaveValue("0.75");
+});
+
+test("AI Settings: IPAdapter preset/weight save wholesale and hydrate back on reopen", async ({ page }) => {
+  let savedComfyUi: Record<string, unknown> | undefined;
+
+  await page.route("**/api/provider/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        configured: true,
+        agent: { configured: false },
+        image: {
+          configured: true,
+          source: "session",
+          providerType: "comfyui",
+          baseUrl: "http://127.0.0.1:8188",
+          model: "sd_xl_base_1.0.safetensors",
+          comfyui: savedComfyUi,
+        },
+        background: { configured: false },
+      }),
+    });
+  });
+
+  await page.route("**/api/provider/config", async (route) => {
+    const body = route.request().postDataJSON() as { comfyui?: Record<string, unknown> };
+    savedComfyUi = body.comfyui;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ configured: true, source: "session" }) });
+  });
+
+  await page.getByRole("button", { name: "AI Settings" }).click();
+  const imageCard = page.locator("section").filter({ has: page.getByRole("heading", { name: "Image Generation" }) });
+
+  // Already open: `open` tracks `configured`, already true above.
+  await imageCard.getByRole("combobox", { name: "Preset" }).selectOption("PLUS (high strength)");
+  await imageCard.getByRole("spinbutton", { name: "Weight" }).fill("0.6");
+
+  await imageCard.getByRole("button", { name: "Save" }).click();
+  await expect(imageCard.getByText("Saved. Credentials are stored securely for this browser session.")).toBeVisible();
+  expect(savedComfyUi).toMatchObject({ ipAdapterPreset: "PLUS (high strength)", ipAdapterWeight: 0.6 });
+
+  await page.getByRole("button", { name: "Close settings" }).click();
+  await page.getByRole("button", { name: "AI Settings" }).click();
+  await expect(imageCard.getByRole("combobox", { name: "Preset" })).toHaveValue("PLUS (high strength)");
+  await expect(imageCard.getByRole("spinbutton", { name: "Weight" })).toHaveValue("0.6");
 });
