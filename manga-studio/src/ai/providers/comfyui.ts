@@ -29,13 +29,20 @@
  *         pack (NOT part of a vanilla ComfyUI install — see comment at
  *         its use site). Wraps the LoRA-chained model so KSampler reads
  *         an IPAdapter-conditioned model instead of the raw chain output.
- *   43-49, 53+ reserved for any future stage.
+ *   43-49 reserved for any future generation/edit-graph stage.
+ *   60-63 background removal (its own, independent workflow — never
+ *         submitted alongside 3-9/20-49; reuses SaveImage id "9" so
+ *         `pollHistory` needs no change) — LoadImage/InspyrenetRembg/
+ *         JoinImageWithAlpha/SaveImage, from the `ComfyUI-Inspyrenet-Rembg`
+ *         custom node pack (NOT part of a vanilla ComfyUI install).
  */
 
 import { DEFAULT_IP_ADAPTER_PRESET, type ComfyUiExtraConfig } from "@/server/comfyui/config";
 import { assertSafeProviderUrl, redactSecrets } from "../security";
 import { outboundFetch, readBodyBytes, readBodyText, UnsafeOutboundUrlError } from "@/server/outboundFetch";
 import { detectImageType } from "@/storage/imageValidation";
+import type { BackgroundRemovalProvider } from "@/assets/providers/types";
+import { validatedProviderResult } from "@/assets/providers/validateResult";
 import {
   ProviderError,
   type ImageEditRequest,
@@ -592,6 +599,91 @@ export function createComfyUiProvider(config: ComfyUiConfig): ImageGenerationPro
       const result = await fetchImageBytes(base, config.apiKey, imageRef);
       request.trace?.("provider_response_parsed", { provider: "comfyui", imageFound: true });
       return result;
+    },
+  };
+}
+
+/**
+ * Pure, testable without network: the background-removal graph. A separate,
+ * independent workflow from `buildWorkflow`/`buildEditWorkflow` — never
+ * submitted together, so its node ids (60-63) don't need to avoid theirs;
+ * "9" is reused deliberately for `SaveImage` so the shared `pollHistory`
+ * helper (which reads `outputs["9"]`) needs no change for this graph.
+ *
+ * `InspyrenetRembg` (class name, inputs, outputs verified directly against
+ * `Inspyrenet_Rembg.py` in `john-mnz/ComfyUI-Inspyrenet-Rembg` — NOT part of
+ * a vanilla ComfyUI install): `image` (IMAGE) → outputs `(IMAGE, MASK)`,
+ * where the IMAGE output is the extracted foreground and MASK its alpha.
+ * `JoinImageWithAlpha` (a core ComfyUI node, `image` + `alpha` → one IMAGE
+ * with the mask embedded as a real alpha channel) merges them into
+ * something `SaveImage` writes as an actual transparent PNG — NOT verified
+ * against a live instance (none was available); a wrong node/field name
+ * here surfaces as ComfyUI's own `/prompt` rejection, never silent wrong
+ * output, same safety net as every other unverified-node-shape risk in
+ * this file.
+ */
+export function buildBackgroundRemovalWorkflow(uploadedImage: UploadedImageRef): Record<string, unknown> {
+  const imagePath = uploadedImage.subfolder ? `${uploadedImage.subfolder}/${uploadedImage.name}` : uploadedImage.name;
+  return {
+    "60": { class_type: "LoadImage", inputs: { image: imagePath } },
+    "61": { class_type: "InspyrenetRembg", inputs: { image: ["60", 0], torchscript_jit: "default" } },
+    "62": { class_type: "JoinImageWithAlpha", inputs: { image: ["61", 0], alpha: ["61", 1] } },
+    [SAVE_IMAGE_NODE_ID]: { class_type: "SaveImage", inputs: { filename_prefix: "kumanga-cutout", images: ["62", 0] } },
+  };
+}
+
+export interface ComfyUiBackgroundRemovalConfig {
+  baseUrl: string;
+  apiKey?: string;
+  name?: string;
+  pollIntervalMs?: number;
+  pollTimeoutMs?: number;
+}
+
+/**
+ * A local ComfyUI instance as a background-removal FALLBACK provider —
+ * independent of `createComfyUiProvider` (image generation): a creator can
+ * point Image Generation at one ComfyUI protocol choice and Background
+ * Removal's fallback at a completely different provider, so this takes its
+ * own minimal config rather than reusing `ComfyUiConfig` (which requires a
+ * checkpoint `model` this capability has no use for).
+ */
+export function createComfyUiBackgroundRemovalProvider(config: ComfyUiBackgroundRemovalConfig): BackgroundRemovalProvider {
+  const base = assertSafeProviderUrl(config.baseUrl).toString().replace(/\/$/, "");
+  const id = "comfyui-background";
+  const name = config.name || "ComfyUI";
+
+  return {
+    id,
+    name,
+    async testConnection() {
+      const response = await boundedFetch(`${base}/system_stats`, { method: "GET", headers: authHeaders(config.apiKey) });
+      if (response.ok) return { ok: true };
+      return { ok: false, message: await safeErrorMessage(response, config.apiKey) };
+    },
+    async removeBackground(input) {
+      if (!input.imageBytes) {
+        return {
+          success: false,
+          alphaValidation: { valid: false, reason: "Image bytes are required" },
+          providerMetadata: { id, name },
+          safeError: "Background-removal input was unavailable",
+        };
+      }
+      input.trace?.("outbound_request_start", { provider: id, operation: "remove_background", endpointPath: "/prompt" });
+      const uploaded = await uploadImage(base, config.apiKey, { mimeType: input.mimeType ?? "image/png", data: Buffer.from(input.imageBytes) });
+      const workflow = buildBackgroundRemovalWorkflow(uploaded);
+      const promptId = await submitPrompt(base, config.apiKey, workflow);
+      const imageRef = await pollHistory(
+        base,
+        config.apiKey,
+        promptId,
+        config.pollIntervalMs ?? POLL_INTERVAL_MS,
+        config.pollTimeoutMs ?? POLL_TIMEOUT_MS,
+      );
+      input.trace?.("outbound_response_received", { provider: id, httpStatus: 200 });
+      const result = await fetchImageBytes(base, config.apiKey, imageRef);
+      return validatedProviderResult({ data: result.data, mimeType: result.mimeType, id, name });
     },
   };
 }

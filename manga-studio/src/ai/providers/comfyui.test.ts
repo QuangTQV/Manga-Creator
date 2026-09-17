@@ -12,7 +12,14 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ImageGenerationRequest } from "../types";
-import { buildEditWorkflow, buildWorkflow, createComfyUiProvider, fetchObjectInfoOptions } from "./comfyui";
+import {
+  buildBackgroundRemovalWorkflow,
+  buildEditWorkflow,
+  buildWorkflow,
+  createComfyUiBackgroundRemovalProvider,
+  createComfyUiProvider,
+  fetchObjectInfoOptions,
+} from "./comfyui";
 
 const REQUEST: ImageGenerationRequest = {
   prompt: "a manga hero, dynamic pose",
@@ -671,5 +678,80 @@ describe("fetchObjectInfoOptions", () => {
     await expect(
       fetchObjectInfoOptions({ baseUrl: "https://comfy.example.com", model: "m" }, "LoraLoader", "lora_name"),
     ).rejects.toThrow(/ComfyUI error/);
+  });
+});
+
+describe("buildBackgroundRemovalWorkflow", () => {
+  it("chains LoadImage -> InspyrenetRembg -> JoinImageWithAlpha -> SaveImage, reusing SaveImage id \"9\"", () => {
+    const graph = buildBackgroundRemovalWorkflow({ name: "source_00001_.png", subfolder: "", type: "input" }) as Record<
+      string,
+      { class_type: string; inputs: Record<string, unknown> }
+    >;
+    expect(graph["60"]).toMatchObject({ class_type: "LoadImage", inputs: { image: "source_00001_.png" } });
+    expect(graph["61"]).toMatchObject({
+      class_type: "InspyrenetRembg",
+      inputs: { image: ["60", 0], torchscript_jit: "default" },
+    });
+    expect(graph["62"]).toMatchObject({ class_type: "JoinImageWithAlpha", inputs: { image: ["61", 0], alpha: ["61", 1] } });
+    expect(graph["9"]).toMatchObject({ class_type: "SaveImage", inputs: { images: ["62", 0] } });
+  });
+
+  it("joins the subfolder into the LoadImage path when the upload landed in one", () => {
+    const graph = buildBackgroundRemovalWorkflow({ name: "a.png", subfolder: "kumanga", type: "input" }) as Record<
+      string,
+      { inputs: Record<string, unknown> }
+    >;
+    expect(graph["60"].inputs.image).toBe("kumanga/a.png");
+  });
+});
+
+describe("createComfyUiBackgroundRemovalProvider", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("uploads the image, submits the cutout graph, and returns the validated transparent result", async () => {
+    const calls = stubFetch((url) => {
+      if (url.includes("/upload/image")) return new Response(JSON.stringify({ name: "server_a.png", type: "input" }), { status: 200 });
+      if (url.includes("/prompt")) return new Response(JSON.stringify({ prompt_id: PROMPT_ID }), { status: 200 });
+      if (url.includes("/history/")) {
+        return new Response(
+          JSON.stringify({
+            [PROMPT_ID]: { status: { completed: true }, outputs: { "9": { images: [{ filename: "cutout.png", type: "output" }] } } },
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("/view")) return new Response(PNG_BYTES, { status: 200 });
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const provider = createComfyUiBackgroundRemovalProvider({ baseUrl: "https://comfy.example.com", ...FAST_POLL });
+    const result = await provider.removeBackground({ imageBytes: new Uint8Array([1, 2, 3]), mimeType: "image/png" });
+
+    // PNG_BYTES has no real alpha channel, so validation correctly rejects
+    // it as unusable — this proves the shared validator actually ran
+    // (real success is exercised via foregroundPolicy.test.ts's own RGBA
+    // fixtures), not that a real cutout produces this exact result.
+    expect(result.success).toBe(false);
+    expect(calls.some((c) => c.url.includes("/upload/image"))).toBe(true);
+    expect(calls.some((c) => c.url.includes(`/history/${PROMPT_ID}`))).toBe(true);
+  });
+
+  it("fails cleanly, without any network call, when no image bytes are given", async () => {
+    const calls = stubFetch(() => {
+      throw new Error("should not be called");
+    });
+    const provider = createComfyUiBackgroundRemovalProvider({ baseUrl: "https://comfy.example.com" });
+    const result = await provider.removeBackground({});
+    expect(result.success).toBe(false);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("testConnection pings /system_stats, the same cheap check the image-generation adapter uses", async () => {
+    stubFetch((url) => {
+      if (url.includes("/system_stats")) return new Response("{}", { status: 200 });
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    const provider = createComfyUiBackgroundRemovalProvider({ baseUrl: "https://comfy.example.com" });
+    await expect(provider.testConnection!()).resolves.toEqual({ ok: true });
   });
 });

@@ -263,6 +263,22 @@ describe("buildProviderConfig", () => {
       model: "background-removal",
     });
   });
+
+  it("accepts a keyless ComfyUI background-removal config, independent of Image Generation's own ComfyUI choice", () => {
+    const config = buildProviderConfig({
+      kind: "background",
+      providerType: "comfyui",
+      baseUrl: "https://cutout.example.com",
+      model: "",
+    }, null);
+    expect(config).toMatchObject({
+      kind: "background",
+      providerType: "comfyui",
+      baseUrl: "https://cutout.example.com",
+      apiKey: "",
+      model: "background-removal",
+    });
+  });
 });
 
 describe("summaries never leak secrets", () => {

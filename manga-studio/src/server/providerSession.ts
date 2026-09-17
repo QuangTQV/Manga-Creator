@@ -33,7 +33,10 @@ const agentTypes = ["custom", "openai-compatible", "anthropic-compatible", "gemi
 // expressible via "custom" (dynamic prompt_id history key, oversized
 // workflow graph); see src/ai/providers/comfyui.ts.
 const imageTypes = ["custom", "gemini", "openai-compatible", "generic-rest", "comfyui"] as const;
-const backgroundTypes = ["custom", "remove-bg"] as const;
+// "comfyui" here is a fully independent config from image generation's own
+// "comfyui" choice — a creator can point Image Generation at one ComfyUI
+// instance/protocol and Background Removal's fallback at a different one.
+const backgroundTypes = ["custom", "remove-bg", "comfyui"] as const;
 
 export type AgentProviderType = (typeof agentTypes)[number];
 export type ImageProviderType = (typeof imageTypes)[number];

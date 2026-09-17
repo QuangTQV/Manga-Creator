@@ -58,6 +58,11 @@ const IMAGE_PROTOCOLS = [
 
 const BACKGROUND_PROTOCOLS = [
   { id: "remove-bg", label: "remove.bg", placeholder: "https://api.remove.bg/v1.0/removebg" },
+  // A fully independent config from Image Generation's own "comfyui" choice
+  // — this ComfyUI instance only needs the `ComfyUI-Inspyrenet-Rembg`
+  // custom node pack, not a checkpoint (the Model field stays hidden for
+  // the whole "background" kind).
+  { id: "comfyui", label: "ComfyUI (local)", placeholder: "http://127.0.0.1:8188" },
   { id: "custom", label: "Custom JSON", placeholder: "https://example.com/cutout" },
 ];
 
@@ -749,7 +754,11 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
           </div>
       </details>
 
-      {providerType === "comfyui" && (
+      {providerType === "comfyui" && kind !== "background" && (
+        // None of steps/CFG/sampler/LoRA/ControlNet/IPAdapter apply to the
+        // background-removal capability (its own graph uses none of them) —
+        // showing this section there would misleadingly imply they do.
+        //
         // `open` used to be a hand-enumerated OR-chain of every ComfyUI
         // field — it silently went stale THREE times as fields were added
         // (controlNetStrength, then this whole section). `configured`

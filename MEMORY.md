@@ -33,6 +33,51 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-17 — ComfyUI as a background-removal fallback provider.** User
+  asked whether ComfyUI could do background removal at all — confirmed it
+  couldn't in this codebase (`assets/providers/registry.ts` only had
+  `"custom"`/`"remove-bg"` branches for the `background` provider kind;
+  ComfyUI's own dedicated adapter existed only for `image`). Then asked to
+  add it. Researched candidate node packs via `WebSearch` before picking one
+  (same discipline as every other ComfyUI node this session) — went with
+  `john-mnz/ComfyUI-Inspyrenet-Rembg` (simple, single-purpose, auto-
+  downloads its model) over the more feature-heavy `ComfyUI-RMBG`/
+  `BRIA_AI-RMBG` packs, and verified `InspyrenetRembg`'s exact class name/
+  inputs (`image`, `torchscript_jit`)/outputs (`IMAGE, MASK`) directly
+  against `Inspyrenet_Rembg.py`, not the README (which omitted them) — same
+  as IPAdapter's earlier verification. Hit the session's `WebSearch` limit
+  before confirming `JoinImageWithAlpha`'s exact schema (the core ComfyUI
+  node needed to merge the rembg node's separate IMAGE+MASK outputs into
+  one real-alpha IMAGE for SaveImage) — proceeded on trained knowledge and
+  flagged it explicitly as unverified in both the code comment and this
+  entry, rather than blocking on it; a wrong node/field name surfaces as
+  ComfyUI's own `/prompt` rejection, never silent wrong output, matching
+  every other unverified-node-shape risk already accepted in this file.
+  Added `buildBackgroundRemovalWorkflow`/`createComfyUiBackgroundRemovalProvider`
+  in `ai/providers/comfyui.ts` (co-located with, and reusing wholesale, its
+  existing `uploadImage`/`submitPrompt`/`pollHistory`/`fetchImageBytes`
+  helpers — a new `assets/providers/comfyuiBackgroundRemoval.ts` would have
+  duplicated all of that). Its own node-id range (`60`-`63`, documented in
+  the file's top comment) deliberately reuses `SaveImage` id `"9"` so the
+  shared `pollHistory` needs no change. New minimal
+  `ComfyUiBackgroundRemovalConfig` (`baseUrl`/`apiKey`/`name` only, no
+  `model`) rather than reusing `ComfyUiConfig`, since this capability has no
+  checkpoint to select — matches the Model field already being hidden for
+  the whole `background` kind card. Wired in: `backgroundTypes` in
+  `providerSession.ts` (the per-kind allowlist; `resolveApiKey`/
+  `hasCredential`'s existing `providerType === "comfyui"` exceptions are
+  kind-agnostic already, so the keyless-auth path needed no changes),
+  `BACKGROUND_PROTOCOLS` in `AiSettingsDialog.tsx`, and the registry
+  dispatch. Also gated the (irrelevant here) "Advanced — ComfyUI settings"
+  section — steps/CFG/LoRA/ControlNet/IPAdapter, none of which this
+  capability's graph uses — on `kind !== "background"` in addition to the
+  existing `providerType === "comfyui"` check, so selecting this option on
+  the Background Removal card doesn't show controls that would misleadingly
+  imply they affect it. Regression tests: `buildBackgroundRemovalWorkflow`'s
+  exact graph shape, `createComfyUiBackgroundRemovalProvider`'s full
+  upload→submit→poll→fetch→validate flow (mirroring the existing image-
+  generation adapter's own test patterns), and a `buildProviderConfig` case
+  confirming the keyless-ComfyUI-for-background path.
 - **2026-09-17 — Generation cache so "Retry (same plan)" doesn't re-pay for
   already-succeeded steps.** Real usage exposed the gap in the previous
   entry immediately: a run that got past `create_character Haruto` and
