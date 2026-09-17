@@ -81,6 +81,28 @@ Kumanga không bundle model nào, nhưng chuẩn **OpenAI-compatible** và **Cus
 
 ComfyUI dùng một adapter riêng (không qua Custom API) vì API của nó không phải REST đơn giản: `/history/{prompt_id}` trả kết quả dưới một key **động** chính là `prompt_id` vừa submit, và workflow graph gửi lên quá lớn so với giới hạn cookie — adapter tự dựng workflow ở phía server. Mở mục "Advanced — ComfyUI settings" trong AI Settings để chỉnh steps/CFG/sampler/scheduler, có nút "Fetch LoRAs"/"Fetch ControlNet models" để chọn từ danh sách ComfyUI đang có (không cần gõ tay), và thêm tối đa 4 LoRA (tên file + độ mạnh). Nếu tạo nhân vật/pose kèm ảnh tham chiếu, ComfyUI cũng tự chuyển sang chế độ img2img (giữ nét đặc trưng của ảnh tham chiếu, vẫn cho phép đổi pose/biểu cảm). Sửa ảnh cục bộ (vẽ mask rồi yêu cầu AI sửa vùng đó) cũng dùng được với ComfyUI, tận dụng đúng khả năng inpainting theo mask thật của nó — nếu lúc sửa có kèm ảnh tham chiếu nhân vật (tự động khi sửa ảnh của một nhân vật đã có ảnh gốc), ComfyUI dùng **IPAdapter** để giữ đúng đặc điểm nhân vật đó, không cần cấu hình gì thêm (chỉ cần cài node pack `ComfyUI_IPAdapter_plus` — không có sẵn trong ComfyUI gốc; nếu chưa cài, ComfyUI báo lỗi rõ ràng chứ không sinh sai âm thầm). Có thể chỉnh preset/độ mạnh IPAdapter trong "Advanced — ComfyUI settings". **ControlNet** (giữ đúng tư thế/nét vẽ theo một ảnh điều khiển): cấu hình 1 model ControlNet trong AI Settings, rồi khi tạo ảnh chọn thêm "Control image" — ảnh này bạn phải tự xử lý sẵn (ví dụ ảnh khung xương OpenPose), Kumanga không tự động tách pose/nét từ ảnh thường.
 
+**Chọn checkpoint/LoRA cho ComfyUI — tránh lỗi "Background removal did not complete":**
+
+Khi tạo một nhân vật (asset dạng cắt trong suốt), Kumanga luôn chèn vào prompt yêu cầu "cô lập trên nền trắng tinh, không bối cảnh" rồi **tự tách nền bằng thuật toán cục bộ** (dò vùng màu liền từ viền ảnh vào — không dùng AI để tách nền). Checkpoint SDXL gốc (`sd_xl_base_1.0.safetensors`, mục 5c dùng làm ví dụ) thường **không tuân theo tốt** chỉ dẫn này — hay vẽ thêm phố xá/nội thất phía sau nhân vật — khiến bước tách nền không tìm được vùng trắng liền mạch và thất bại với đúng lỗi trên. Cách khắc phục rẻ nhất: thêm LoRA, không cần đổi checkpoint.
+
+| LoRA | Vai trò | Nguồn |
+|---|---|---|
+| Manga line-art LoRA | Ép nét vẽ về đúng phong cách line art manga đơn sắc (khớp art style "Minimal Line Manga" mặc định của Kumanga) | [`artificialguybr/LineAniRedmond-LinearMangaSDXL-V2`](https://huggingface.co/artificialguybr/LineAniRedmond-LinearMangaSDXL-V2) (Hugging Face, tải trực tiếp không cần tài khoản) — trigger word `LineAniAF, lineart` |
+| White background LoRA | Ép nền trắng tinh, giúp bước tách nền của Kumanga thành công | [`White Background`](https://civitai.com/models/119388/white-background) (Civitai) — trigger phrase `with a white background`, độ mạnh khoảng 1.0–1.2 |
+
+Tải vào server đang chạy ComfyUI (ví dụ notebook Kaggle ở mục 5c dưới), đặt vào `ComfyUI/models/loras/`:
+```python
+# LoRA line-art manga — Hugging Face, wget thẳng không cần đăng nhập
+!wget -q -O ComfyUI/models/loras/LineAniRedmondV2-Lineart-LineAniAF.safetensors \
+  "https://huggingface.co/artificialguybr/LineAniRedmond-LinearMangaSDXL-V2/resolve/main/LineAniRedmondV2-Lineart-LineAniAF.safetensors"
+
+# LoRA nền trắng — Civitai chặn tải ẩn danh, cần API key cá nhân
+# (tạo tại civitai.com → Account Settings → API Keys), dán thay TOKEN dưới đây
+!wget -q -O ComfyUI/models/loras/white_1_0.safetensors \
+  "https://civitai.com/api/download/models/129692?fileId=94019&token=TOKEN"
+```
+Trong Kumanga: AI Settings → Image Generation → mở "Advanced — ComfyUI settings" → bấm "+ Add LoRA" hai lần → bấm "Fetch LoRAs" để chọn đúng hai file vừa tải (khỏi gõ tay tên file) → độ mạnh gợi ý: line-art LoRA ~0.8, white-background LoRA ~1.0–1.2. Nếu vẫn ra nền không sạch, tăng thêm **CFG** lên khoảng 8–9 trong cùng mục Advanced rồi thử lại.
+
 ### 5c. Azure OpenAI (Agent) + chạy model ảnh trên Kaggle GPU free (Image Generation)
 
 Kết hợp: chữ (Manga Agent) dùng API trả phí ổn định như Azure OpenAI, còn sinh ảnh dùng GPU free của Kaggle — không cần tự thuê GPU.
@@ -173,6 +195,7 @@ Trước khi coi một thay đổi là "xong", nên chạy đủ cả 4 lệnh: 
 
 - **Cổng 3000 đã bị chiếm** — kiểm tra xem có tiến trình `next dev` nào đang chạy sẵn không, hoặc đổi cổng: `PORT=3001 npm run dev`.
 - **Không sinh được ảnh** — vào AI Settings, bấm Test Connection để xem lỗi cụ thể (sai key, sai base URL, model không tồn tại...).
+- **Lỗi "Background removal did not complete" khi tạo nhân vật bằng ComfyUI** — không phải lỗi cấu hình; checkpoint không vẽ đúng nền trắng tinh như yêu cầu. Xem phần "Chọn checkpoint/LoRA cho ComfyUI" trong mục [5b](#5b-dùng-model-ai-chạy-local--self-host-không-cần-api-cloud) ở trên.
 - **Muốn dùng model AI chạy trên máy (Ollama/LM Studio/Automatic1111)** — xem mục [5b](#5b-dùng-model-ai-chạy-local--self-host-không-cần-api-cloud) ở trên.
 - **Muốn dùng Azure OpenAI hoặc chạy model ảnh trên GPU free của Kaggle** — xem mục [5c](#5c-azure-openai-agent--chạy-model-ảnh-trên-kaggle-gpu-free-image-generation) ở trên.
 - **Muốn deploy lên Vercel** — xem hướng dẫn chi tiết tại [`manga-studio/docs/DEPLOYMENT.md`](../manga-studio/docs/DEPLOYMENT.md).
@@ -262,6 +285,28 @@ Kumanga bundles no model, but the **OpenAI-compatible** and **Custom API** provi
 | ComfyUI | Its own **"ComfyUI (local)"** entry in the provider list — just set Base URL (defaults to `http://127.0.0.1:8188`) and Model to the **checkpoint filename** exactly as ComfyUI shows it (e.g. `sd_xl_base_1.0.safetensors`). No API key needed. |
 
 ComfyUI gets a dedicated adapter rather than a Custom API mapping because its protocol isn't plain REST: `/history/{prompt_id}` nests its result under a **dynamic** key — the `prompt_id` that was just submitted — and a full workflow graph is too large for the cookie-based config budget. The adapter builds the workflow server-side. Open "Advanced — ComfyUI settings" in AI Settings to tune steps/CFG/sampler/scheduler, use the "Fetch LoRAs"/"Fetch ControlNet models" buttons to pick from what ComfyUI actually has installed (no manual typing needed), and add up to 4 LoRAs (filename + strength). Generating a character/pose with a reference image also automatically switches to img2img (keeps the reference's identity while still allowing pose/expression changes). Local editing (paint a mask, ask the AI to redraw only that region) works with ComfyUI too, using its real mask-aware inpainting rather than a whole-image redo — if that edit also carries a character's identity reference (automatic when editing an asset belonging to a character that already has one), ComfyUI uses **IPAdapter** to keep that identity, no extra setup beyond installing the `ComfyUI_IPAdapter_plus` node pack (not part of a vanilla install — ComfyUI reports a clear error if it's missing, never a silent wrong result). Preset/weight are tunable in "Advanced — ComfyUI settings". **ControlNet** (matching a specific pose/line-art exactly): configure one ControlNet model in AI Settings, then attach a "Control image" when generating — you supply that image already pre-processed (e.g. an OpenPose skeleton render); Kumanga never runs pose/edge extraction itself.
+
+**Picking a checkpoint/LoRA for ComfyUI — avoiding "Background removal did not complete":**
+
+When generating a character (a cutout-style asset), Kumanga always adds "isolated on a pure white background, no scenery" to the prompt, then **strips that background with a local algorithm** (flood-fill from the image edges — no AI involved in the removal step itself). The base SDXL checkpoint (`sd_xl_base_1.0.safetensors`, used as the example in 5c below) often **doesn't follow that instruction well** — it tends to draw a street or interior behind the character anyway — so the flood-fill finds no clean, edge-connected white region and fails with exactly that error. The cheapest fix is adding a LoRA, not switching checkpoints.
+
+| LoRA | Purpose | Source |
+|---|---|---|
+| Manga line-art LoRA | Pulls the line work toward Kumanga's default "Minimal Line Manga" monochrome style | [`artificialguybr/LineAniRedmond-LinearMangaSDXL-V2`](https://huggingface.co/artificialguybr/LineAniRedmond-LinearMangaSDXL-V2) (Hugging Face, direct download, no account needed) — trigger word `LineAniAF, lineart` |
+| White background LoRA | Forces a genuinely plain white backdrop, so Kumanga's own background-removal step succeeds | [`White Background`](https://civitai.com/models/119388/white-background) (Civitai) — trigger phrase `with a white background`, strength around 1.0–1.2 |
+
+Download onto whatever's running ComfyUI (e.g. the Kaggle notebook in section 5c below), into `ComfyUI/models/loras/`:
+```python
+# Manga line-art LoRA — Hugging Face, plain wget, no login
+!wget -q -O ComfyUI/models/loras/LineAniRedmondV2-Lineart-LineAniAF.safetensors \
+  "https://huggingface.co/artificialguybr/LineAniRedmond-LinearMangaSDXL-V2/resolve/main/LineAniRedmondV2-Lineart-LineAniAF.safetensors"
+
+# White background LoRA — Civitai blocks anonymous downloads, needs your own API key
+# (create one at civitai.com → Account Settings → API Keys), paste it in place of TOKEN
+!wget -q -O ComfyUI/models/loras/white_1_0.safetensors \
+  "https://civitai.com/api/download/models/129692?fileId=94019&token=TOKEN"
+```
+In Kumanga: AI Settings → Image Generation → open "Advanced — ComfyUI settings" → click "+ Add LoRA" twice → click "Fetch LoRAs" to pick the two files you just downloaded (no manual typing) → suggested strengths: ~0.8 for the line-art LoRA, ~1.0–1.2 for the white-background one. If the background still isn't clean, raise **CFG** to around 8–9 in the same Advanced section and try again.
 
 ### 5c. Azure OpenAI (Agent) + running image models on Kaggle's free GPU (Image Generation)
 
@@ -356,6 +401,7 @@ Before treating a change as done, run all four:
 
 - **Port 3000 already in use** — check for an existing `next dev` process, or use a different port: `PORT=3001 npm run dev`.
 - **Image generation fails** — open AI Settings and click Test Connection to see the exact error (bad key, wrong base URL, unknown model...).
+- **"Background removal did not complete" when generating a character with ComfyUI** — not a config error; the checkpoint isn't drawing the plain white background it was asked for. See "Picking a checkpoint/LoRA for ComfyUI" in [section 5b](#5b-using-a-localself-hosted-ai-model-no-cloud-api-needed) above.
 - **Want to use a local model (Ollama/LM Studio/Automatic1111)** — see [section 5b](#5b-using-a-localself-hosted-ai-model-no-cloud-api-needed) above.
 - **Want to use Azure OpenAI, or run image models on Kaggle's free GPU** — see [section 5c](#5c-azure-openai-agent--running-image-models-on-kaggles-free-gpu-image-generation) above.
 - **Want to deploy to Vercel** — see [`manga-studio/docs/DEPLOYMENT.md`](../manga-studio/docs/DEPLOYMENT.md) for the full walkthrough.

@@ -33,6 +33,24 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-17 — HOW_TO_RUN.md: checkpoint/LoRA guidance for ComfyUI
+  character generation.** User hit "Background removal did not complete"
+  on a real Kaggle ComfyUI + `sd_xl_base_1.0.safetensors` setup — confirmed
+  by reading the actual generated PNG straight off `.data/generated/`
+  (visible in the Live AI log's `url` field): the checkpoint drew a full
+  street scene instead of the "isolated on pure white background, no
+  scenery" the prompt asked for ([foregroundPolicy.ts](manga-studio/src/ai/foregroundPolicy.ts)),
+  so the local flood-fill background remover had no clean edge-connected
+  region to strip. Not a bug — a base-SDXL prompt-adherence limitation.
+  Added a "Picking a checkpoint/LoRA for ComfyUI" subsection to
+  `docs/HOW_TO_RUN.md` §5b (VN+EN) recommending two verified, directly
+  downloadable LoRAs rather than a checkpoint swap: `artificialguybr/
+  LineAniRedmond-LinearMangaSDXL-V2` (Hugging Face, matches Kumanga's own
+  "Minimal Line Manga" style) and Civitai's `White Background` LoRA
+  (needs a Civitai API key for the wget download — anonymous downloads
+  are blocked there), plus a CFG-bump fallback. Cross-linked from both
+  §7 Troubleshooting sections so a future user hitting this exact error
+  message finds the fix.
 - **2026-09-17 — Custom API agent: self-heal `max_tokens` →
   `max_completion_tokens`.** User was configuring Azure OpenAI as the
   Manga Agent via the Custom API protocol (following `docs/HOW_TO_RUN.md`
