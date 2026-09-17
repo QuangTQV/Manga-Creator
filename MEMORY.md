@@ -33,6 +33,36 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-17 — Found and fixed why "Background removal did not
+  complete" NEVER showed the actual reason, all session.** User's ComfyUI
+  background-removal fallback was actually being invoked and failing
+  (confirmed by asking for the server's own terminal log, since Live AI
+  doesn't capture this specific fallback call at all — a real observability
+  gap, noted but not fixed this pass) — but the UI only ever showed the
+  same generic "Background removal did not complete." no matter what
+  actually went wrong underneath. Traced why: `characterAssetContract.ts`'s
+  `validateCharacterTransparency` only ever checks `processingStatus`, so
+  its `reason` for "not ready" is a FIXED string by construction — it
+  cannot know why. The server, meanwhile, already computes and returns a
+  real detailed reason (`processingPipeline.ts`'s `failedWithDetails`,
+  joining every provider it tried and why each failed, e.g. "comfyui-
+  background: <real error> · Local fallback: <real error>") as
+  `GenerateResult.processingReason` — but `clientGeneration.ts`'s
+  `storeGeneratedAsset` threw using `verdict.reason` (the generic one),
+  discarding `processingReason` entirely. Fixed by preferring
+  `input.result.processingReason` when present, falling through to the
+  generic message otherwise (the other verdict failure modes — no alpha,
+  no processed URL, bad dimensions — only trigger when `processingStatus`
+  was already "ready", where the server never sets this field, so the
+  fallback chain still lands correctly for those). This message flows
+  through unchanged to both the Agent's per-step failure detail and the
+  top-level "Run failed" box (both just read `error.message` off the
+  thrown exception), so a future failure will finally say WHICH fallback
+  was tried and why, instead of the same uninformative sentence every
+  single time this whole session. One existing test
+  (`agent/executor.test.ts`) asserted the old generic wording and needed
+  updating to the new, more specific message — an intentional change, not
+  a regression.
 - **2026-09-17 — Two real gaps in the docs, found by the user actually
   running the exact recipes on Kaggle.** (1) The `ComfyUI-Inspyrenet-Rembg`
   clone command had no matching `pip install -r .../requirements.txt` —

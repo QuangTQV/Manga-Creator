@@ -182,8 +182,18 @@ export async function storeGeneratedAsset(input: StoreGeneratedAssetInput): Prom
     processedImageUrl: input.result.processedImageUrl,
   });
   if (!verdict.valid) {
-    recordFailedGeneration(input.assetType, input.prompt, verdict.reason ?? BACKGROUND_REMOVAL_FAILED_MESSAGE);
-    throw new CharacterTransparencyError(verdict.reason ?? BACKGROUND_REMOVAL_FAILED_MESSAGE);
+    // `verdict.reason` is a fixed, generic string for the "not ready" case
+    // ("Background removal did not complete.") — it only checks
+    // `processingStatus`, so it can't know WHY. The server's own
+    // `processingReason` (set exactly when the whole pipeline genuinely
+    // failed — every provider it tried, and why) is strictly more useful
+    // whenever it's actually present; the other verdict failure modes
+    // (no alpha, no processed URL, bad dimensions) only apply when
+    // `processingStatus` was already "ready", where the server never sets
+    // this field, so the fallback chain still lands on the right message.
+    const message = input.result.processingReason ?? verdict.reason ?? BACKGROUND_REMOVAL_FAILED_MESSAGE;
+    recordFailedGeneration(input.assetType, input.prompt, message);
+    throw new CharacterTransparencyError(message);
   }
 
   const dims = await measureImage(input.result.url);

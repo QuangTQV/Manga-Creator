@@ -427,7 +427,11 @@ describe("executePlan", () => {
     expect(after.panels[page.panelIds[0]].itemIds).toHaveLength(0);
     // The attempt is still recorded so the run is auditable.
     expect(after.generationHistory.some((record) => record.status === "failed")).toBe(true);
-    expect(failures.join(" ").toLowerCase()).toContain("background removal");
+    // The failure detail is now the server's actual, specific reason (once
+    // discarded in favor of a generic "did not complete" message — see
+    // clientGeneration.ts's storeGeneratedAsset), not just the word
+    // "background removal".
+    expect(failures.join(" ").toLowerCase()).toContain("no reliable foreground could be extracted");
   });
 
   it("a failed REQUIRED step aborts and rolls back; a failed NONCRITICAL step is skipped by name", async () => {
