@@ -33,6 +33,33 @@ wholesale, not work done in this fork. Everything from 2026-09-14 onward
 
 ## Timeline (this fork's own work, most recent first)
 
+- **2026-09-17 — Checked a ranked model list from another AI (ChatGPT)
+  before writing it into docs — caught a real architecture trap.** User
+  pasted a ChatGPT-generated ranking of manga/anime SDXL checkpoints and
+  asked to add the top pick ("Manga Vision IL") to HOW_TO_RUN.md as the
+  new recommended checkpoint. Verified every claim via `WebSearch`/
+  `WebFetch` before writing anything (same discipline as every other
+  model recommendation this session) rather than trusting the report at
+  face value — and it would have been actively harmful advice: despite
+  the "IL" (implying "Illustrious"/SDXL) name and Civitai's own
+  "Checkpoint" listing type, the model's actual "Base Model" field reads
+  **"Anima"** — a genuinely different, incompatible architecture (16-
+  channel VAE vs SDXL's 4, flow-matching vs epsilon-prediction), verified
+  by fetching the Civitai page twice and cross-checking Civitai's own
+  "Anima" ecosystem page. It would not have worked with the already-
+  installed SDXL LoRA (LineAniRedmond) or with Kumanga's current
+  hard-coded-for-SDXL ComfyUI graph — exactly the class of silent-garbage
+  failure this whole session spent hours diagnosing with Animagine XL.
+  Did NOT add it. Instead verified and added a real, compatible
+  alternative from the same list: `Minthy/RouWei-0.8` (Illustrious-
+  based, SDXL-shaped) — specifically its `rouwei_080_epsilon_fp16.
+  safetensors` file, confirmed via the HF file listing to be the
+  standard epsilon-prediction variant (the repo also ships a `vpred`
+  variant that needs an extra ComfyUI node the current adapter doesn't
+  add — avoided that trap too). Added a permanent callout in
+  `docs/HOW_TO_RUN.md` §5c (VN+EN) about the "IL name ≠ Illustrious
+  architecture" trap generally, not just this one model, since it's a
+  naming pattern that will keep recurring on Civitai.
 - **2026-09-17 — "Fetch models" for ComfyUI's checkpoint field.** Same live
   Kaggle debugging session, user's own observation: the Model field (the
   checkpoint filename) was still hand-typed free text, while LoRA/

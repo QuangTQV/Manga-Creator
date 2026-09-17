@@ -123,13 +123,16 @@ Bấm **Test Connection** trước khi Save.
 **Chạy ComfyUI trên Kaggle (GPU free), xuất ra URL public để Kumanga gọi:**
 
 1. Vào kaggle.com → Code → New Notebook → mục Settings bên phải → Accelerator → chọn **GPU T4 x2** (hoặc P100). Dùng chế độ **Interactive session** (không dùng "Save & Run All / Commit" — chế độ đó chạy xong tự tắt máy, không giữ server sống).
-2. Cài ComfyUI và tải checkpoint. Chọn 1 trong 3 model dưới đây tuỳ nhu cầu — cả 3 đều tải trực tiếp từ Hugging Face, không cần tài khoản:
+2. Cài ComfyUI và tải checkpoint. Chọn 1 trong 4 model dưới đây tuỳ nhu cầu — cả 4 đều tải trực tiếp từ Hugging Face, không cần tài khoản:
 
    | Checkpoint | Phù hợp khi | Kích thước |
    |---|---|---|
    | **[`stabilityai/stable-diffusion-xl-base-1.0`](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0)** (khuyến nghị) | Model gốc — đã kiểm chứng thật trên Kaggle T4: kết hợp với 1 LoRA line-art (mục 5b phía trên) ra nhân vật đúng phong cách, ổn định | ~6.9 GB |
+   | [`Minthy/RouWei-0.8`](https://huggingface.co/Minthy/RouWei-0.8) (file `rouwei_080_epsilon_fp16.safetensors`) | Train trên nền Illustrious, cộng đồng đánh giá bám prompt tốt hơn Illustrious/NoobAI gốc — dùng đúng file **`epsilon`** (không phải `vpred`, cần node riêng mới chạy đúng); chưa tự kiểm chứng trên Kaggle T4 như bản gốc | ~6.9 GB |
    | [`cagliostrolab/animagine-xl-4.0`](https://huggingface.co/cagliostrolab/animagine-xl-4.0) | Train riêng cho anime/manga, bám tag tốt — nhưng **đã quan sát thấy** trên ComfyUI 0.36.0 (có hệ Dynamic VRAM/aimdo): kết hợp với LoRA hay ra ảnh gần trắng trơn/garbage, dù riêng checkpoint này không LoRA thì vẫn vẽ được nội dung. Chưa rõ do bản thân checkpoint hay do tương tác với bản ComfyUI cụ thể này — cân nhắc test kỹ trước khi dùng thật | ~6.9 GB |
    | [`OnomaAIResearch/Illustrious-XL-v2.0`](https://huggingface.co/OnomaAIResearch/Illustrious-XL-v2.0) | Muốn dùng chung với hệ sinh thái LoRA anime lớn nhất hiện nay (đa số LoRA/checkpoint mới trên Civitai train trên nền Illustrious) — chưa kiểm chứng thực tế với LoRA line-art ở trên | ~6.9 GB |
+
+   **Lưu ý khi tìm checkpoint "chuyên B&W manga" trên Civitai**: một số model tên có hậu tố "IL" (ví dụ "Manga Vision IL") gợi ý là "Illustrious" nhưng **thực chất train trên kiến trúc hoàn toàn khác** ("Anima" — VAE 16-channel, flow-matching, không phải epsilon-prediction như SDXL). Loại này **không tương thích** với LoRA SDXL đang dùng (LineAniRedmond) và với graph ComfyUI hiện tại của Kumanga (dựng cứng cho SDXL) — kiểm tra đúng dòng "Base Model" trên trang Civitai/Hugging Face của model đó trước khi tải, đừng suy ra kiến trúc từ tên.
 
    Dán vào 1 cell (dùng bản gốc — đổi URL/tên file sang dòng tương ứng ở bảng trên nếu muốn thử model khác):
    ```python
@@ -138,6 +141,7 @@ Bấm **Test Connection** trước khi Save.
 
    !wget -q -O ComfyUI/models/checkpoints/sd_xl_base_1.0.safetensors \
      "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors"
+   # RouWei 0.8 (bản epsilon, không phải vpred): Minthy/RouWei-0.8/resolve/main/rouwei_080_epsilon_fp16.safetensors
    # Animagine XL 4.0 (xem cảnh báo LoRA ở bảng trên): cagliostrolab/animagine-xl-4.0/resolve/main/animagine-xl-4.0.safetensors
    # Hệ LoRA Illustrious: OnomaAIResearch/Illustrious-XL-v2.0/resolve/main/Illustrious-XL-v2.0.safetensors
    ```
@@ -360,13 +364,16 @@ Click **Test Connection** before Save.
 **Running ComfyUI on Kaggle's free GPU, exposed as a public URL Kumanga can call:**
 
 1. Go to kaggle.com → Code → New Notebook → Settings panel on the right → Accelerator → pick **GPU T4 x2** (or P100). Use **Interactive session** mode, not "Save & Run All / Commit" — that mode shuts the machine down once it finishes, it won't keep a server alive.
-2. Install ComfyUI and download a checkpoint. Pick one of these three — all download directly from Hugging Face, no account needed:
+2. Install ComfyUI and download a checkpoint. Pick one of these four — all download directly from Hugging Face, no account needed:
 
    | Checkpoint | Good for | Size |
    |---|---|---|
    | **[`stabilityai/stable-diffusion-xl-base-1.0`](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0)** (recommended) | The stock model — confirmed working on a real Kaggle T4 run: paired with one line-art LoRA (section 5b above) it produces correctly-styled, stable characters | ~6.9 GB |
+   | [`Minthy/RouWei-0.8`](https://huggingface.co/Minthy/RouWei-0.8) (file `rouwei_080_epsilon_fp16.safetensors`) | Trained on top of Illustrious, community-reported to follow prompts better than stock Illustrious/NoobAI — use the **`epsilon`** file specifically (not `vpred`, which needs an extra ComfyUI node to run correctly); not yet verified on a live Kaggle T4 run the way the stock checkpoint was | ~6.9 GB |
    | [`cagliostrolab/animagine-xl-4.0`](https://huggingface.co/cagliostrolab/animagine-xl-4.0) | Trained on anime/manga tags, strong tag adherence — but **observed** on ComfyUI 0.36.0 (with its Dynamic VRAM/aimdo system): combined with a LoRA it repeatedly produced near-blank/garbage output, even though the same checkpoint alone (no LoRA) rendered real content fine. Unclear whether the checkpoint itself or its interaction with this specific ComfyUI build is at fault — test carefully before relying on it | ~6.9 GB |
    | [`OnomaAIResearch/Illustrious-XL-v2.0`](https://huggingface.co/OnomaAIResearch/Illustrious-XL-v2.0) | If you want compatibility with today's largest anime LoRA ecosystem — most new anime LoRAs/checkpoints on Civitai are trained on Illustrious as their base — not verified with the line-art LoRA above | ~6.9 GB |
+
+   **A trap when browsing Civitai for a "B&W manga-specific" checkpoint**: some models named with an "IL" suffix (e.g. "Manga Vision IL") suggest "Illustrious", but are actually trained on a completely different architecture ("Anima" — a 16-channel VAE, flow-matching model, not SDXL's epsilon-prediction). That kind is **not compatible** with the SDXL LoRA already in use (LineAniRedmond) or with Kumanga's current ComfyUI graph (hard-coded for SDXL). Always check the actual "Base Model" field on the Civitai/Hugging Face page — never infer architecture from the name.
 
    One cell (using the stock checkpoint — swap the URL/filename for one of the other rows if you want to try a different one):
    ```python
@@ -375,6 +382,7 @@ Click **Test Connection** before Save.
 
    !wget -q -O ComfyUI/models/checkpoints/sd_xl_base_1.0.safetensors \
      "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors"
+   # RouWei 0.8 (the epsilon file, not vpred): Minthy/RouWei-0.8/resolve/main/rouwei_080_epsilon_fp16.safetensors
    # Animagine XL 4.0 (see the LoRA warning in the table above): cagliostrolab/animagine-xl-4.0/resolve/main/animagine-xl-4.0.safetensors
    # Illustrious LoRA ecosystem: OnomaAIResearch/Illustrious-XL-v2.0/resolve/main/Illustrious-XL-v2.0.safetensors
    ```
