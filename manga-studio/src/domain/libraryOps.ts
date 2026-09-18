@@ -97,6 +97,31 @@ export function addAsset(doc: ProjectDocument, input: NewAssetInput): { doc: Pro
 }
 
 /**
+ * Re-attach an asset that already carries `metadata.characterId` for this
+ * character but was never added to its `assetIds`.
+ *
+ * That gap is a deliberate, known consequence of `preserveRunArtifacts`
+ * (`editor/store.ts`): a rolled-back Agent run keeps its paid-for
+ * generations in `doc.assets` so a retry can reuse them instead of paying
+ * for the same image twice — but it restores `characters` from the
+ * PRE-run snapshot, so the asset never rejoins `assetIds`. Every OTHER
+ * consumer of a character's assets (the library sidebar, `resolveCharacterAsset`)
+ * reads `assetIds` only, so an orphan found via the broader
+ * `metadata.characterId` scan (`findExactStateAsset`) must be relinked here
+ * before it is actually reused — not just reused once at that one call site.
+ */
+export function linkAssetToCharacter(doc: ProjectDocument, characterId: ID, assetId: ID): ProjectDocument {
+  const next = cloneDoc(doc);
+  const character = next.characters[characterId];
+  const asset = next.assets[assetId];
+  if (!character) throw new Error(`Unknown character: ${characterId}`);
+  if (!asset) throw new Error(`Unknown asset: ${assetId}`);
+  if (!character.assetIds.includes(assetId)) character.assetIds.push(assetId);
+  touch(next);
+  return next;
+}
+
+/**
  * A cosmetic edit REPLACES the render it improved.
  *
  * Fixing a malformed hand in "Yuri, standing" produces better pixels for a

@@ -7,7 +7,7 @@ import type { SemanticFraming } from "@/domain/commands";
 import type { Character, SourceAsset, CropMode, ID, SceneDepth, SceneFacing, ScenePosition } from "@/domain/types";
 import { isAssetReadyForComposition } from "@/assets/renderSource";
 import { findUnreadyCharacterAsset, requireCharacter, requestedCharacterState, resolveCharacterAsset } from "@/agent/resolver";
-import { hasExactState } from "@/agent/planValidation";
+import { findExactStateAsset } from "@/agent/planValidation";
 import { normalizeReference } from "@/agent/grounding";
 import { poseIntentFromDescriptors } from "@/characters/poseRig";
 import { puppetForInstance } from "@/domain/puppetOps";
@@ -68,11 +68,22 @@ export async function doGenerateCharacterAsset(ctx: RunContext,
   };
   // §9: re-check at the generation boundary, against the CURRENT document.
   // The plan was validated against an older document; an earlier step in this
-  // same run may have produced exactly this asset.
-  if (args.kind !== "reference" && hasExactState(doc, character, desired)) {
-    throw new Error(
-      `${character.name} already has a ${desired.pose}/${desired.expression} state — reused instead of generating a duplicate.`,
-    );
+  // same run — or a rolled-back PRIOR run whose paid-for generations
+  // `preserveRunArtifacts` (editor/store.ts) kept around for exactly this —
+  // may have already produced exactly this asset. Reuse it: the asset may
+  // exist without being linked into `character.assetIds` yet (that gap is
+  // what `preserveRunArtifacts` leaves behind on purpose), so link it before
+  // staging it, or every other consumer of the character's assets keeps
+  // treating it as if it did not exist.
+  if (args.kind !== "reference") {
+    const existing = findExactStateAsset(doc, character, desired);
+    if (existing) {
+      if (!character.assetIds.includes(existing.id)) {
+        ctx.dispatch({ type: "link-asset-to-character", characterId: character.id, assetId: existing.id });
+      }
+      ctx.stageOnWorkspace(existing.id);
+      return;
+    }
   }
   const assetId = await generateCharacterAssetForState({
     characterId: character.id,

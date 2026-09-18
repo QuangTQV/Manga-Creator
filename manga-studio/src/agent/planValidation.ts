@@ -19,7 +19,7 @@
 
 import { DEFAULT_CHARACTER_STATE, stateFromAsset } from "@/characters/state";
 import { isAssetReadyForComposition } from "@/assets/renderSource";
-import type { Character, CharacterState, ID, MangaLanguageCategory, ProjectDocument } from "@/domain/types";
+import type { Character, CharacterState, ID, MangaLanguageCategory, ProjectDocument, SourceAsset } from "@/domain/types";
 import { bestLanguageAsset } from "@/language/library";
 import {
   normalizeReference,
@@ -365,8 +365,18 @@ function describeState(state: CharacterState): string {
   return `${state.pose}/${state.expression}`;
 }
 
-/** Exact full-state cache hit across every asset linked to the character. */
-export function hasExactState(doc: ProjectDocument, character: Character, desired: CharacterState): boolean {
+/**
+ * Exact full-state cache hit, scanning every asset tagged for this character —
+ * not just `character.assetIds`. A run that rolled back still preserves its
+ * paid-for generations in `doc.assets` (see `preserveRunArtifacts` in
+ * `editor/store.ts`) without re-linking them, precisely so a retry can find
+ * and reuse them here instead of paying for the same image twice.
+ */
+export function findExactStateAsset(
+  doc: ProjectDocument,
+  character: Character,
+  desired: CharacterState,
+): SourceAsset | undefined {
   const ids = new Set(character.assetIds);
   for (const asset of Object.values(doc.assets)) {
     if (asset.metadata?.characterId === character.id) ids.add(asset.id);
@@ -383,10 +393,14 @@ export function hasExactState(doc: ProjectDocument, character: Character, desire
       state.outfit === desired.outfit &&
       state.view === desired.view
     ) {
-      return true;
+      return asset;
     }
   }
-  return false;
+  return undefined;
+}
+
+export function hasExactState(doc: ProjectDocument, character: Character, desired: CharacterState): boolean {
+  return findExactStateAsset(doc, character, desired) !== undefined;
 }
 
 /** Convenience for callers that only need the resolution, not a whole plan. */

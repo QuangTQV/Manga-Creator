@@ -3,7 +3,7 @@
  * serializable intents; the command layer alone coordinates domain modules.
  */
 
-import { addAsset, addCharacter, addGenerationRecord, setAssetProcessedImage, setCharacterReference, type NewAssetInput } from "./libraryOps";
+import { addAsset, addCharacter, addGenerationRecord, linkAssetToCharacter, setAssetProcessedImage, setCharacterReference, type NewAssetInput } from "./libraryOps";
 import { deleteAsset, deleteCharacter, renameAsset, renameCharacter, replaceAssetReferences, setAssetArchived, type DeleteAssetMode, type DeleteCharacterMode } from "./assetLifecycle";
 import { addBubble, addEffect, duplicateItem, moveItemToIndex, placeAsset, removeItem, reorderItem, setCropMode, swapInstanceAsset, updateBubble, updateItemProps, updateItemTransform, type ReorderDirection } from "./itemOps";
 import { addTone, updateTone, type TonePatch } from "./toneOps";
@@ -108,6 +108,7 @@ export type DomainCommand =
   | { type: "create-asset"; input: NewAssetInput; generation?: Omit<GenerationRecord, "id" | "createdAt" | "resultAssetId"> }
   | { type: "set-asset-processed"; assetId: ID; update: Pick<SourceAsset, "processedImageUrl" | "hasAlpha" | "backgroundRemoved" | "processingStatus" | "backgroundRemovalStatus" | "processingReason" | "backgroundRemovalMethod" | "backgroundRemovalProvider"> }
   | { type: "set-character-reference"; characterId: ID; assetId: ID }
+  | { type: "link-asset-to-character"; characterId: ID; assetId: ID }
   | { type: "record-failed-generation"; record: Omit<GenerationRecord, "id" | "createdAt" | "resultAssetId"> }
   | { type: "delete-character"; characterId: ID; mode: DeleteCharacterMode }
   | { type: "rename-character"; characterId: ID; name: string }
@@ -305,6 +306,8 @@ function applyCommandCore(doc: ProjectDocument, command: DomainCommand): Command
       return { doc: setAssetProcessedImage(doc, command.assetId, command.update) };
     case "set-character-reference":
       return { doc: setCharacterReference(doc, command.characterId, command.assetId) };
+    case "link-asset-to-character":
+      return { doc: linkAssetToCharacter(doc, command.characterId, command.assetId) };
     case "record-failed-generation":
       return { doc: addGenerationRecord(doc, command.record) };
     case "delete-character":
