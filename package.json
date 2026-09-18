@@ -1,6 +1,6 @@
 {
   "name": "kumanga",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Kumanga \u2014 a local-first, bring-your-own-key manga creation harness.",
   "workspaces": [
