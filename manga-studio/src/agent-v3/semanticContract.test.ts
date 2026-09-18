@@ -203,6 +203,32 @@ describe("semantic contract generalization", () => {
     expect(error).toContain("participants[0].name");
   });
 
+  it("CASE K: a beat's target is placed by a LATER beat — the relationship step is deferred until every actor is in the panel", () => {
+    // "Kiki flees Monster" (beat 1) has no `interaction`, so it takes the
+    // add_scene_relationship path — but Monster isn't placed until beat 2.
+    // addSceneRelationship (domain/sceneOps.ts) throws "Relationship target
+    // is not in the scene" unless the target's own place_character already
+    // ran; the relationship step must come after it regardless of beat order.
+    const { plan } = compileRaw({
+      ...BASE,
+      participants: [
+        BASE.participants[0],
+        { name: "Monster", resolutionIntent: "create_if_missing", attributes: [], relationships: [] },
+      ],
+      beats: [
+        { panel: 1, actor: "Kiki", target: "Monster", action: "fleeing", poseDetails: [], dialogueKind: "speech" },
+        { panel: 1, actor: "Monster", action: "chasing", poseDetails: [], dialogueKind: "speech" },
+      ],
+    });
+    const relationshipIndex = plan.steps.findIndex((s) => s.tool === "add_scene_relationship");
+    const monsterPlacementIndex = plan.steps.findIndex(
+      (s) => s.tool === "place_character" && s.args.characterName === "Monster",
+    );
+    expect(relationshipIndex).toBeGreaterThan(-1);
+    expect(monsterPlacementIndex).toBeGreaterThan(-1);
+    expect(relationshipIndex).toBeGreaterThan(monsterPlacementIndex);
+  });
+
   it("anti-overfitting: unseen paraphrases survive via raw fallback, never enum death", () => {
     // Arrive family — none of these are editor enums; all must survive.
     for (const wording of ["arrives", "reaches", "gets to", "walks up to", "comes to"]) {

@@ -41,6 +41,12 @@ function stateInstruction(action: string | undefined, poseDetails: string[], cam
 
 export function compileTaskMap(map: CreativeTaskMap, resolution: Resolution): CompiledPlan {
   const steps: Step[] = [];
+  // `add_scene_relationship` requires BOTH characters already placed in that
+  // panel's scene (sceneOps.ts). A beat's target is often another beat's
+  // actor, placed later in this same loop — emitting the relationship step
+  // inline would run it before its target ever reaches the panel. Collected
+  // here and appended once every beat's `place_character` has been emitted.
+  const relationshipSteps: Step[] = [];
   const defaultPanel = map.target.panel;
   const camera = resolveCameraIntent(map.cameraIntent);
   const warnings = [...(camera?.warnings ?? [])];
@@ -130,7 +136,7 @@ export function compileTaskMap(map: CreativeTaskMap, resolution: Resolution): Co
           args: { panel, characterName: beat.actor, pose: beat.action ?? interaction?.raw, expression: beat.expression, generateIfMissing: true },
           reason: "Put the actor in the panel",
         });
-        steps.push({
+        relationshipSteps.push({
           tool: "add_scene_relationship",
           args: { panel, subjectCharacterName: beat.actor, action: interaction?.raw ?? "interacts with", targetCharacterName: beat.target },
           reason: "Scene action between participants",
@@ -150,7 +156,7 @@ export function compileTaskMap(map: CreativeTaskMap, resolution: Resolution): Co
         reason: "Put the actor in the panel",
       });
       if (beat.target) {
-        steps.push({
+        relationshipSteps.push({
           tool: "add_scene_relationship",
           args: { panel, subjectCharacterName: beat.actor, action: beat.action ?? "interacts with", targetCharacterName: beat.target },
           reason: "Scene action between participants",
@@ -174,6 +180,11 @@ export function compileTaskMap(map: CreativeTaskMap, resolution: Resolution): Co
       });
     }
   }
+
+  // Every beat's `place_character` has now been emitted above, so every
+  // relationship's subject AND target are guaranteed to reach the panel
+  // before the relationship itself is set.
+  steps.push(...relationshipSteps);
 
   // ── Scene placement ──
   const scenePanel = map.target.panel ?? map.beats[0]?.panel ?? 1;
