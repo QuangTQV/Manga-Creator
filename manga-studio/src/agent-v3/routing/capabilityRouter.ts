@@ -100,6 +100,18 @@ export function compileTaskMap(map: CreativeTaskMap, resolution: Resolution): Co
           characterName: beat.actor,
           ...(actorId ? { characterId: actorId } : {}),
           kind: "pose",
+          // The state CACHE KEY, not just the render prompt — matching what
+          // the `place_character` step below already passes for the same
+          // beat. Without this, `pose`/`expression` were absent here and
+          // characterProcess.ts's doGenerateCharacterAsset fell back to the
+          // SAME hardcoded default ("standing"/"neutral") for every beat, so
+          // (a) a second beat for the same character always looked like a
+          // duplicate of the first no matter how different the two actions
+          // actually were, and (b) even the FIRST beat's generated asset was
+          // keyed differently from what `place_character` searches for,
+          // so it could never actually be reused by it either.
+          pose: beat.action ?? beat.poseDetails.join(", "),
+          expression: beat.expression,
           instruction: stateInstruction(beat.action, beat.poseDetails, cameraHint),
         },
         reason: "The state this beat actually needs",

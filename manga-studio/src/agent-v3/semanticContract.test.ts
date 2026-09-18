@@ -229,6 +229,42 @@ describe("semantic contract generalization", () => {
     expect(relationshipIndex).toBeGreaterThan(monsterPlacementIndex);
   });
 
+  it("CASE L: two beats for the same actor with different actions get DIFFERENT state cache keys", async () => {
+    // Before this fix, the beat-driven generate_character_asset step never
+    // set `pose`/`expression` — only `instruction` (the render prompt) — so
+    // characterProcess.ts's dedup check always fell back to the SAME
+    // hardcoded default ("standing"/"neutral") regardless of what the beat
+    // actually asked for. A second beat for the same character (a monster
+    // that first stands behind Haruto, then chases him) always looked like
+    // a duplicate of the first and failed the whole run with "already has a
+    // standing/neutral state" — even though the two actions were nothing
+    // alike.
+    const raw = {
+      ...BASE,
+      beats: [
+        { panel: 1, actor: "Kiki", action: "standing quietly by the gate", poseDetails: [], dialogueKind: "speech" },
+        { panel: 1, actor: "Kiki", action: "running toward the school gate", poseDetails: [], dialogueKind: "speech" },
+      ],
+    };
+    const { plan } = compileRaw(raw);
+    const poseSteps = plan.steps.filter((s) => s.tool === "generate_character_asset" && s.args.kind === "pose");
+    expect(poseSteps).toHaveLength(2);
+    expect(poseSteps[0].args.pose).toBe("standing quietly by the gate");
+    expect(poseSteps[1].args.pose).toBe("running toward the school gate");
+    expect(poseSteps[0].args.pose).not.toBe(poseSteps[1].args.pose);
+    // Matches what place_character searches for on the same beat — otherwise
+    // the generated asset can never actually be reused by it.
+    const placements = plan.steps.filter((s) => s.tool === "place_character");
+    expect(placements[0].args.pose).toBe(poseSteps[0].args.pose);
+    expect(placements[1].args.pose).toBe(poseSteps[1].args.pose);
+
+    // End to end: the run this bug actually broke must complete, not throw
+    // "Kiki already has a standing/neutral state" on the second beat.
+    const names = creationAuthorization(resolveTaskMap(parseCreativeTaskMap(raw).map!, useEditorStore.getState().doc!));
+    const summary = await executePlan(plan, () => {}, { creationAuthorized: names.length > 0, authorizedCreationNames: names });
+    expect(summary.status).toBe("completed");
+  });
+
   it("anti-overfitting: unseen paraphrases survive via raw fallback, never enum death", () => {
     // Arrive family — none of these are editor enums; all must survive.
     for (const wording of ["arrives", "reaches", "gets to", "walks up to", "comes to"]) {
