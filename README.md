@@ -16,8 +16,8 @@ API key (BYOK); there is no account, no cloud lock-in, and no bundled model.
 **[QuangTQV](https://github.com/QuangTQV)**.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.3.0-8A2BE2)](https://github.com/QuangTQV/Manga-Creator/releases/tag/v0.3.0)
-[![Tests](https://img.shields.io/badge/tests-1504%2F1504%20pass-brightgreen)](https://github.com/QuangTQV/Manga-Creator/releases/tag/v0.3.0)
+[![Version](https://img.shields.io/badge/version-v1.0.0-8A2BE2)](https://github.com/QuangTQV/Manga-Creator/releases/tag/v1.0.0)
+[![Tests](https://img.shields.io/badge/tests-1543%2F1543%20pass-brightgreen)](https://github.com/QuangTQV/Manga-Creator/releases/tag/v1.0.0)
 [![Stack](https://img.shields.io/badge/Next.js%2015-TypeScript%205-black)](manga-studio/)
 
 **[🌐 Website](https://kumanga-website.vercel.app/)** ·
@@ -37,12 +37,14 @@ composition are separate systems, and you are always the director. Think
 Manga Agent that operates the same editor through natural-language prompts.
 
 - **Stack**: Next.js 15 · React 19 · TypeScript 5 · npm workspaces
-- **Status**: actively developed —
-  [v0.3.0](https://github.com/QuangTQV/Manga-Creator/releases/tag/v0.3.0)
-  released 2026-09-16, plus ongoing work since (local self-hosted AI,
-  LoRA/ControlNet/IPAdapter, real masked inpainting — see below),
-  1504/1504 tests passing, `npm audit` clean
-  ([release notes](https://github.com/QuangTQV/Manga-Creator/releases/tag/v0.3.0) ·
+- **Status**: first stable release —
+  [v1.0.0](https://github.com/QuangTQV/Manga-Creator/releases/tag/v1.0.0)
+  released 2026-09-18: local self-hosted AI (ComfyUI, LoRA/ControlNet/
+  IPAdapter, real masked inpainting), a more reliable Manga Agent (retry
+  without re-planning, generation caching, several composition-correctness
+  fixes), and a long list of editor/export features since v0.2.0 —
+  1543/1543 tests passing, `npm audit` clean
+  ([release notes](https://github.com/QuangTQV/Manga-Creator/releases/tag/v1.0.0) ·
   [v0.1 baseline report](docs/RELEASE_FREEZE_V0.1.md) for the original freeze this fork started from)
 - **License**: MIT (keep [`NOTICE.md`](NOTICE.md) attribution on forks)
 
@@ -263,12 +265,14 @@ override any operator-default providers. A reference deployment runs at
 
 ### What is the current status of the project?
 
-Actively developed. The latest tagged release is
-[v0.3.0](https://github.com/QuangTQV/Manga-Creator/releases/tag/v0.3.0)
-(2026-09-16); since then this fork has added local self-hosted image
-generation (ComfyUI), LoRA/ControlNet/IPAdapter support, and real
-mask-aware local editing. 1504/1504 tests passing, clean typecheck, lint
-and build, and zero `npm audit` vulnerabilities. See the
+Stable. The latest tagged release is
+[v1.0.0](https://github.com/QuangTQV/Manga-Creator/releases/tag/v1.0.0)
+(2026-09-18) — the project's first stable release, adding local
+self-hosted image generation (ComfyUI), LoRA/ControlNet/IPAdapter support,
+real mask-aware local editing, a more reliable Manga Agent, and a long
+list of editor/export features added since v0.2.0. 1543/1543 tests
+passing, clean typecheck, lint and build, and zero `npm audit`
+vulnerabilities. See the
 [release notes](https://github.com/QuangTQV/Manga-Creator/releases) for
 what shipped in each tagged version, and [ARCHITECTURE.md](ARCHITECTURE.md)
 for module boundaries and the agent pipeline. The original v0.1 baseline

@@ -1,5 +1,13 @@
 # AI Manga Harness (Kumanga) — v0.1 Release Freeze
 
+> **Status: historical.** This snapshot's freeze ended with the
+> [v1.0.0 release](https://github.com/QuangTQV/Manga-Creator/releases/tag/v1.0.0)
+> (2026-09-18) — the project's first stable release. The numbers and dates
+> below describe the v0.1 baseline as it was on 2026-08-22, kept for
+> reference (regression comparisons, architecture invariants that still
+> apply); they are not the project's current status. See the main
+> [README](../README.md) for that.
+
 This document records the known-good baseline for the v0.1 open-source preview.
 Any future change that regresses the results below should be measured against
 this commit (or reverted to it).
@@ -108,16 +116,18 @@ regression testing** (the existing suites in `npm test` cover them):
 - Assets generated before a pipeline fix keep their old bytes ("Fix
   transparency" rebuilds them).
 - No Project Settings surface (lifecycle actions live in the `⋯` menu).
-- v0.1 is an Open-Source Preview, not a production-stable 1.0 release.
 
-## Development Freeze Rule
+## Development Freeze Rule (historical — applied to v0.1)
 
-**AI MANGA HARNESS v0.1 IS FROZEN.**
+**AI MANGA HARNESS v0.1 WAS FROZEN** from 2026-08-22 until superseded by the
+v1.0.0 release.
 
-Bugs do not auto-fix. Only these may lift the freeze: P0/P1 security
+Bugs did not auto-fix. Only these could lift the freeze: P0/P1 security
 vulnerability, data loss, project corruption, app cannot start, core generation
 completely unavailable, release/install blocker.
 
 Everything else (UX improvement, camera enhancement, provider compatibility
 edge cases, new tones/effects/Agent features/workflows, code cleanup,
-architecture elegance, performance optimization) goes to the backlog.
+architecture elegance, performance optimization) went to the backlog. Whether
+the same discipline applies post-1.0 is a separate decision, not made by this
+document.
