@@ -173,6 +173,7 @@ Bấm **Test Connection** trước khi Save.
    !pip install -r ComfyUI/custom_nodes/ComfyUI-Inspyrenet-Rembg/requirements.txt -q
    # Model tự tải khi chạy lần đầu, không cần tải tay thêm gì
    ```
+   **Nếu ComfyUI đã đang chạy từ trước khi bạn cài node ở trên, phải dừng và chạy lại lệnh khởi động ở bước 3 dưới.** Custom node chỉ được nạp lúc khởi động; cài xong mà không restart, "Test Connection" vẫn báo OK (chỉ kiểm tra server có phản hồi, không kiểm tra node) nhưng lúc tách nền thật sẽ báo lỗi `missing_node_type: Node 'InspyrenetRembg' not found`.
 3. Chạy server ComfyUI ở chế độ nền. **Bắt buộc thêm `--fp32-vae`** — VAE gốc của SDXL bị tràn số (NaN) khi chạy fp16 trên GPU đời T4 (bug SDXL đã biết, không riêng gì Kumanga), sinh ra ảnh trắng/xám mờ không có nội dung thay vì lỗi rõ ràng, dễ nhầm là do prompt hay checkpoint sai:
    ```python
    import subprocess
@@ -254,6 +255,7 @@ Trước khi coi một thay đổi là "xong", nên chạy đủ cả 4 lệnh: 
 - **Cổng 3000 đã bị chiếm** — kiểm tra xem có tiến trình `next dev` nào đang chạy sẵn không, hoặc đổi cổng: `PORT=3001 npm run dev`.
 - **Không sinh được ảnh** — vào AI Settings, bấm Test Connection để xem lỗi cụ thể (sai key, sai base URL, model không tồn tại...).
 - **Lỗi "Background removal did not complete" khi tạo nhân vật bằng ComfyUI** — 2 nguyên nhân khác nhau, cùng một triệu chứng: (1) checkpoint không vẽ đúng nền trắng tinh như yêu cầu — xem phần "Chọn checkpoint/LoRA cho ComfyUI" trong mục [5b](#5b-dùng-model-ai-chạy-local--self-host-không-cần-api-cloud); (2) ảnh trả về **trắng/xám mờ, không có nội dung gì** (không phải nền trắng có nhân vật — mà toàn bộ ảnh gần như trống) — đây là bug VAE SDXL tràn số ở fp16 trên GPU T4, sửa bằng cờ `--fp32-vae` khi chạy ComfyUI, xem mục 5c.
+- **Lỗi `missing_node_type: Node 'InspyrenetRembg' not found` khi dùng ComfyUI làm fallback tách nền** — node pack `ComfyUI-Inspyrenet-Rembg` chưa cài, hoặc đã cài nhưng ComfyUI chưa được restart (custom node chỉ nạp lúc khởi động). "Test Connection" vẫn báo "Connected" trong trường hợp này vì nó chỉ kiểm tra server phản hồi, không kiểm tra node — chỉ lộ ra khi tách nền thật. Xem lại lệnh cài + restart trong mục 5c.
 - **Muốn dùng model AI chạy trên máy (Ollama/LM Studio/Automatic1111)** — xem mục [5b](#5b-dùng-model-ai-chạy-local--self-host-không-cần-api-cloud) ở trên.
 - **Muốn dùng Azure OpenAI hoặc chạy model ảnh trên GPU free của Kaggle** — xem mục [5c](#5c-azure-openai-agent--chạy-model-ảnh-trên-kaggle-gpu-free-image-generation) ở trên.
 - **Muốn deploy lên Vercel** — xem hướng dẫn chi tiết tại [`manga-studio/docs/DEPLOYMENT.md`](../manga-studio/docs/DEPLOYMENT.md).
@@ -436,6 +438,7 @@ Click **Test Connection** before Save.
    !pip install -r ComfyUI/custom_nodes/ComfyUI-Inspyrenet-Rembg/requirements.txt -q
    # Downloads its model automatically on first use — nothing else to fetch
    ```
+   **If ComfyUI was already running before you installed this node, stop it and re-run the start command in step 3 below.** Custom nodes only load at startup — without a restart, "Test Connection" still reports OK (it only checks the server responds, not that the node exists), but a real background-removal call fails with `missing_node_type: Node 'InspyrenetRembg' not found`.
 3. Start the ComfyUI server in the background. **`--fp32-vae` is required** — the stock SDXL VAE overflows (NaN) running in fp16 on T4-class GPUs (a known SDXL bug, not specific to Kumanga), producing a blank/washed-out grey-white image with no real content instead of an actual error, easy to mistake for a bad prompt or checkpoint:
    ```python
    import subprocess
@@ -518,6 +521,7 @@ Before treating a change as done, run all four:
 - **Port 3000 already in use** — check for an existing `next dev` process, or use a different port: `PORT=3001 npm run dev`.
 - **Image generation fails** — open AI Settings and click Test Connection to see the exact error (bad key, wrong base URL, unknown model...).
 - **"Background removal did not complete" when generating a character with ComfyUI** — two different causes, same symptom: (1) the checkpoint isn't drawing the plain white background it was asked for — see "Picking a checkpoint/LoRA for ComfyUI" in [section 5b](#5b-using-a-localself-hosted-ai-model-no-cloud-api-needed); (2) the returned image is **blank/washed-out grey-white with no real content at all** (not "white background with a character on it" — the whole image) — this is the SDXL VAE fp16-overflow bug on T4 GPUs, fixed with the `--fp32-vae` flag when starting ComfyUI, see section 5c.
+- **`missing_node_type: Node 'InspyrenetRembg' not found` when using ComfyUI as the background-removal fallback** — the `ComfyUI-Inspyrenet-Rembg` node pack isn't installed, or was installed but ComfyUI was never restarted (custom nodes only load at startup). "Test Connection" still reports "Connected" here — it only checks that the server responds, not that the node exists — so this only shows up on a real background-removal call. See the install + restart steps in section 5c.
 - **Want to use a local model (Ollama/LM Studio/Automatic1111)** — see [section 5b](#5b-using-a-localself-hosted-ai-model-no-cloud-api-needed) above.
 - **Want to use Azure OpenAI, or run image models on Kaggle's free GPU** — see [section 5c](#5c-azure-openai-agent--running-image-models-on-kaggles-free-gpu-image-generation) above.
 - **Want to deploy to Vercel** — see [`manga-studio/docs/DEPLOYMENT.md`](../manga-studio/docs/DEPLOYMENT.md) for the full walkthrough.
