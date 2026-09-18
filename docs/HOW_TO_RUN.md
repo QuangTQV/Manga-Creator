@@ -167,8 +167,13 @@ Bấm **Test Connection** trước khi Save.
    Muốn dùng IPAdapter (giữ đặc điểm nhân vật khi sửa ảnh cục bộ) trên server Kaggle này thì cài thêm, cùng cell hoặc cell riêng:
    ```python
    !git clone https://github.com/cubiq/ComfyUI_IPAdapter_plus.git ComfyUI/custom_nodes/ComfyUI_IPAdapter_plus
-   # Cần thêm model IPAdapter + CLIP vision — xem README của repo trên để lấy đúng link tải theo checkpoint bạn dùng
+   # Model IPAdapter + CLIP vision KHÔNG nằm trong git clone này — phải tự tải:
+   #   ComfyUI/models/clip_vision/       ← file CLIP vision encoder
+   #   ComfyUI/models/ipadapter/         ← file IPAdapter (tạo thư mục này nếu chưa có)
+   # Xem README của repo trên để lấy đúng link theo checkpoint bạn dùng (SD1.5 vs SDXL)
    ```
+   **Clone xong nhớ restart ComfyUI** (dừng và chạy lại lệnh khởi động ở bước 3 dưới) — custom node (IPAdapter cũng vậy, không riêng gì node tách nền ở dưới) chỉ được nạp lúc khởi động; thiếu bước này, lúc sửa ảnh có identity reference ComfyUI sẽ báo lỗi node không tồn tại dù đã clone xong.
+
    Muốn dùng chính ComfyUI này làm **fallback tách nền** (mục 5 dưới) khi bước tách nền tự động của Kumanga fail, cài thêm — **nhớ chạy cả dòng `pip install` thứ 2**, thiếu dòng đó ComfyUI báo `ModuleNotFoundError: No module named 'transparent_background'` và node bị load fail âm thầm (vẫn chạy được, chỉ riêng node tách nền không dùng được):
    ```python
    !git clone https://github.com/john-mnz/ComfyUI-Inspyrenet-Rembg.git ComfyUI/custom_nodes/ComfyUI-Inspyrenet-Rembg
@@ -435,8 +440,13 @@ Click **Test Connection** before Save.
    Want IPAdapter (identity-preserving local edits) on this Kaggle server too? Add, in the same cell or a separate one:
    ```python
    !git clone https://github.com/cubiq/ComfyUI_IPAdapter_plus.git ComfyUI/custom_nodes/ComfyUI_IPAdapter_plus
-   # Also needs an IPAdapter model + CLIP vision model — see that repo's own README for the right download link for your checkpoint
+   # The IPAdapter + CLIP vision model files are NOT part of this git clone — download them separately into:
+   #   ComfyUI/models/clip_vision/       ← the CLIP vision encoder file
+   #   ComfyUI/models/ipadapter/         ← the IPAdapter model file (create this folder if it doesn't exist)
+   # See that repo's own README for the right download link for your checkpoint (SD1.5 vs SDXL)
    ```
+   **Restart ComfyUI after cloning** (stop it and re-run the start command in step 3 below) — custom nodes (IPAdapter included, not just the background-removal one below) only load at startup; skip this and a local edit with an identity reference fails with a missing-node error even though the clone succeeded.
+
    Want to use this same ComfyUI instance as a **background-removal fallback** (section 5 above) when Kumanga's built-in extraction fails? Add — **the 2nd `pip install` line is required**, skipping it fails the node import with `ModuleNotFoundError: No module named 'transparent_background'` (ComfyUI still starts fine; only that node fails to load):
    ```python
    !git clone https://github.com/john-mnz/ComfyUI-Inspyrenet-Rembg.git ComfyUI/custom_nodes/ComfyUI-Inspyrenet-Rembg
