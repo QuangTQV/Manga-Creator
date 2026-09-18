@@ -1,7 +1,7 @@
 "use client";
 
 import { inspectAssetUsage } from "@/domain/assetLifecycle";
-import type { Character, SourceAsset } from "@/domain/types";
+import type { Character, ID, Page, SourceAsset } from "@/domain/types";
 import { useEditorStore } from "@/editor/store";
 
 export function AssetDeleteDialog({ asset, onClose }: { asset: SourceAsset; onClose: () => void }) {
@@ -56,6 +56,41 @@ export function CharacterDeleteDialog({ character, onClose }: { character: Chara
         <button className="rounded px-3 py-1.5 text-zinc-400 hover:text-zinc-200" onClick={onClose}>Cancel</button>
         <button className="rounded border border-zinc-600 px-3 py-1.5 hover:bg-zinc-800" onClick={() => execute("keep-assets")}>Delete Character, keep assets</button>
         <button className="rounded bg-red-700 px-3 py-1.5 text-white hover:bg-red-600" onClick={() => execute("delete-all")}>Delete everything</button>
+      </div>
+    </Dialog>
+  );
+}
+
+/** Replaces window.confirm() for page deletion — same house style as every other delete dialog. */
+export function PageDeleteDialog({
+  page,
+  onClose,
+  onDeleted,
+}: {
+  page: Page;
+  onClose: () => void;
+  onDeleted: (remainingPageId: ID | undefined) => void;
+}) {
+  const doc = useEditorStore((state) => state.doc);
+  if (!doc) return null;
+  const itemCount = page.panelIds.reduce((total, panelId) => total + (doc.panels[panelId]?.itemIds.length ?? 0), 0);
+  const execute = () => {
+    const store = useEditorStore.getState();
+    store.dispatch({ type: "remove-page", pageId: page.id });
+    const remaining = Object.values(store.doc!.pages).sort((a, b) => a.index - b.index)[0];
+    onDeleted(remaining?.id);
+    onClose();
+  };
+  return (
+    <Dialog title={`Delete “${page.name}”?`} onClose={onClose}>
+      <p className="mb-4 text-xs leading-5 text-zinc-400">
+        {page.panelIds.length} panel{page.panelIds.length === 1 ? "" : "s"}
+        {itemCount > 0 ? ` and ${itemCount} placed item${itemCount === 1 ? "" : "s"}` : ""} on this page will be
+        deleted. This cannot be undone from here — use Undo right after if you change your mind.
+      </p>
+      <div className="flex justify-end gap-2 text-xs">
+        <button className="rounded px-3 py-1.5 text-zinc-400 hover:text-zinc-200" onClick={onClose}>Cancel</button>
+        <button className="rounded bg-red-700 px-3 py-1.5 text-white hover:bg-red-600" onClick={execute}>Delete page</button>
       </div>
     </Dialog>
   );

@@ -159,7 +159,7 @@ test("AI Settings disables Test Connection until a provider is actually saved", 
 });
 
 test("History lets you jump several steps at once, not just one Undo at a time", async ({ page }) => {
-  const pageButtons = page.getByRole("button", { name: /^\d+$/ });
+  const pageButtons = page.locator("footer button[title^='Page ']");
   await expect(pageButtons).toHaveCount(1); // a fresh project starts with one page
 
   const history = page.getByRole("button", { name: "History" });
@@ -286,13 +286,48 @@ test("dragging a page in the Pages bar reorders it, by identity not just positio
   // reorder — a stable way to tell pages apart even though every slot's
   // visible NUMBER is just its current position (1, 2, 3 either way).
   const pageOrder = () => page.locator("footer button[title^='Page ']").evaluateAll((els) => els.map((el) => el.getAttribute("title")));
-  await expect.poll(pageOrder).toEqual(["Page 1 — drag to reorder", "Page 2 — drag to reorder", "Page 3 — drag to reorder"]);
+  await expect.poll(pageOrder).toEqual([
+    "Page 1 — double-click to rename, drag to reorder",
+    "Page 2 — double-click to rename, drag to reorder",
+    "Page 3 — double-click to rename, drag to reorder",
+  ]);
 
   await page.locator("footer button[title^='Page 1']").dragTo(page.locator("footer button[title^='Page 3']"));
 
-  await expect.poll(pageOrder).toEqual(["Page 2 — drag to reorder", "Page 3 — drag to reorder", "Page 1 — drag to reorder"]);
+  await expect.poll(pageOrder).toEqual([
+    "Page 2 — double-click to rename, drag to reorder",
+    "Page 3 — double-click to rename, drag to reorder",
+    "Page 1 — double-click to rename, drag to reorder",
+  ]);
   // The moved page's visible slot NUMBER follows its new position (3rd).
-  await expect(page.locator("footer button[title^='Page 1']")).toHaveText("3");
+  await expect(page.locator("footer button[title^='Page 1']")).toContainText("#3");
+});
+
+test("double-clicking a page tab renames it in place", async ({ page }) => {
+  const tab = page.locator("footer button[title^='Page 1']");
+  await tab.dblclick();
+
+  const input = page.getByRole("textbox", { name: "Rename Page 1" });
+  await expect(input).toBeFocused();
+  await input.fill("Cold open");
+  await input.press("Enter");
+
+  await expect(page.locator("footer button[title^='Cold open']")).toBeVisible();
+});
+
+test("deleting a page uses a real dialog, not the browser's native confirm", async ({ page }) => {
+  const dialogs: string[] = [];
+  page.on("dialog", (dialog) => dialogs.push(dialog.type()));
+  await page.getByRole("button", { name: "Add page" }).click();
+
+  // The delete icon only exists in the DOM once its tile is hovered.
+  await page.locator("footer button[title^='Page 1']").hover();
+  await page.getByRole("button", { name: "Delete Page 1" }).click();
+  await expect(page.getByRole("heading", { name: "Delete “Page 1”?" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Delete page" }).click();
+  await expect(page.locator("footer button[title^='Page 1']")).toHaveCount(0);
+  expect(dialogs).toEqual([]);
 });
 
 test("bold and italic toggle on a speech bubble and persist through the style patch", async ({ page }) => {

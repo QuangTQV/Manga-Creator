@@ -146,3 +146,29 @@ describe("reorderPage", () => {
     expect(after).toBe(doc);
   });
 });
+
+describe("renamePage", () => {
+  it("renames the page and trims surrounding whitespace", () => {
+    const doc = createProjectDocument("Rename page test");
+    const pageId = Object.values(doc.pages)[0].id;
+
+    const after = applyDomainCommand(doc, { type: "rename-page", pageId, name: "  Chapter opener  " }).doc;
+
+    expect(after.pages[pageId].name).toBe("Chapter opener");
+  });
+
+  it("rejects an empty (or whitespace-only) name", () => {
+    const doc = createProjectDocument("Rename page test");
+    const pageId = Object.values(doc.pages)[0].id;
+
+    expect(() => applyDomainCommand(doc, { type: "rename-page", pageId, name: "   " })).toThrow("A page needs a name");
+  });
+
+  it("rejects an unknown page id", () => {
+    const doc = createProjectDocument("Rename page test");
+
+    expect(() => applyDomainCommand(doc, { type: "rename-page", pageId: "not-a-real-page", name: "New name" })).toThrow(
+      "Unknown page",
+    );
+  });
+});

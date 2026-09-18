@@ -8,7 +8,7 @@ import { deleteAsset, deleteCharacter, renameAsset, renameCharacter, replaceAsse
 import { addBubble, addEffect, duplicateItem, moveItemToIndex, placeAsset, removeItem, reorderItem, setCropMode, swapInstanceAsset, updateBubble, updateItemProps, updateItemTransform, type ReorderDirection } from "./itemOps";
 import { addTone, updateTone, type TonePatch } from "./toneOps";
 import type { ProceduralToneParams, ToneMask } from "./tones";
-import { addPage, removePage, reorderPage, resetPageLayout, setPageLayout } from "./pageOps";
+import { addPage, removePage, renamePage, reorderPage, resetPageLayout, setPageLayout } from "./pageOps";
 import { addChapter, moveChapterStart, removeChapter, renameChapter } from "./chapterOps";
 import { addFontAsset, removeFontAsset } from "./fontOps";
 import { addTextStylePreset, removeTextStylePreset, renameTextStylePreset, type TextStyleFields } from "./textStylePresets";
@@ -198,6 +198,7 @@ export type DomainCommand =
   | { type: "remove-text-style-preset"; presetId: ID }
   | { type: "add-page"; layout?: LayoutPresetId }
   | { type: "remove-page"; pageId: ID }
+  | { type: "rename-page"; pageId: ID; name: string }
   | { type: "add-workspace-instance"; assetId: ID; at: Point }
   | { type: "update-workspace-instance"; itemId: ID; patch: { x?: number; y?: number; width?: number; height?: number; rotation?: number; flipX?: boolean; opacity?: number } }
   | { type: "workspace-to-panel"; itemId: ID; panelId: ID }
@@ -457,6 +458,8 @@ function applyCommandCore(doc: ProjectDocument, command: DomainCommand): Command
     }
     case "remove-page":
       return { doc: removePage(doc, command.pageId) };
+    case "rename-page":
+      return { doc: renamePage(doc, command.pageId, command.name) };
     case "add-workspace-instance": {
       const result = addWorkspaceItem(doc, command.assetId, command.at);
       return { doc: result.doc, createdId: result.itemId };

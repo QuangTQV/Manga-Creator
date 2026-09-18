@@ -32,6 +32,16 @@ export function addPage(
   return { doc: next, pageId: page.id };
 }
 
+export function renamePage(doc: ProjectDocument, pageId: ID, name: string): ProjectDocument {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("A page needs a name");
+  if (!doc.pages[pageId]) throw new Error(`Unknown page: ${pageId}`);
+  const next = cloneDoc(doc);
+  next.pages[pageId].name = trimmed;
+  touch(next);
+  return next;
+}
+
 /**
  * Replace a page's panel arrangement. Content is never silently deleted:
  * existing panel item stacks are re-homed into the new panels by position
