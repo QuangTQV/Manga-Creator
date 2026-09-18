@@ -55,6 +55,12 @@ export interface PuppetFaceHover {
 
 interface UiState {
   generator: GeneratorRequest | null;
+  /**
+   * The Manga Agent's prompt draft. Lifted out of AgentPanel's own state so
+   * other UI (the toolbar's "Auto" layout option) can read what was typed
+   * without needing a run — it never touches the document or the Agent.
+   */
+  agentPrompt: string;
   /** Tone layer whose mask is open for editing, if any. */
   toneMaskItemId: ID | null;
   /** Panel currently in shape-edit mode (double-click a panel to enter). */
@@ -163,10 +169,12 @@ interface UiState {
   closeTranslateProject(): void;
   openModelSheet(characterId: ID): void;
   closeModelSheet(): void;
+  setAgentPrompt(prompt: string): void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
   generator: null,
+  agentPrompt: "",
   toneMaskItemId: null,
   shapeEditPanelId: null,
   poseEditInstanceId: null,
@@ -234,4 +242,5 @@ export const useUiStore = create<UiState>((set) => ({
   closeTranslateProject: () => set({ translateProjectOpen: false }),
   openModelSheet: (characterId) => set({ modelSheetCharacterId: characterId }),
   closeModelSheet: () => set({ modelSheetCharacterId: null }),
+  setAgentPrompt: (prompt) => set({ agentPrompt: prompt }),
 }));

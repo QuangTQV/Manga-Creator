@@ -61,7 +61,8 @@ export function AgentPanel() {
   // normal page navigation via the Pages bar.
   const [targetPageId, setTargetPageId] = useState<string | null>(null);
   const [runPageName, setRunPageName] = useState<string | null>(null);
-  const [prompt, setPrompt] = useState("");
+  const prompt = useUiStore((s) => s.agentPrompt);
+  const setPrompt = useUiStore((s) => s.setAgentPrompt);
   const [phase, setPhase] = useState<Phase>("idle");
   const [statusLine, setStatusLine] = useState<string | null>(null);
   const [plan, setPlan] = useState<AgentPlan | null>(null);

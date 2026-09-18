@@ -27,7 +27,7 @@ import {
   StyleIcon,
   UndoIcon,
 } from "./ui/icons";
-import { LAYOUT_PRESETS } from "@/domain/layouts";
+import { LAYOUT_PRESETS, suggestedLayoutFor } from "@/domain/layouts";
 import { parseLayoutSvg } from "@/domain/importLayoutSvg";
 import { LANGUAGE_NAME_PRESETS } from "@/domain/languagePresets";
 import type { BubbleType, EffectKind, LayoutPresetId } from "@/domain/types";
@@ -290,13 +290,26 @@ export function TopBar() {
       <Dropdown
         label="Layout"
         items={[
+          { key: "auto", label: "Auto (from Manga Agent prompt)" },
           ...Object.values(LAYOUT_PRESETS).map((preset) => ({ key: preset.id, label: preset.label })),
           { key: "import-svg", label: "Import SVG layout…" },
         ]}
         onPick={(key) => {
           if (!page) return;
-          if (key === "import-svg") importLayoutInputRef.current?.click();
-          else useEditorStore.getState().dispatch({ type: "set-page-layout", pageId: page.id, layout: key as LayoutPresetId });
+          if (key === "import-svg") {
+            importLayoutInputRef.current?.click();
+            return;
+          }
+          if (key === "auto") {
+            const prompt = useUiStore.getState().agentPrompt.trim();
+            if (!prompt) {
+              alert('Type your scene into the Manga Agent\'s "What do you want to create?" box first — Auto picks a panel count from that text.');
+              return;
+            }
+            useEditorStore.getState().dispatch({ type: "set-page-layout", pageId: page.id, layout: suggestedLayoutFor(prompt) });
+            return;
+          }
+          useEditorStore.getState().dispatch({ type: "set-page-layout", pageId: page.id, layout: key as LayoutPresetId });
         }}
       />
       <Button

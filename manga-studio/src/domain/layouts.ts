@@ -50,3 +50,32 @@ export const LAYOUT_PRESETS: Record<LayoutPresetId, LayoutPreset> = {
 export function isLayoutPresetId(value: string): value is LayoutPresetId {
   return value in LAYOUT_PRESETS;
 }
+
+/**
+ * How many panels a written scene probably needs, from sentence/line count
+ * alone — no LLM call. Deliberately crude: it exists to pick a reasonable
+ * STARTING preset for "Auto" in the Layout menu instead of always keeping
+ * whatever was last selected; a creator (or the Agent) can always split,
+ * merge, or reshape panels afterwards.
+ */
+export function estimatePanelCountFromText(text: string): number {
+  const beats = text
+    .split(/[.!?\n]+/)
+    .map((beat) => beat.trim())
+    .filter(Boolean);
+  return Math.max(1, Math.min(4, beats.length));
+}
+
+/** The preset "Auto" applies for a given beat count (capped at the largest grid preset, four). */
+export function suggestedLayoutFor(text: string): LayoutPresetId {
+  switch (estimatePanelCountFromText(text)) {
+    case 1:
+      return "single";
+    case 2:
+      return "two-vertical";
+    case 3:
+      return "three-vertical";
+    default:
+      return "four-grid";
+  }
+}
