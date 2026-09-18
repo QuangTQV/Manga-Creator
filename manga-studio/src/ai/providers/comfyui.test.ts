@@ -77,6 +77,33 @@ describe("buildWorkflow", () => {
     expect(graph["3"].inputs).toMatchObject({ steps: 30, cfg: 4.5, sampler_name: "dpmpp_2m", scheduler: "karras" });
   });
 
+  it("does not insert ModelSamplingDiscrete when predictionType is unset (the previous, only behavior)", () => {
+    const graph = buildWorkflow(REQUEST, "m.safetensors") as Record<string, { inputs: Record<string, unknown> }>;
+    expect(graph["44"]).toBeUndefined();
+    expect(graph["3"].inputs.model).toEqual(["4", 0]);
+  });
+
+  it("inserts ModelSamplingDiscrete(v_prediction) between the model source and KSampler when configured", () => {
+    const graph = buildWorkflow(REQUEST, "m.safetensors", { predictionType: "v_prediction" }) as Record<
+      string,
+      { class_type: string; inputs: Record<string, unknown> }
+    >;
+    expect(graph["44"]).toMatchObject({
+      class_type: "ModelSamplingDiscrete",
+      inputs: { model: ["4", 0], sampling: "v_prediction", zsnr: false },
+    });
+    expect(graph["3"].inputs.model).toEqual(["44", 0]);
+  });
+
+  it("reads from the END of the LoRA chain, not the raw checkpoint, when both are configured", () => {
+    const graph = buildWorkflow(REQUEST, "m.safetensors", {
+      predictionType: "v_prediction",
+      loras: [{ name: "a.safetensors" }, { name: "b.safetensors" }],
+    }) as Record<string, { inputs: Record<string, unknown> }>;
+    expect(graph["44"].inputs.model).toEqual(["21", 0]); // last LoRA in the 2-entry chain
+    expect(graph["3"].inputs.model).toEqual(["44", 0]);
+  });
+
   it("chains a single LoRA between the checkpoint and everything downstream", () => {
     const graph = buildWorkflow(REQUEST, "m.safetensors", { loras: [{ name: "detail_tweaker_xl.safetensors", strength: 0.8 }] }) as Record<
       string,
@@ -283,6 +310,18 @@ describe("buildEditWorkflow", () => {
     expect(graph["3"].inputs).toMatchObject({ steps: 30, cfg: 4.5, sampler_name: "dpmpp_2m", scheduler: "karras" });
   });
 
+  it("inserts ModelSamplingDiscrete(v_prediction) between the LoRA chain and KSampler when configured", () => {
+    const graph = buildEditWorkflow("add a hat", "m.safetensors", SOURCE, undefined, { predictionType: "v_prediction" }) as Record<
+      string,
+      { class_type: string; inputs: Record<string, unknown> }
+    >;
+    expect(graph["44"]).toMatchObject({
+      class_type: "ModelSamplingDiscrete",
+      inputs: { model: ["4", 0], sampling: "v_prediction", zsnr: false },
+    });
+    expect(graph["3"].inputs.model).toEqual(["44", 0]);
+  });
+
   it("with an extra reference image: wires IPAdapterUnifiedLoader + IPAdapterAdvanced, defaulting to the architecture-agnostic preset", () => {
     const reference = { name: "canonical.png", subfolder: "", type: "input" };
     const graph = buildEditWorkflow("add a hat", "m.safetensors", SOURCE, undefined, undefined, reference) as Record<
@@ -309,6 +348,15 @@ describe("buildEditWorkflow", () => {
       },
     });
     expect(graph["3"].inputs.model).toEqual(["52", 0]); // KSampler reads the IPAdapter-wrapped model
+  });
+
+  it("wraps the v_prediction-adjusted model with IPAdapter, not the raw LoRA-chain output", () => {
+    const reference = { name: "canonical.png", subfolder: "", type: "input" };
+    const graph = buildEditWorkflow("add a hat", "m.safetensors", SOURCE, undefined, { predictionType: "v_prediction" }, reference) as Record<
+      string,
+      { inputs: Record<string, unknown> }
+    >;
+    expect(graph["51"].inputs.model).toEqual(["44", 0]);
   });
 
   it("respects ipAdapterPreset/ipAdapterWeight overrides", () => {

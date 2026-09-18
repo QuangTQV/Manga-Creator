@@ -285,6 +285,12 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
   const [comfyUiCfg, setComfyUiCfg] = useState("");
   const [comfyUiSampler, setComfyUiSampler] = useState("");
   const [comfyUiScheduler, setComfyUiScheduler] = useState("");
+  // Most checkpoints (including the stock SDXL base) are epsilon-prediction;
+  // some anime/manga checkpoints are v-prediction and need this to avoid
+  // near-blank/garbage output. Empty string = "eps" (the previous, only
+  // behavior), never sent as a real "eps" value so old saved configs are
+  // untouched.
+  const [comfyUiPredictionType, setComfyUiPredictionType] = useState("");
   // One configured ControlNet model reused for every generation that
   // happens to include a control image — not a per-generation picker.
   const [comfyUiControlNetModel, setComfyUiControlNetModel] = useState("");
@@ -325,6 +331,7 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
         setComfyUiCfg(summary.comfyui.cfg !== undefined ? String(summary.comfyui.cfg) : "");
         setComfyUiSampler(summary.comfyui.samplerName ?? "");
         setComfyUiScheduler(summary.comfyui.scheduler ?? "");
+        setComfyUiPredictionType(summary.comfyui.predictionType ?? "");
         setComfyUiControlNetModel(summary.comfyui.controlNetModel ?? "");
         setComfyUiControlNetStrength(summary.comfyui.controlNetStrength !== undefined ? String(summary.comfyui.controlNetStrength) : "");
         setComfyUiIpAdapterPreset(summary.comfyui.ipAdapterPreset ?? "");
@@ -407,6 +414,7 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
                     cfg: comfyUiCfg.trim() ? Number(comfyUiCfg) : undefined,
                     samplerName: comfyUiSampler.trim() || undefined,
                     scheduler: comfyUiScheduler.trim() || undefined,
+                    predictionType: comfyUiPredictionType === "v_prediction" ? "v_prediction" : undefined,
                     controlNetModel: comfyUiControlNetModel.trim() || undefined,
                     controlNetStrength: comfyUiControlNetStrength.trim() ? Number(comfyUiControlNetStrength) : undefined,
                     ipAdapterPreset: comfyUiIpAdapterPreset.trim() || undefined,
@@ -809,9 +817,21 @@ function ProviderCard({ kind, title, protocols, summary, onChanged, supportsMode
                 placeholder="normal"
               />
             </Field>
+            <Field label="Prediction type">
+              <select
+                className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-app)] px-2 py-1.5 text-xs"
+                value={comfyUiPredictionType}
+                onChange={(e) => setComfyUiPredictionType(e.target.value)}
+              >
+                <option value="">Epsilon (default — most checkpoints, incl. the stock SDXL base)</option>
+                <option value="v_prediction">V-prediction (some NoobAI-vpred / Illustrious-family checkpoints)</option>
+              </select>
+            </Field>
           </div>
           <p className="mt-1 text-[10px] leading-4 text-zinc-600">
-            Leave blank to use the built-in defaults (steps 20, cfg 7, euler/normal).
+            Leave the first four blank to use the built-in defaults (steps 20, cfg 7, euler/normal). Wrong prediction
+            type is the usual cause of a checkpoint producing near-blank or garbled output with no error — check the
+            checkpoint&apos;s own model card if unsure.
           </p>
 
           <div className="mt-3 border-t border-zinc-800 pt-3">

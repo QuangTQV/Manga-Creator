@@ -58,6 +58,17 @@ export const comfyUiConfigSchema = z.object({
    * automatically whenever a reference is present. */
   ipAdapterPreset: z.enum(IP_ADAPTER_PRESETS).optional(),
   ipAdapterWeight: z.number().min(-1).max(5).optional(),
+  /**
+   * Most SDXL-family checkpoints (including the stock base) are trained
+   * epsilon-prediction; some anime/manga checkpoints (several NoobAI-vpred
+   * and Illustrious-family variants) are trained v-prediction instead.
+   * Running a v-prediction checkpoint through a graph with no
+   * `ModelSamplingDiscrete` node produces near-blank/garbage output — not a
+   * LoRA problem, not a prompt problem, and not fixable by anything short of
+   * telling the graph which prediction type the checkpoint actually uses.
+   * Omitted (or "eps") keeps the previous unconditional behavior.
+   */
+  predictionType: z.enum(["eps", "v_prediction"]).optional(),
 });
 
 export type ComfyUiLoraEntry = z.infer<typeof comfyUiLoraSchema>;

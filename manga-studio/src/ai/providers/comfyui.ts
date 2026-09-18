@@ -29,7 +29,10 @@
  *         pack (NOT part of a vanilla ComfyUI install — see comment at
  *         its use site). Wraps the LoRA-chained model so KSampler reads
  *         an IPAdapter-conditioned model instead of the raw chain output.
- *   43-49 reserved for any future generation/edit-graph stage.
+ *   44    ModelSamplingDiscrete (v-prediction checkpoints only, both
+ *         generation and edit paths — never both graphs at once, so the
+ *         id is safely reused exactly like 30/31 above).
+ *   43,45-49 reserved for any future generation/edit-graph stage.
  *   60-63 background removal (its own, independent workflow — never
  *         submitted alongside 3-9/20-49; reuses SaveImage id "9" so
  *         `pollHistory` needs no change) — LoadImage/InspyrenetRembg/
@@ -129,6 +132,30 @@ function addLoraChain(
   return { modelSource, clipSource };
 }
 
+const V_PREDICTION_NODE_ID = "44";
+
+/**
+ * Most SDXL-family checkpoints are epsilon-prediction; some (several
+ * NoobAI-vpred and Illustrious-family variants) are v-prediction instead.
+ * Sampling a v-prediction checkpoint with no `ModelSamplingDiscrete`
+ * override produces near-blank/garbage output — a checkpoint-graph
+ * mismatch, not a LoRA or prompt problem. A no-op (returns `modelSource`
+ * unchanged) unless the creator has explicitly said their checkpoint needs
+ * it, since most checkpoints (including the stock base) do not.
+ */
+function applyPredictionType(
+  graph: Record<string, unknown>,
+  modelSource: [string, number],
+  extra: ComfyUiExtraConfig | undefined,
+): [string, number] {
+  if (extra?.predictionType !== "v_prediction") return modelSource;
+  graph[V_PREDICTION_NODE_ID] = {
+    class_type: "ModelSamplingDiscrete",
+    inputs: { model: modelSource, sampling: "v_prediction", zsnr: false },
+  };
+  return [V_PREDICTION_NODE_ID, 0];
+}
+
 /**
  * Pure, testable without network: the ComfyUI API-format graph for this
  * request. Base shape (no LoRA, no reference image) is the same standard
@@ -147,7 +174,8 @@ export function buildWorkflow(
   const graph: Record<string, unknown> = {
     "4": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: checkpointModel } },
   };
-  const { modelSource, clipSource } = addLoraChain(graph, extra?.loras, request.assetType === "background" ? "scene" : "isolated");
+  const { modelSource: loraModelSource, clipSource } = addLoraChain(graph, extra?.loras, request.assetType === "background" ? "scene" : "isolated");
+  const modelSource = applyPredictionType(graph, loraModelSource, extra);
 
   graph["6"] = { class_type: "CLIPTextEncode", inputs: { text: request.prompt, clip: clipSource } };
   graph["7"] = { class_type: "CLIPTextEncode", inputs: { text: request.negativePrompt ?? "", clip: clipSource } };
@@ -288,13 +316,13 @@ export function buildEditWorkflow(
   // "background" scene — so the isolated scope applies unconditionally.
   const { modelSource: loraModelSource, clipSource } = addLoraChain(graph, extra?.loras, "isolated");
 
-  let modelSource = loraModelSource;
+  let modelSource = applyPredictionType(graph, loraModelSource, extra);
   if (referenceImage) {
     const referencePath = referenceImage.subfolder ? `${referenceImage.subfolder}/${referenceImage.name}` : referenceImage.name;
     graph["50"] = { class_type: "LoadImage", inputs: { image: referencePath } };
     graph["51"] = {
       class_type: "IPAdapterUnifiedLoader",
-      inputs: { model: loraModelSource, preset: extra?.ipAdapterPreset ?? DEFAULT_IP_ADAPTER_PRESET },
+      inputs: { model: modelSource, preset: extra?.ipAdapterPreset ?? DEFAULT_IP_ADAPTER_PRESET },
     };
     graph["52"] = {
       class_type: "IPAdapterAdvanced",
