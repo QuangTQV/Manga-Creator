@@ -257,9 +257,21 @@ describe("golden run: an interaction never destroys the page", () => {
     expect(generationBodies).toHaveLength(1);
   });
 
-  it("restores the whole page when the provider fails", async () => {
+  it("falls back to placing both characters separately when the joint render fails — nothing existing is lost", async () => {
+    // Both Yuri and Mori already have ready, reusable "standing" assets (see
+    // composedPage()), so a failed joint render is NOT unrecoverable — the
+    // documented fallback (interactionProcess.ts's approximateInteraction)
+    // places each of them from their existing assets and the run reports
+    // PARTIALLY_COMPLETED, honest about the true hug still being missing.
+    // This used to instead trigger a "character is completely obscured"
+    // false positive (both characters, same asset dimensions, landing on the
+    // exact same spot in a narrow panel with no daylight to nudge into) that
+    // made the fallback itself fail and roll back the whole run — see
+    // domain/itemOps.ts's placeWithoutFullyCovering.
     stubProvider(() => new Response(JSON.stringify({ error: "provider unavailable" }), { status: 502 }));
-    const fingerprints = fixture.panelIds.map((id) => fingerprint(before, id));
+    const untouched = fixture.panelIds.slice(0, 3).map((id) => fingerprint(before, id));
+    const finale = fixture.panelIds[3];
+    const finaleItemsBefore = before.panels[finale].itemIds;
 
     const validated = hugPlan(fixture);
     const summary = await executePlan(validated.plan, () => {}, {
@@ -267,20 +279,33 @@ describe("golden run: an interaction never destroys the page", () => {
       authorizedCreationNames: validated.authorizedCreationNames,
     });
 
-    expect(summary.rolledBack).toBe(true);
-    expect(summary.abortReason).toBeTruthy();
+    expect(summary.status).toBe("partially_completed");
+    expect(summary.rolledBack).toBe(false);
+    expect(summary.fallbacks).toHaveLength(1);
+    expect(summary.fallbacks[0].detail).toMatch(/Approximate composition/i);
+    expect(summary.validationIssues.filter((issue) => issue.severity === "fatal")).toEqual([]);
 
     const after = useEditorStore.getState().doc!;
-    // Every panel, including the target: a failed hug leaves no trace on the page.
-    fixture.panelIds.forEach((panelId, index) => {
-      expect(fingerprint(after, panelId)).toBe(fingerprints[index]);
+
+    // Panels the request never touched are exactly as they were.
+    fixture.panelIds.slice(0, 3).forEach((panelId, index) => {
+      expect(fingerprint(after, panelId)).toBe(untouched[index]);
     });
-    expect(Object.keys(after.interactions ?? {})).toEqual(Object.keys(before.interactions ?? {}));
+
+    // The finale panel's pre-existing work — background, both standing
+    // characters, dialogue, effect — is all still there; the fallback only adds.
+    const finaleItemsAfter = after.panels[finale].itemIds;
+    expect(finaleItemsBefore.every((id) => finaleItemsAfter.includes(id))).toBe(true);
+    expect(finaleItemsAfter.length).toBe(finaleItemsBefore.length + 2);
+    // The hug is recorded as an interaction even though its render fell back
+    // to local placement — that record is what "no true joint render yet"
+    // means, not something the failure should have prevented.
+    expect(Object.keys(after.interactions ?? {}).length).toBe(Object.keys(before.interactions ?? {}).length + 1);
 
     /**
-     * A rolled-back run must not eat the undo stack either: the creator's last
-     * manual action is still what one Undo takes back.
+     * A partially-completed run still commits as ONE transaction — one Undo
+     * reverts the whole thing, same as a fully-completed run would.
      */
-    expect(useEditorStore.getState().past.length).toBe(historyDepth);
+    expect(useEditorStore.getState().past.length).toBe(historyDepth + 1);
   });
 });

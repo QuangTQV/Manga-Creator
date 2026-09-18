@@ -4,7 +4,7 @@
  * through these functions — there is no second write path.
  */
 
-import { cloneDoc, insertIndexForBand, itemBand, panelPxRect, touch } from "./docHelpers";
+import { cloneDoc, containsRect, insertIndexForBand, itemBand, panelPxRect, touch } from "./docHelpers";
 import { newId } from "./factory";
 import { cropModeTransform, fitTransform } from "./geometry";
 import { normalizeEffectParams } from "./effects";
@@ -21,6 +21,7 @@ import type {
   ID,
   PanelItem,
   ProjectDocument,
+  Rect,
   SpeechBubbleItem,
 } from "./types";
 
@@ -60,19 +61,23 @@ export function placeAsset(
    * Every fit placement centres on the panel, so "place Yuri, place Mio" put
    * one exactly behind the other — a valid document that renders as one
    * character. The creator's own drop point always wins; only the automatic
-   * position is nudged, and only away from characters already standing there.
+   * position is nudged (and, if nudging alone can't clear it, shrunk — see
+   * `placeWithoutFullyCovering`) and only away from characters already
+   * standing there.
    */
-  const cx = options.at?.x ?? clearCenterX(next, panelId, transform, panelRect.width);
+  const placement = options.at
+    ? { cx: options.at.x, width: transform.width, height: transform.height }
+    : placeWithoutFullyCovering(next, panelId, transform, panelRect.width);
 
   const item: AssetInstance = {
     id: newId(),
     kind: "asset",
     panelId,
     sourceAssetId,
-    cx,
+    cx: placement.cx,
     cy: options.at?.y ?? transform.cy,
-    width: transform.width,
-    height: transform.height,
+    width: placement.width,
+    height: placement.height,
     rotation: 0,
     opacity: 1,
     flipX: false,
@@ -83,6 +88,55 @@ export function placeAsset(
   syncPanelScene(next, panelId);
   touch(next);
   return { doc: next, itemId: item.id };
+}
+
+/** Other characters/props already standing in this panel — backgrounds sit underneath everything and are never a placement obstacle. */
+function nonBackgroundOccupants(doc: ProjectDocument, panelId: ID): AssetInstance[] {
+  return (doc.panels[panelId]?.itemIds ?? [])
+    .map((id) => doc.items[id])
+    .filter((item): item is AssetInstance => {
+      if (item?.kind !== "asset") return false;
+      return doc.assets[item.sourceAssetId]?.category !== "background";
+    });
+}
+
+function occupantRect(item: AssetInstance): Rect {
+  return { x: item.cx - item.width / 2, y: item.cy - item.height / 2, width: item.width, height: item.height };
+}
+
+/**
+ * Nudge, then — if nudging alone can't clear it — shrink, so an automatic
+ * placement never fully covers someone already in the panel.
+ *
+ * `compositionValidation.ts` treats one character completely obscuring
+ * another as fatal and rolls back the whole run; when the new asset is wide
+ * enough that no horizontal slot leaves any daylight (e.g. a large creature
+ * next to a person, both fit to the same panel height), nudging alone can't
+ * fix it — so the new item is shrunk, evenly around its own centre, until it
+ * no longer fully covers an existing occupant.
+ */
+function placeWithoutFullyCovering(
+  doc: ProjectDocument,
+  panelId: ID,
+  transform: { cx: number; cy: number; width: number; height: number },
+  panelWidth: number,
+): { cx: number; width: number; height: number } {
+  const occupants = nonBackgroundOccupants(doc, panelId);
+  let width = transform.width;
+  let height = transform.height;
+  let cx = clearCenterX(doc, panelId, { ...transform, width, height }, panelWidth);
+  if (occupants.length === 0) return { cx, width, height };
+
+  const MAX_SHRINK_ATTEMPTS = 6;
+  for (let attempt = 0; attempt < MAX_SHRINK_ATTEMPTS; attempt += 1) {
+    const rect = { x: cx - width / 2, y: transform.cy - height / 2, width, height };
+    const fullyCovers = occupants.some((occupant) => containsRect(rect, occupantRect(occupant)));
+    if (!fullyCovers) break;
+    width *= 0.85;
+    height *= 0.85;
+    cx = clearCenterX(doc, panelId, { ...transform, width, height }, panelWidth);
+  }
+  return { cx, width, height };
 }
 
 /**
@@ -100,13 +154,7 @@ function clearCenterX(
   transform: { cx: number; cy: number; width: number; height: number },
   panelWidth: number,
 ): number {
-  const occupants = (doc.panels[panelId]?.itemIds ?? [])
-    .map((id) => doc.items[id])
-    .filter((item): item is AssetInstance => {
-      if (item?.kind !== "asset") return false;
-      // Backgrounds are meant to sit underneath everything.
-      return doc.assets[item.sourceAssetId]?.category !== "background";
-    });
+  const occupants = nonBackgroundOccupants(doc, panelId);
   if (occupants.length === 0) return transform.cx;
 
   const half = transform.width / 2;

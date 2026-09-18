@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import { createProjectDocument } from "./factory";
+import { containsRect, panelPxRect } from "./docHelpers";
 import { addAsset, removeAsset } from "./libraryOps";
 import {
   duplicateItem,
@@ -144,5 +145,69 @@ describe("layer ordering", () => {
     expect(d4.panels[panelId].itemIds).toEqual([b, a]);
     const d5 = reorderItem(d4, a, "back");
     expect(d5.panels[panelId].itemIds).toEqual([a, b]);
+  });
+});
+
+describe("automatic placement never fully covers an existing character", () => {
+  // compositionValidation.ts treats one character fully obscuring another as
+  // fatal and rolls back the whole agent run (a real case: a wide "monster"
+  // pose fit to the same panel height as a narrower character left no
+  // horizontal slot with any daylight, so nudging alone couldn't clear it).
+  it("shrinks a second character whose fitted width would span the whole panel", () => {
+    const base = createProjectDocument("Test");
+    const panelId = Object.keys(base.panels)[0];
+    const panelRect = panelPxRect(base, panelId);
+
+    // Narrow, tall — a small, off-centre occupant regardless of which slot it lands in.
+    const { doc: d1, assetId: narrowAsset } = addAsset(base, {
+      category: "character",
+      name: "Haruto",
+      storageUrl: "https://example.com/haruto.png",
+      width: 50,
+      height: 5000,
+    });
+    // Same aspect ratio as the panel itself — fit-to-height means fit-to-width
+    // too, so an unshrunk placement would cover the panel exactly.
+    const { doc: d2, assetId: wideAsset } = addAsset(d1, {
+      category: "character",
+      name: "Monster",
+      storageUrl: "https://example.com/monster.png",
+      width: panelRect.width * 10,
+      height: panelRect.height * 10,
+    });
+
+    const { doc: d3, itemId: narrowItem } = placeAsset(d2, panelId, narrowAsset);
+    const { doc: d4, itemId: wideItem } = placeAsset(d3, panelId, wideAsset);
+
+    const narrow = instance(d4, narrowItem);
+    const wide = instance(d4, wideItem);
+    expect(wide.width).toBeLessThan(panelRect.width);
+
+    const narrowRect = { x: narrow.cx - narrow.width / 2, y: narrow.cy - narrow.height / 2, width: narrow.width, height: narrow.height };
+    const wideRect = { x: wide.cx - wide.width / 2, y: wide.cy - wide.height / 2, width: wide.width, height: wide.height };
+    expect(containsRect(wideRect, narrowRect)).toBe(false);
+  });
+
+  it("still respects an explicit drop point (no shrink) — only automatic placement is guarded", () => {
+    const base = createProjectDocument("Test");
+    const panelId = Object.keys(base.panels)[0];
+    const panelRect = panelPxRect(base, panelId);
+    const { doc: d1, assetId: narrowAsset } = addAsset(base, {
+      category: "character",
+      name: "Haruto",
+      storageUrl: "https://example.com/haruto.png",
+      width: 50,
+      height: 5000,
+    });
+    const { doc: d2, assetId: wideAsset } = addAsset(d1, {
+      category: "character",
+      name: "Monster",
+      storageUrl: "https://example.com/monster.png",
+      width: panelRect.width * 10,
+      height: panelRect.height * 10,
+    });
+    const { doc: d3 } = placeAsset(d2, panelId, narrowAsset);
+    const { doc: d4, itemId: wideItem } = placeAsset(d3, panelId, wideAsset, { at: { x: panelRect.width / 2, y: panelRect.height / 2 } });
+    expect(instance(d4, wideItem).width).toBe(panelRect.width);
   });
 });

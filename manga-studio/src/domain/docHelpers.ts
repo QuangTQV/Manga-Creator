@@ -50,3 +50,18 @@ export function insertIndexForBand(doc: ProjectDocument, panelItemIds: ID[], ban
   });
   return index;
 }
+
+/**
+ * True when `outer` fully covers `inner` on every side — the exact test
+ * `compositionValidation.ts` uses to flag a character as completely
+ * obscured. Shared so placement can avoid creating what validation would
+ * otherwise have to catch and roll back.
+ */
+export function containsRect(outer: Rect, inner: Rect): boolean {
+  return (
+    outer.x <= inner.x &&
+    outer.y <= inner.y &&
+    outer.x + outer.width >= inner.x + inner.width &&
+    outer.y + outer.height >= inner.y + inner.height
+  );
+}

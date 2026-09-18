@@ -1,4 +1,4 @@
-import { cloneDoc, panelPxRect, touch } from "./docHelpers";
+import { cloneDoc, containsRect, panelPxRect, touch } from "./docHelpers";
 import type { AssetInstance, ID, ProjectDocument, Rect } from "./types";
 
 export type CompositionIssueCode =
@@ -126,7 +126,7 @@ export function validateAndCorrectComposition(
           other?.kind === "asset" &&
           other.visible !== false &&
           other.opacity >= 0.95 &&
-          contains(itemRect(other), itemRect(item))
+          containsRect(itemRect(other), itemRect(item))
         );
       });
       if (obscured) {
@@ -196,7 +196,7 @@ function wasObscured(before: ProjectDocument, panelId: ID, itemId: ID): boolean 
       other?.kind === "asset" &&
       other.visible !== false &&
       other.opacity >= 0.95 &&
-      contains(itemRect(other), itemRect(item))
+      containsRect(itemRect(other), itemRect(item))
     );
   });
 }
@@ -209,8 +209,4 @@ function intersectionArea(a: Rect, b: Rect): number {
   const width = Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x));
   const height = Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
   return width * height;
-}
-
-function contains(outer: Rect, inner: Rect): boolean {
-  return outer.x <= inner.x && outer.y <= inner.y && outer.x + outer.width >= inner.x + inner.width && outer.y + outer.height >= inner.y + inner.height;
 }
