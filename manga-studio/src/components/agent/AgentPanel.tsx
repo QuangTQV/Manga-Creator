@@ -267,6 +267,14 @@ export function AgentPanel() {
         </div>
       </div>
 
+      {/*
+        Everything below scrolls together as one region. Before this, the
+        error card and the long activity trail were fixed-height siblings of
+        the plan/steps list in a non-scrolling parent — a long trail or a
+        multi-cause error message could squeeze the steps list down to
+        nothing, with no way to scroll the panel to see the rest.
+      */}
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
       {statusLine && <p className="text-zinc-300">{statusLine}</p>}
       {activity.length > 0 && (
         <p className="text-[10px] text-zinc-500" aria-label="Agent activity">
@@ -306,7 +314,7 @@ export function AgentPanel() {
       )}
 
       {plan && steps.length > 0 && (
-        <div className="min-h-0 flex-1 overflow-y-auto rounded-md bg-[var(--bg-elevated)] p-2">
+        <div className="rounded-md bg-[var(--bg-elevated)] p-2">
           <p className="mb-1 text-[10px] font-medium text-[var(--accent-text)]">
             Target: {plan.targetScope?.label ?? (runPageName ? `Page · ${runPageName}` : "Current Page")}
           </p>
@@ -426,6 +434,7 @@ export function AgentPanel() {
           Kept in the library for reuse: {runSummary.preservedAssets.join(", ")}
         </p>
       )}
+      </div>
     </div>
   );
 }
